@@ -5,36 +5,36 @@ interface Props {
 }
 
 const LABELS: Record<DataStatus, string> = {
-  OK: 'OK',
-  META_NOT_LIVE: 'META NOT LIVE',
-  SALES_WARNING: 'SALES WARNING',
-  NO_DATA: 'NO DATA',
+  OK:            'Operational',
+  META_NOT_LIVE: 'Meta Offline',
+  SALES_WARNING: 'Sales Alert',
+  NO_DATA:       'No Data',
 }
 
 const COLORS: Record<DataStatus, string> = {
-  OK: '#00ff88',
-  META_NOT_LIVE: '#e8ff00',
-  SALES_WARNING: '#ff6b00',
-  NO_DATA: '#888',
+  OK:            'var(--emerald)',
+  META_NOT_LIVE: 'var(--amber)',
+  SALES_WARNING: 'var(--orange)',
+  NO_DATA:       'var(--muted)',
 }
 
 export function StatusBadge({ status }: Props) {
   const color = COLORS[status]
   return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '3px 12px',
-        borderRadius: '20px',
-        border: `2px solid ${color}`,
-        color,
-        fontFamily: 'monospace',
-        fontWeight: 700,
-        fontSize: '0.75rem',
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-      }}
-    >
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '5px',
+      padding: '3px 10px',
+      border: `1px solid ${color}`,
+      borderRadius: '3px',
+      color,
+      fontFamily: 'var(--font-mono)',
+      fontSize: '0.62rem',
+      letterSpacing: '0.1em',
+      textTransform: 'uppercase',
+    }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: color, display: 'inline-block' }} />
       {LABELS[status]}
     </span>
   )

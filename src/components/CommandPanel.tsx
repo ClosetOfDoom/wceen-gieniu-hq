@@ -8,25 +8,8 @@ interface Props {
 export function CommandPanel({ onCommand, loading }: Props) {
   return (
     <div>
-      <div
-        style={{
-          fontSize: '0.7rem',
-          color: '#555',
-          fontFamily: 'monospace',
-          textTransform: 'uppercase',
-          letterSpacing: '0.1em',
-          marginBottom: '12px',
-        }}
-      >
-        Commands
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '8px',
-        }}
-      >
+      <div className="panel-label">Commands</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
         {COMMANDS.map(cmd => (
           <button
             key={cmd.key}

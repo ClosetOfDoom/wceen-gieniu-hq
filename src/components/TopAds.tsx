@@ -7,44 +7,32 @@ interface Props {
 
 export function TopAds({ ads, loading }: Props) {
   if (loading) {
-    return (
-      <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '0.8rem', padding: '12px 0' }}>
-        Ładuję top reklamy...
-      </div>
-    )
+    return <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.76rem', padding: '10px 0' }}>Loading campaigns…</div>
   }
   if (ads.length === 0) {
-    return (
-      <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '0.8rem', padding: '12px 0' }}>
-        Brak danych reklamowych na dziś.
-      </div>
-    )
+    return <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.76rem', padding: '10px 0' }}>No campaign data for today.</div>
   }
 
   const total = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
+  const totalPurchases = ads.reduce((s, a) => s + (a.purchases ?? 0), 0)
 
   return (
     <div>
-      <div
-        style={{
-          fontSize: '0.7rem',
-          color: '#555',
-          fontFamily: 'monospace',
-          textTransform: 'uppercase',
-          letterSpacing: '0.1em',
-          marginBottom: '10px',
-        }}
-      >
-        Top reklamy / kampanie — dziś
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '12px' }}>
+        <div className="panel-label">Top Campaigns — Today</div>
+        <span style={{ fontSize: '0.68rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
+          Meta attr. purchases: <span style={{ color: 'var(--teal)' }}>{totalPurchases}</span>
+        </span>
       </div>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', fontFamily: 'monospace' }}>
+        <table className="data-table">
           <thead>
-            <tr style={{ borderBottom: '1px solid #2a2a2a', color: '#555' }}>
-              <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 'normal' }}>Kampania</th>
-              <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 'normal' }}>Spend</th>
-              <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 'normal' }}>% budżetu</th>
-              <th style={{ textAlign: 'right', padding: '4px 8px', fontWeight: 'normal' }}>Kliknięcia</th>
+            <tr>
+              <th style={{ textAlign: 'left' }}>Campaign</th>
+              <th style={{ textAlign: 'right' }}>Spend PLN</th>
+              <th style={{ textAlign: 'right' }}>Budget %</th>
+              <th style={{ textAlign: 'right' }}>Clicks</th>
+              <th style={{ textAlign: 'right' }}>Attr.</th>
             </tr>
           </thead>
           <tbody>
@@ -53,24 +41,21 @@ export function TopAds({ ads, loading }: Props) {
               const isHigh = total > 0 && ad.spend / total > 0.7
 
               return (
-                <tr
-                  key={ad.ad_id ?? i}
-                  style={{
-                    borderBottom: '1px solid #1a1a1a',
-                    color: isHigh ? '#ff6b00' : '#ccc',
-                  }}
-                >
-                  <td style={{ padding: '5px 8px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <tr key={ad.ad_id ?? i}>
+                  <td style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isHigh ? 'var(--orange)' : 'var(--text2)' }}>
                     {ad.campaign_name ?? ad.campaign_id ?? '—'}
                   </td>
-                  <td style={{ textAlign: 'right', padding: '5px 8px' }}>
-                    {ad.spend?.toFixed(2) ?? '—'} zł
+                  <td style={{ textAlign: 'right', color: isHigh ? 'var(--orange)' : 'var(--text2)' }}>
+                    {ad.spend?.toFixed(2) ?? '—'}
                   </td>
-                  <td style={{ textAlign: 'right', padding: '5px 8px', color: isHigh ? '#ff6b00' : '#888' }}>
+                  <td style={{ textAlign: 'right', color: isHigh ? 'var(--orange)' : 'var(--muted)' }}>
                     {pct}%
                   </td>
-                  <td style={{ textAlign: 'right', padding: '5px 8px' }}>
+                  <td style={{ textAlign: 'right', color: 'var(--muted)' }}>
                     {ad.link_clicks ?? '—'}
+                  </td>
+                  <td style={{ textAlign: 'right', color: (ad.purchases ?? 0) > 0 ? 'var(--teal)' : 'var(--muted2)' }}>
+                    {ad.purchases ?? 0}
                   </td>
                 </tr>
               )

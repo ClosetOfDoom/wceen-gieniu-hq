@@ -35,6 +35,12 @@ export interface AutomationRun {
   error_message: string | null
 }
 
+export interface MetaStatsToday {
+  meta_purchases: number
+  latestDate: string
+  isStale: boolean
+}
+
 export type DataStatus = 'OK' | 'META_NOT_LIVE' | 'SALES_WARNING' | 'NO_DATA'
 
 export function computeStatus(row: DailyPerformance | null): DataStatus {
@@ -104,4 +110,19 @@ export async function fetchAutomationRuns(limit = 5): Promise<AutomationRun[]> {
     return []
   }
   return (data ?? []) as AutomationRun[]
+}
+
+export async function fetchMetaStatsToday(): Promise<MetaStatsToday> {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+
+  const [{ data: todayRows }, { data: latestRow }] = await Promise.all([
+    supabase.from('meta_ads_daily').select('purchases').eq('date', today),
+    supabase.from('meta_ads_daily').select('date').order('date', { ascending: false }).limit(1).maybeSingle(),
+  ])
+
+  const meta_purchases = (todayRows ?? []).reduce((s, r) => s + ((r as MetaAdDaily).purchases ?? 0), 0)
+  const latestDate = (latestRow as { date?: string } | null)?.date ?? ''
+  const isStale = latestDate !== '' && latestDate < today
+
+  return { meta_purchases, latestDate, isStale }
 }
