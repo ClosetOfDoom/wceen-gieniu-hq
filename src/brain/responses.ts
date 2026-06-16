@@ -1,4 +1,4 @@
-import type { DailyPerformance, DataStatus } from '../services/data'
+import type { DailyPerformance, DataStatus, MetaAdDaily, MetaStatsToday } from '../services/data'
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import { pct } from '../services/webinarFunnel'
 import {
@@ -491,4 +491,133 @@ export function buildWhoAttendedAndBought(s: JsuFunnelSummary | null): string {
       ? 'Zero purchases with attendees present — check product mapping in Make (email → wix_order_id).'
       : s.diagnosis,
   ].join('\n')
+}
+
+// ── Conversational briefing builders ─────────────────────────────────────────
+
+export function buildOpsBriefing(
+  perf: DailyPerformance | null,
+  status: DataStatus,
+  metaStats?: MetaStatsToday,
+  ads?: MetaAdDaily[]
+): string {
+  if (status === 'NO_DATA' || !perf) {
+    return `${pickPhrase(OPENERS)}\n\nNo data for today yet. Make scenarios may not have run, or the day is still early. Check the automation panel.`
+  }
+
+  const orders  = perf.wix_orders
+  const revenue = perf.wix_revenue
+  const spend   = perf.meta_spend
+  const cpa     = perf.real_cpa
+  const roas    = perf.real_roas
+  const metaPurchases = metaStats?.meta_purchases ?? 0
+
+  const lines: string[] = [pickPhrase(OPENERS), '']
+
+  lines.push(`Today: ${orders} Wix orders, ${fmtPln(revenue)} revenue, ${fmtPln(spend)} Meta ad spend.`)
+
+  if (cpa != null && roas != null) {
+    lines.push(`Real CPA: ${fmtPln(cpa)}. Real ROAS: ${fmt(roas, 2, 'x')}.`)
+  } else if (cpa != null) {
+    lines.push(`Real CPA: ${fmtPln(cpa)}.`)
+  }
+
+  if (metaPurchases > 0 && orders !== metaPurchases) {
+    const diff = orders - metaPurchases
+    if (diff > 0) {
+      lines.push(`Meta attributes ${metaPurchases} purchases — ${diff} real Wix orders are unattributed. Tracking is undercounting.`)
+    } else {
+      lines.push(`Meta attributes ${metaPurchases} purchases but Wix shows only ${orders} real orders. Possible tracking overcount.`)
+    }
+  }
+
+  if (metaStats?.isStale) {
+    lines.push('Note: Meta data looks stale — no ad spend synced for today Warsaw time. Wix numbers are reliable.')
+  }
+
+  if (status === 'SALES_WARNING') {
+    lines.push('Warning: ad spend is running but Wix shows zero orders. Check the landing page, checkout flow, and pixel.')
+  } else if (status === 'META_NOT_LIVE') {
+    lines.push('Meta shows no spend today. Campaigns may be paused or budget exhausted.')
+  } else if (cpa != null && cpa > 50) {
+    lines.push('CPA is above 50 PLN — above the Memory Pack alert threshold. Review creatives and targeting.')
+  } else if (status === 'OK') {
+    lines.push(pickPhrase(GOOD_VERDICTS))
+  }
+
+  if (ads && ads.length > 0) {
+    const top   = ads[0]
+    const total = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
+    const topPct = total > 0 ? ((top.spend / total) * 100).toFixed(0) : '?'
+    lines.push(`Top campaign: "${top.campaign_name ?? top.campaign_id}" — ${fmtPln(top.spend)} (${topPct}% of budget).`)
+    if (total > 0 && top.spend / total > 0.7) {
+      lines.push('Concentration risk: one campaign consuming over 70% of budget.')
+    }
+  }
+
+  lines.push('')
+  lines.push(pickPhrase(NEXT_MOVES))
+
+  return lines.join('\n')
+}
+
+export function buildMetaVsWix(
+  perf: DailyPerformance | null,
+  metaStats: MetaStatsToday,
+  ads: MetaAdDaily[]
+): string {
+  if (!perf) {
+    return `${pickPhrase(OPENERS)}\n\nNo data yet — cannot compare Meta and Wix.`
+  }
+
+  const spend   = perf.meta_spend
+  const orders  = perf.wix_orders
+  const revenue = perf.wix_revenue
+  const metaPurchases = metaStats.meta_purchases
+  const roas    = perf.real_roas
+  const cpa     = perf.real_cpa
+
+  const lines = [
+    pickPhrase(OPENERS), '',
+    '— META vs WIX —', '',
+    `Meta ad spend: ${fmtPln(spend)}`,
+    `Wix real orders: ${orders}`,
+    `Wix real revenue: ${fmtPln(revenue)}`,
+    `Meta-attributed purchases: ${metaPurchases}`,
+    '',
+  ]
+
+  if (spend > 0 && orders > 0) {
+    if (cpa != null) lines.push(`Real CPA (spend ÷ Wix orders): ${fmtPln(cpa)}`)
+    if (roas != null) lines.push(`Real ROAS (Wix revenue ÷ spend): ${fmt(roas, 2, 'x')}`)
+    lines.push('')
+  }
+
+  if (metaPurchases > 0) {
+    const diff = orders - metaPurchases
+    if (diff > 0) {
+      lines.push(`Discrepancy: ${diff} Wix orders have no Meta attribution. Meta is undercounting conversions.`)
+    } else if (diff < 0) {
+      lines.push(`Discrepancy: Meta claims ${Math.abs(diff)} more purchases than Wix recorded. Possible view-through inflation or pixel misfire.`)
+    } else {
+      lines.push('Meta and Wix agree on purchase count. Tracking looks clean.')
+    }
+  }
+
+  if (metaStats.isStale) {
+    lines.push('Meta data is stale — treat ad spend numbers with caution.')
+  }
+
+  if (roas != null) {
+    if (roas >= 3)      lines.push('\nROAS above 3x. Ads appear profitable at current CPA.')
+    else if (roas >= 2) lines.push('\nROAS between 2x and 3x. Marginal — monitor CPA closely.')
+    else                lines.push('\nROAS below 2x. Ads may not be covering costs. Review creatives and targeting.')
+  }
+
+  if (ads.length > 0) {
+    const top = ads[0]
+    lines.push(`\nTop campaign: "${top.campaign_name ?? top.campaign_id}" — ${fmtPln(top.spend)} spend, ${top.link_clicks ?? 0} clicks.`)
+  }
+
+  return lines.join('\n')
 }

@@ -96,7 +96,7 @@ button:disabled {
 }
 
 .hud-right {
-  overflow-y: auto;
+  overflow: hidden;
   border-left: 1px solid var(--border);
   background: var(--bg2);
   display: flex;
@@ -402,4 +402,49 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* ── Conversational input ────────────────────────────────────────────────── */
+
+.gieniu-input {
+  flex: 1;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 7px 11px;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  outline: none;
+  transition: border-color 0.15s;
+  min-width: 0;
+}
+.gieniu-input:focus { border-color: var(--border-gold); }
+.gieniu-input::placeholder { color: var(--muted2); }
+
+.btn-mute {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--muted);
+  padding: 3px 9px;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.btn-mute:hover { border-color: var(--muted); color: var(--text2); }
+.btn-mute.muted { border-color: var(--orange); color: var(--orange); }
+
+.transcript-display {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--teal);
+  padding: 5px 10px;
+  background: rgba(45, 212, 191, 0.06);
+  border-radius: 3px;
+  border-left: 2px solid var(--teal-dim);
+  margin-bottom: 8px;
+  word-break: break-word;
 }

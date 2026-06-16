@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { KPICard } from './components/KPICard'
 import { StatusBadge } from './components/StatusBadge'
-import { CommandPanel } from './components/CommandPanel'
-import { GieniuResponse } from './components/GieniuResponse'
+import { GieniuAvatar } from './components/GieniuAvatar'
 import { TopAds } from './components/TopAds'
 import { AutomationRuns } from './components/AutomationRuns'
 import { WebinarFunnelPanel } from './components/WebinarFunnelPanel'
 import { RevenueTrendChart } from './components/RevenueTrendChart'
-import { GieniuAvatar } from './components/GieniuAvatar'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday,
@@ -20,14 +18,12 @@ import {
   type JsuFunnelSummary, type JsuParticipantRow,
 } from './services/webinarFunnel'
 import {
-  buildRevenueReport, buildOperationalReport, buildPipelineReport,
-  buildCPAThresholds, buildCPAThresholdsLang, buildRedFlags,
-  buildCreativesReport, buildRetargetingReport, buildMailRhythm, buildWeeklyPlan,
   buildJsuWebinarReport, buildWhyCourseNotSelling, buildJsuFunnelReport,
   buildCompareJsuWebinars, buildDeliverabilityReport, buildMailingDiagnosis,
   buildAttendanceRateReport, buildWhoAttendedAndBought,
-  type CommandKey, type JsuCommandKey,
+  type JsuCommandKey,
 } from './brain/responses'
+import { resolveIntent } from './brain/intent'
 import { speak, stopAudio } from './voice/tts'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -81,10 +77,8 @@ function Sidebar({
 }) {
   return (
     <aside className="hud-sidebar">
-      {/* Crest */}
       <div style={{ padding: '20px 18px 12px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Heraldic shield */}
           <svg viewBox="0 0 36 40" width="32" height="36">
             <path d="M18 2 L34 8 L34 22 Q34 34 18 38 Q2 34 2 22 L2 8 Z"
               fill="var(--surface3)" stroke="var(--gold)" strokeWidth="1.5" />
@@ -102,7 +96,6 @@ function Sidebar({
         </div>
       </div>
 
-      {/* Navigation */}
       <nav style={{ flex: 1, paddingTop: '8px' }}>
         <div className="nav-group-label">Operations</div>
         {NAV_ITEMS.slice(0, 4).map(item => (
@@ -135,25 +128,12 @@ function Sidebar({
         ))}
       </nav>
 
-      {/* Avatar card at bottom */}
-      <div style={{
-        padding: '14px 16px',
-        borderTop: '1px solid var(--border)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-      }}>
+      <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '10px' }}>
         <GieniuAvatar size={52} />
         <div>
-          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.72rem', color: 'var(--gold)', fontWeight: 600 }}>
-            Gieniu
-          </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--muted)', marginTop: '1px' }}>
-            Revenue Advisor
-          </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: 'var(--teal)', marginTop: '2px', letterSpacing: '0.04em' }}>
-            ● George voice
-          </div>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.72rem', color: 'var(--gold)', fontWeight: 600 }}>Gieniu</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--muted)', marginTop: '1px' }}>Revenue Advisor</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: 'var(--teal)', marginTop: '2px', letterSpacing: '0.04em' }}>● George voice</div>
         </div>
       </div>
     </aside>
@@ -194,13 +174,7 @@ function TopBar({
     }}>
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '4px' }}>
-          <h1 style={{
-            fontFamily: 'var(--font-serif)',
-            fontSize: '1.1rem',
-            fontWeight: 700,
-            color: 'var(--gold)',
-            letterSpacing: '0.14em',
-          }}>
+          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.14em' }}>
             GIENIU HQ
           </h1>
           <StatusBadge status={status} />
@@ -208,16 +182,7 @@ function TopBar({
         <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.62rem', color: 'var(--muted)', letterSpacing: '0.1em' }}>
           Revenue &amp; Ops Command Center
         </div>
-        {/* Motto */}
-        <div style={{
-          marginTop: '8px',
-          padding: '5px 12px',
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderLeft: '2px solid var(--gold-dim)',
-          borderRadius: '3px',
-          display: 'inline-block',
-        }}>
+        <div style={{ marginTop: '8px', padding: '5px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: '2px solid var(--gold-dim)', borderRadius: '3px', display: 'inline-block' }}>
           <span style={{ fontFamily: 'var(--font-serif)', fontSize: '0.62rem', color: 'var(--muted)', fontStyle: 'italic', letterSpacing: '0.05em' }}>
             "Steady hands, sharp numbers, calm decisions."
           </span>
@@ -247,88 +212,125 @@ function TopBar({
   )
 }
 
-// ── Right panel (GIENIU SAYS + mic + chips) ───────────────────────────────────
+// ── Right panel — conversational AI interface ─────────────────────────────────
+
+const CHIPS = [
+  'How are we doing today?',
+  'What needs attention?',
+  'Top campaign',
+  'Compare Meta to Wix',
+]
 
 function RightPanel({
-  response, onPrompt, speaking, onMic, listening,
+  response, onQuery, speaking, onMic, listening, muted, onMuteToggle, transcript,
 }: {
   response: string
-  onPrompt: (label: string) => void
+  onQuery: (query: string) => void
   speaking: boolean
   onMic: () => void
   listening: boolean
+  muted: boolean
+  onMuteToggle: () => void
+  transcript: string
 }) {
-  const CHIPS = [
-    'Revenue today',
-    'Top campaign',
-    'Webinar funnel',
-    'Red flags',
-  ]
+  const [inputVal, setInputVal] = useState('')
+
+  function handleSubmit() {
+    const q = inputVal.trim()
+    if (!q) return
+    onQuery(q)
+    setInputVal('')
+  }
 
   return (
     <aside className="hud-right">
-      {/* GIENIU SAYS */}
-      <div style={{ padding: '20px 18px', borderBottom: '1px solid var(--border)', flex: 1, overflowY: 'auto' }}>
-        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.62rem', color: 'var(--gold)', letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: '14px' }}>
-          Gieniu Says
+      {/* Response area — scrollable */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.62rem', color: 'var(--gold)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>
+            Gieniu Says
+          </div>
+          {speaking && (
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: 'var(--teal)', animation: 'pulse-mic 1.2s infinite' }} />
+              Speaking
+            </div>
+          )}
         </div>
 
         {response ? (
-          <div>
-            <pre style={{
-              whiteSpace: 'pre-wrap',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '0.8rem',
-              lineHeight: 1.75,
-              color: 'var(--text)',
-              maxHeight: '50vh',
-              overflowY: 'auto',
-            }}>
-              {response}
-            </pre>
-          </div>
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '0.78rem', lineHeight: 1.75, color: 'var(--text)', margin: 0 }}>
+            {response}
+          </pre>
         ) : (
-          <div style={{
-            padding: '20px',
-            background: 'var(--surface)',
-            border: '1px dashed var(--border)',
-            borderRadius: '4px',
-            textAlign: 'center',
-          }}>
+          <div style={{ padding: '20px', background: 'var(--surface)', border: '1px dashed var(--border)', borderRadius: '4px', textAlign: 'center' }}>
             <div style={{ fontSize: '1.5rem', marginBottom: '8px', opacity: 0.4 }}>📜</div>
             <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.72rem', color: 'var(--muted)', lineHeight: 1.6, fontStyle: 'italic' }}>
-              Issue a command or speak<br />to receive the briefing.
+              Speak or type to receive the briefing.
             </div>
           </div>
         )}
       </div>
 
-      {/* Speak to Gieniu */}
-      <div style={{ padding: '18px', borderTop: '1px solid var(--border)' }}>
-        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.58rem', color: 'var(--muted)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: '14px' }}>
-          Speak to Gieniu
+      {/* Input area — fixed at bottom */}
+      <div style={{ flexShrink: 0, padding: '14px 18px' }}>
+        {transcript && (
+          <div className="transcript-display">
+            Heard: "{transcript}"
+          </div>
+        )}
+
+        {/* Text input */}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+          <input
+            type="text"
+            className="gieniu-input"
+            placeholder="Ask Gieniu anything…"
+            value={inputVal}
+            onChange={e => setInputVal(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
+          />
+          <button
+            className="btn-sm"
+            onClick={handleSubmit}
+            disabled={!inputVal.trim()}
+            style={{ flexShrink: 0 }}
+          >
+            Ask
+          </button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+        {/* Mic + mute row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '10px' }}>
           <button
             className={`btn-mic${listening ? ' listening' : ''}`}
             onClick={onMic}
             title={listening ? 'Stop listening' : 'Start voice input'}
+            style={{ width: 52, height: 52, fontSize: '1.2rem' }}
           >
             {listening ? '⏹' : '🎙'}
           </button>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: listening ? 'var(--teal)' : 'var(--muted2)' }}>
-            {listening ? 'Listening…' : 'Tap to speak'}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '5px' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: listening ? 'var(--teal)' : 'var(--muted2)' }}>
+              {listening ? 'Listening…' : 'Tap to speak'}
+            </div>
+            <button
+              className={`btn-mute${muted ? ' muted' : ''}`}
+              onClick={onMuteToggle}
+              title={muted ? 'Unmute auto-speak' : 'Mute auto-speak'}
+            >
+              {muted ? '🔇 Muted' : '🔊 Auto-speak'}
+            </button>
           </div>
         </div>
 
         {/* Prompt chips */}
-        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.55rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '8px' }}>
-          Quick prompts
+        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.5rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '5px' }}>
+          Quick
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
           {CHIPS.map(chip => (
-            <button key={chip} className="prompt-chip" onClick={() => onPrompt(chip)}>
+            <button key={chip} className="prompt-chip" onClick={() => onQuery(chip)}>
               {chip}
             </button>
           ))}
@@ -357,33 +359,32 @@ function ComingSoon({ section }: { section: NavSection }) {
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [section, setSection]   = useState<NavSection>('command-center')
+  const [section, setSection] = useState<NavSection>('command-center')
 
   // Dashboard data
-  const [perf, setPerf]           = useState<DailyPerformance | null>(null)
-  const [trend, setTrend]         = useState<DailyPerformance[]>([])
-  const [ads, setAds]             = useState<MetaAdDaily[]>([])
-  const [runs, setRuns]           = useState<AutomationRun[]>([])
-  const [metaStats, setMetaStats] = useState<MetaStatsToday>({ meta_purchases: 0, latestDate: '', isStale: false })
-  const [status, setStatus]       = useState<DataStatus>('NO_DATA')
-  const [loading, setLoading]     = useState(true)
-  const [adsLoading, setAdsLoading] = useState(true)
+  const [perf, setPerf]               = useState<DailyPerformance | null>(null)
+  const [trend, setTrend]             = useState<DailyPerformance[]>([])
+  const [ads, setAds]                 = useState<MetaAdDaily[]>([])
+  const [runs, setRuns]               = useState<AutomationRun[]>([])
+  const [metaStats, setMetaStats]     = useState<MetaStatsToday>({ meta_purchases: 0, latestDate: '', isStale: false })
+  const [status, setStatus]           = useState<DataStatus>('NO_DATA')
+  const [loading, setLoading]         = useState(true)
+  const [adsLoading, setAdsLoading]   = useState(true)
   const [runsLoading, setRunsLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
 
   // JSU funnel
-  const [jsuSummary, setJsuSummary]         = useState<JsuFunnelSummary | null>(null)
-  const [jsuParticipants, setJsuParticipants] = useState<JsuParticipantRow[]>([])
-  const [jsuLoading, setJsuLoading]           = useState(false)
+  const [jsuSummary, setJsuSummary]                   = useState<JsuFunnelSummary | null>(null)
+  const [jsuParticipants, setJsuParticipants]         = useState<JsuParticipantRow[]>([])
+  const [jsuLoading, setJsuLoading]                   = useState(false)
   const [jsuParticipantsLoading, setJsuParticipantsLoading] = useState(false)
-  const [jsuResponse, setJsuResponse]         = useState('')
 
-  // Gieniu response (dashboard commands)
-  const [response, setResponse] = useState('')
-
-  // Voice
-  const [speaking, setSpeaking] = useState(false)
-  const [listening, setListening] = useState(false)
+  // Conversational state
+  const [response, setResponse]       = useState('')
+  const [speaking, setSpeaking]       = useState(false)
+  const [muted, setMuted]             = useState(false)
+  const [listening, setListening]     = useState(false)
+  const [transcript, setTranscript]   = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
 
@@ -438,24 +439,24 @@ export default function App() {
     return () => clearInterval(interval)
   }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants])
 
-  // ── Command handlers ─────────────────────────────────────────────────────────
+  // ── Auto-speak every answer ──────────────────────────────────────────────────
 
-  function handleCommand(key: CommandKey) {
-    let text = ''
-    switch (key) {
-      case 'revenue dzisiaj':      text = buildRevenueReport(perf, status); break
-      case 'raport operacyjny':    text = buildOperationalReport(perf, status); break
-      case 'pipeline':             text = buildPipelineReport(); break
-      case 'progi CPA':            text = buildCPAThresholds(); break
-      case 'progi CPA językowy':   text = buildCPAThresholdsLang(); break
-      case 'red flagi':            text = buildRedFlags(perf); break
-      case 'kreatywy':             text = buildCreativesReport(); break
-      case 'retargeting':          text = buildRetargetingReport(); break
-      case 'rytm maili':           text = buildMailRhythm(); break
-      case 'co tydzień':           text = buildWeeklyPlan(); break
-    }
+  function speakAnswer(text: string) {
     setResponse(text)
+    if (muted || !text.trim()) return
+    stopAudio()
+    setSpeaking(true)
+    speak(text).then(() => setSpeaking(false)).catch(() => setSpeaking(false))
   }
+
+  // ── Intent handler — natural language to response ────────────────────────────
+
+  function handleIntentQuery(query: string) {
+    const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary })
+    speakAnswer(result)
+  }
+
+  // ── JSU command handler — webinar panel embedded buttons ─────────────────────
 
   function handleJsuCommand(key: JsuCommandKey) {
     let text = ''
@@ -469,29 +470,7 @@ export default function App() {
       case 'attendance rate':              text = buildAttendanceRateReport(jsuSummary); break
       case 'kto był i kupił':              text = buildWhoAttendedAndBought(jsuSummary); break
     }
-    setJsuResponse(text)
-    setResponse(text)
-  }
-
-  // ── Prompt chips ─────────────────────────────────────────────────────────────
-
-  function handlePrompt(label: string) {
-    switch (label) {
-      case 'Revenue today':  handleCommand('revenue dzisiaj'); break
-      case 'Top campaign': {
-        if (ads.length === 0) { setResponse('No campaign data for today.'); break }
-        const top = ads[0]
-        setResponse(`Top campaign today:\n"${top.campaign_name ?? top.campaign_id}"\nSpend: ${top.spend.toFixed(2)} PLN  Clicks: ${top.link_clicks ?? '—'}  Meta purchases: ${top.purchases ?? 0}`)
-        break
-      }
-      case 'Webinar funnel': {
-        const text = buildJsuFunnelReport(jsuSummary)
-        setJsuResponse(text)
-        setResponse(text)
-        break
-      }
-      case 'Red flags':  handleCommand('red flagi'); break
-    }
+    speakAnswer(text)
   }
 
   // ── Voice input ───────────────────────────────────────────────────────────────
@@ -508,7 +487,7 @@ export default function App() {
     const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition
 
     if (!SR) {
-      setResponse('Voice input is not supported in this browser. Use Chrome or Edge.')
+      speakAnswer('Voice input is not supported in this browser. Use Chrome or Edge.')
       return
     }
 
@@ -520,56 +499,32 @@ export default function App() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rec.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript.toLowerCase().trim()
+      const heard = event.results[0][0].transcript.trim()
       setListening(false)
-
-      if (transcript.includes('revenue') || transcript.includes('orders')) {
-        handleCommand('revenue dzisiaj')
-      } else if (transcript.includes('pipeline')) {
-        handleCommand('pipeline')
-      } else if (transcript.includes('cpa') || transcript.includes('thresholds')) {
-        handleCommand('progi CPA')
-      } else if (transcript.includes('flag') || transcript.includes('warning')) {
-        handleCommand('red flagi')
-      } else if (transcript.includes('creative')) {
-        handleCommand('kreatywy')
-      } else if (transcript.includes('retarget')) {
-        handleCommand('retargeting')
-      } else if (transcript.includes('mail') || transcript.includes('email')) {
-        handleCommand('rytm maili')
-      } else if (transcript.includes('webinar') || transcript.includes('funnel') || transcript.includes('jsu')) {
-        handleJsuCommand('funnel JSU')
-      } else if (transcript.includes('campaign') || transcript.includes('top ad')) {
-        handlePrompt('Top campaign')
-      } else if (transcript.includes('report') || transcript.includes('operational')) {
-        handleCommand('raport operacyjny')
-      } else {
-        setResponse(`Heard: "${transcript}"\n\nI did not match a command. Try: "revenue", "red flags", "pipeline", "webinar funnel", "creatives".`)
-      }
+      setTranscript(heard)
+      handleIntentQuery(heard)
     }
 
-    rec.onerror = () => setListening(false)
-    rec.onend   = () => setListening(false)
+    rec.onerror = () => { setListening(false) }
+    rec.onend   = () => { setListening(false) }
 
     rec.start()
     setListening(true)
+    setTranscript('')
   }
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
-  const cpaHigh = perf?.real_cpa != null && perf.real_cpa > 50
+  const cpaHigh  = perf?.real_cpa != null && perf.real_cpa > 50
   const jsuAlert = !!jsuSummary && jsuSummary.bottleneck !== 'OK' && jsuSummary.bottleneck !== 'NO_DATA' && jsuSummary.bottleneck !== 'NO_SOURCES'
-  const rightResponse = section === 'webinars' ? jsuResponse : response
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="hud-layout">
 
-      {/* Sidebar */}
       <Sidebar active={section} onNavigate={setSection} jsuAlert={jsuAlert} />
 
-      {/* Main area */}
       <div className="hud-main">
         <TopBar
           status={status}
@@ -579,16 +534,13 @@ export default function App() {
           onRefresh={() => { loadData(); loadAds(); loadRuns(); loadJsuFunnel() }}
         />
 
-        <div style={{ flex: 1, padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ flex: 1, padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto' }}>
 
           {/* ── COMMAND CENTER ─────────────────────────────────────── */}
           {section === 'command-center' && (
             <>
-              {/* KPI Cards */}
               {loading ? (
-                <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                  Loading data…
-                </div>
+                <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>Loading data…</div>
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                   <KPICard label="Wix Orders" value={fmtNum(perf?.wix_orders)} />
@@ -600,23 +552,20 @@ export default function App() {
                 </div>
               )}
 
-              {/* Revenue trend chart */}
               <div className="card">
                 <div className="section-title section-title-gold" style={{ marginBottom: '10px' }}>Revenue Trend — 7 Days</div>
                 <RevenueTrendChart rows={trend} loading={loading} />
                 <div style={{ marginTop: '8px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)' }}>
-                    Real ROAS = Wix Revenue ÷ Meta Spend
-                  </span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)' }}>
-                    Real CPA = Meta Spend ÷ Wix Orders
-                  </span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)' }}>Real ROAS = Wix Revenue ÷ Meta Spend</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)' }}>Real CPA = Meta Spend ÷ Wix Orders</span>
                 </div>
               </div>
 
-              {/* Commands */}
-              <div className="card">
-                <CommandPanel onCommand={handleCommand} loading={false} />
+              <div style={{ padding: '10px 16px', background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: '2px solid var(--gold-dim)', borderRadius: '4px' }}>
+                <span style={{ fontFamily: 'var(--font-serif)', fontSize: '0.62rem', color: 'var(--muted)', fontStyle: 'italic' }}>
+                  Ask Gieniu anything — speak or type in the panel on the right.
+                  Try: "How are we doing today?", "What needs attention?", "Compare Meta to Wix."
+                </span>
               </div>
             </>
           )}
@@ -651,7 +600,6 @@ export default function App() {
             </div>
           )}
 
-          {/* ── COMING SOON ───────────────────────────────────────── */}
           {!['command-center', 'campaigns', 'webinars', 'automation'].includes(section) && (
             <ComingSoon section={section} />
           )}
@@ -659,13 +607,15 @@ export default function App() {
         </div>
       </div>
 
-      {/* Right panel */}
       <RightPanel
-        response={rightResponse}
-        onPrompt={handlePrompt}
+        response={response}
+        onQuery={handleIntentQuery}
         speaking={speaking}
         onMic={handleMic}
         listening={listening}
+        muted={muted}
+        onMuteToggle={() => setMuted(m => !m)}
+        transcript={transcript}
       />
 
     </div>
