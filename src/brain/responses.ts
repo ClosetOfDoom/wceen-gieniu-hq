@@ -15,17 +15,22 @@ function fmt(n: number | null | undefined, decimals = 0, suffix = ''): string {
   return n.toFixed(decimals) + suffix
 }
 
-function fmtZl(n: number | null | undefined): string {
+function fmtPln(n: number | null | undefined): string {
   if (n == null) return '—'
-  return n.toFixed(2) + ' zł'
+  return n.toFixed(2) + ' PLN'
+}
+
+function fmtNum(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return n.toLocaleString('en-US')
 }
 
 function statusLabel(s: DataStatus): string {
   switch (s) {
-    case 'OK': return 'OK'
-    case 'META_NOT_LIVE': return 'META NIE LECIAŁA'
-    case 'SALES_WARNING': return 'OSTRZEŻENIE SPRZEDAŻ'
-    case 'NO_DATA': return 'BRAK DANYCH'
+    case 'OK':            return 'OK'
+    case 'META_NOT_LIVE': return 'META NOT LIVE'
+    case 'SALES_WARNING': return 'SALES WARNING'
+    case 'NO_DATA':       return 'NO DATA'
   }
 }
 
@@ -44,16 +49,16 @@ export type CommandKey =
   | 'co tydzień'
 
 export const COMMANDS: { key: CommandKey; label: string }[] = [
-  { key: 'revenue dzisiaj', label: 'Przychód dziś' },
-  { key: 'raport operacyjny', label: 'Raport operacyjny' },
-  { key: 'pipeline', label: 'Pipeline' },
-  { key: 'progi CPA', label: 'Progi CPA' },
-  { key: 'progi CPA językowy', label: 'Progi CPA językowy' },
-  { key: 'red flagi', label: 'Red flagi' },
-  { key: 'kreatywy', label: 'Kreatywy' },
-  { key: 'retargeting', label: 'Retargeting' },
-  { key: 'rytm maili', label: 'Rytm maili' },
-  { key: 'co tydzień', label: 'Co tydzień' },
+  { key: 'revenue dzisiaj',    label: 'Revenue Today' },
+  { key: 'raport operacyjny',  label: 'Ops Report' },
+  { key: 'pipeline',           label: 'Pipeline' },
+  { key: 'progi CPA',          label: 'CPA Thresholds' },
+  { key: 'progi CPA językowy', label: 'CPA Thresholds — Lang' },
+  { key: 'red flagi',          label: 'Red Flags' },
+  { key: 'kreatywy',           label: 'Creatives' },
+  { key: 'retargeting',        label: 'Retargeting' },
+  { key: 'rytm maili',         label: 'Mailing Rhythm' },
+  { key: 'co tydzień',         label: 'Weekly Checklist' },
 ]
 
 // ── JSU command type ──────────────────────────────────────────────────────────
@@ -78,7 +83,7 @@ export function buildRevenueReport(
   const nextMove = pickPhrase(NEXT_MOVES)
 
   if (status === 'NO_DATA') {
-    return `${opener}\n\n${pickPhrase(NO_DATA_VERDICTS)}\n\nKolejny ruch: sprawdź scenariusze Make w panelu automatyzacji.`
+    return `${opener}\n\n${pickPhrase(NO_DATA_VERDICTS)}\n\nNext move: check Make scenarios in the automation panel.`
   }
 
   const orders = perf?.wix_orders ?? 0
@@ -103,13 +108,13 @@ export function buildRevenueReport(
     '',
     verdict,
     '',
-    `Zamówienia Wix: ${orders}`,
-    `Przychód Wix: ${fmtZl(revenue)}`,
-    `Wydatki Meta: ${fmtZl(spend)}`,
-    `Realny koszt zakupu: ${cpa != null ? fmtZl(cpa) : '—'}`,
-    `Realny ROAS: ${roas != null ? fmt(roas, 2, 'x') : '—'}`,
+    `Wix orders: ${orders}`,
+    `Wix revenue: ${fmtPln(revenue)}`,
+    `Meta ad spend: ${fmtPln(spend)}`,
+    `Real CPA: ${cpa != null ? fmtPln(cpa) : '—'}`,
+    `Real ROAS: ${roas != null ? fmt(roas, 2, 'x') : '—'}`,
     '',
-    `Kolejny ruch: ${nextMove}`,
+    `Next move: ${nextMove}`,
   ]
 
   return lines.join('\n')
@@ -121,22 +126,22 @@ export function buildOperationalReport(
 ): string {
   const opener = pickPhrase(OPENERS)
   if (!perf || status === 'NO_DATA') {
-    return `${opener}\n\nBrak danych operacyjnych na dziś. Sprawdź Make i połączenie Supabase.`
+    return `${opener}\n\nNo operational data for today. Check Make and the Supabase connection.`
   }
 
   const lines = [
     opener,
     '',
-    '— RAPORT OPERACYJNY —',
+    '— OPERATIONAL REPORT —',
     '',
-    `Zamówienia Wix: ${perf.wix_orders}`,
-    `Przychód: ${fmtZl(perf.wix_revenue)}`,
-    `Meta spend: ${fmtZl(perf.meta_spend)}`,
-    `Wyświetlenia: ${fmt(perf.impressions)}`,
-    `Kliknięcia linku: ${fmt(perf.link_clicks)}`,
-    `Realny koszt zakupu: ${perf.real_cpa != null ? fmtZl(perf.real_cpa) : '—'}`,
-    `Realny ROAS: ${perf.real_roas != null ? fmt(perf.real_roas, 2, 'x') : '—'}`,
-    `Aktywne reklamy: ${perf.ads_count ?? '—'}`,
+    `Wix orders: ${perf.wix_orders}`,
+    `Revenue: ${fmtPln(perf.wix_revenue)}`,
+    `Meta ad spend: ${fmtPln(perf.meta_spend)}`,
+    `Impressions: ${fmtNum(perf.impressions)}`,
+    `Link clicks: ${fmtNum(perf.link_clicks)}`,
+    `Real CPA: ${perf.real_cpa != null ? fmtPln(perf.real_cpa) : '—'}`,
+    `Real ROAS: ${perf.real_roas != null ? fmt(perf.real_roas, 2, 'x') : '—'}`,
+    `Active ads: ${perf.ads_count ?? '—'}`,
     '',
     `Status: ${statusLabel(status)}`,
   ]
@@ -147,50 +152,50 @@ export function buildPipelineReport(): string {
   const opener = pickPhrase(OPENERS)
   return `${opener}
 
-— PIPELINE WCEEN —
+— WCEEN PIPELINE —
 
-Ścieżka pamięć:
-  Meta Ads → Pakiet Pamięciowy 119 zł → onboarding mail → webinar "Jak się uczyć" (czw. 18:00) → kurs 549 zł → WSZTP
+Memory path:
+  Meta Ads → Memory Pack 119 PLN → onboarding email → webinar "Jak się uczyć" (Thu 18:00) → course 549 PLN → WSZTP
 
-Ścieżka języki:
-  Meta Ads → Pakiet Językowy 114 zł → onboarding mail → webinar Językozak AI (wt. 18:00) → Językozak AI → WSZTP
+Language path:
+  Meta Ads → Language Pack 114 PLN → onboarding email → webinar Językozak AI (Tue 18:00) → Językozak AI → WSZTP
 
-CPA progi — Pamięć: cel maks. 40 zł / alarm 50 zł / stop 60 zł
-CPA progi — Języki: cel 20–25 zł / alarm 30–35 zł / break-even 40 zł
+CPA thresholds — Memory: target max 40 PLN / alert 50 PLN / stop 60 PLN
+CPA thresholds — Language: target 20–25 PLN / alert 30–35 PLN / break-even 40 PLN
 
-Baza aktywna: ~5000 kontaktów. Segmentuj lub nie pisz do nich.`
+Active list: ~5,000 contacts. Segment or do not email them.`
 }
 
 export function buildCPAThresholds(): string {
   return `${pickPhrase(OPENERS)}
 
-— PROGI CPA — PAKIET PAMIĘCIOWY —
-Cel: maks. 40 zł
-Alarm: powyżej 50 zł
-Nie skalować: powyżej 60 zł
-Strata: powyżej 70 zł (chyba że LTV uzasadnia)
+— CPA THRESHOLDS — MEMORY PACK —
+Target: max 40 PLN
+Alert: above 50 PLN
+Do not scale: above 60 PLN
+Loss territory: above 70 PLN (unless LTV justifies it)
 
-Formuła zysku netto:
-Liczba zakupów × 70 zł − wydatki Meta = zysk netto po reklamie`
+Net profit formula:
+Number of purchases × 70 PLN − Meta ad spend = net profit after ads`
 }
 
 export function buildCPAThresholdsLang(): string {
   return `${pickPhrase(OPENERS)}
 
-— PROGI CPA — PAKIET JĘZYKOWY —
-Cel: 20–25 zł
-Alarm: 30–35 zł
-Break-even: 40 zł
-Powyżej 40 zł: strata na froncie
+— CPA THRESHOLDS — LANGUAGE PACK —
+Target: 20–25 PLN
+Alert: 30–35 PLN
+Break-even: 40 PLN
+Above 40 PLN: loss on the front end
 
-Pakiet Językowy to wejście. Cel: domknięcie na Językozaka AI.`
+Language Pack is an entry product. Goal: close on Językozak AI.`
 }
 
 export function buildRedFlags(perf: DailyPerformance | null): string {
   const flags: string[] = []
 
   if (!perf) {
-    return `${pickPhrase(OPENERS)}\n\nBrak danych — nie mogę ocenić flag. Sprawdź Make.`
+    return `${pickPhrase(OPENERS)}\n\nNo data — cannot assess flags. Check Make.`
   }
 
   const cpa = perf.real_cpa ?? 0
@@ -198,40 +203,40 @@ export function buildRedFlags(perf: DailyPerformance | null): string {
   const orders = perf.wix_orders ?? 0
   const lc = perf.link_clicks ?? 0
 
-  if (cpa > 50) flags.push('CPA Pakietu Pamięciowego przekracza 50 zł')
-  if (spend > 0 && orders === 0) flags.push('Duży spend, zero zamówień — sprawdź lejek')
-  if (lc > 0 && orders === 0) flags.push('Kliknięcia linku są, zakupów brak — sprawdź landing')
-  if (perf.ads_count === 1) flags.push('Tylko jedna aktywna reklama — brak planu B')
+  if (cpa > 50) flags.push('Memory Pack CPA is above 50 PLN')
+  if (spend > 0 && orders === 0) flags.push('Heavy ad spend, zero orders — check the funnel')
+  if (lc > 0 && orders === 0) flags.push('Link clicks exist, no purchases — check the landing page')
+  if (perf.ads_count === 1) flags.push('Only one active ad — no backup plan')
 
   if (flags.length === 0) {
-    return `${pickPhrase(OPENERS)}\n\nNa dziś brak czerwonych flag. Ale nie zasypiaj — sprawdź kreatywy.`
+    return `${pickPhrase(OPENERS)}\n\nNo drama yet. But I am watching the funnel.`
   }
 
-  return `${pickPhrase(OPENERS)}\n\n— CZERWONE FLAGI —\n\n${flags.map(f => `⚠ ${f}`).join('\n')}`
+  return `${pickPhrase(OPENERS)}\n\n— RED FLAGS —\n\n${flags.map(f => `⚠ ${f}`).join('\n')}`
 }
 
 export function buildCreativesReport(): string {
   return `${pickPhrase(OPENERS)}
 
-— KREATYWY — minimum aktywne —
+— CREATIVES — minimum active —
 
-Pakiet Pamięciowy: 3 filmy + 2 obrazy + 1 advertorial
-Pakiet Językowy: 3 filmy + 2 obrazy + 1 advertorial lub quiz
+Memory Pack: 3 videos + 2 images + 1 advertorial
+Language Pack: 3 videos + 2 images + 1 advertorial or quiz
 
-Kąty Pamięć:
-  1. Szkoła Cię oszukała
-  2. Twój mózg nie jest słaby
-  3. Zapamiętaj X informacji w krótkim czasie
-  4. Największy błąd podczas nauki
-  5. Test pamięci
+Memory angles:
+  1. School lied to you
+  2. Your brain is not weak
+  3. Memorize X pieces of information fast
+  4. The biggest learning mistake
+  5. Memory test
 
-Kąty Języki:
-  1. Nie masz problemu z językami. Masz problem z metodą.
-  2. Słówka nie muszą wylatywać z głowy
-  3. Język jako gra, nie kara
-  4. Most do Językozaka AI
+Language angles:
+  1. You do not have a language problem. You have a method problem.
+  2. Vocabulary does not have to keep falling out of your head
+  3. Language as a game, not a punishment
+  4. Bridge to Językozak AI
 
-Brak nowych kreacji przez 7+ dni = czerwona flaga.`
+No new creatives in 7+ days = red flag.`
 }
 
 export function buildRetargetingReport(): string {
@@ -239,63 +244,63 @@ export function buildRetargetingReport(): string {
 
 — RETARGETING —
 
-Segmenty:
-  • View Content: 7 / 14 / 30 dni
-  • Add To Cart: 7 / 14 dni
-  • Initiate Checkout: 7 / 14 dni
-  • Engagers: 30 / 60 / 90 dni
-  • Buyers: 180 dni
+Segments:
+  • View Content: 7 / 14 / 30 days
+  • Add To Cart: 7 / 14 days
+  • Initiate Checkout: 7 / 14 days
+  • Engagers: 30 / 60 / 90 days
+  • Buyers: 180 days
 
-Lejek upsell:
-  Pakiet Pamięciowy → webinar "Jak się uczyć"
-  Kurs "Jak się uczyć" → WSZTP
-  Pakiet Językowy → Językozak AI
-  Językozak AI → WSZTP / inne programy
+Upsell funnel:
+  Memory Pack → webinar "Jak się uczyć"
+  Course "Jak się uczyć" → WSZTP
+  Language Pack → Językozak AI
+  Językozak AI → WSZTP / other programs
 
-ATC i IC muszą mieć osobne zestawy reklam.`
+ATC and IC must have separate ad sets.`
 }
 
 export function buildMailRhythm(): string {
   return `${pickPhrase(OPENERS)}
 
-— RYTM MAILI —
+— MAILING RHYTHM —
 
-Pn: edukacja / historia / problem tygodnia
-Wt: Językozak AI — zaproszenie na webinar 18:00
-Śr: follow-up po wtorku / sprzedaż JZK / case / replay
-Cz: webinar "Jak się uczyć" 18:00
-Pt: follow-up po czwartku / sprzedaż kursu / most do WSZTP
-Wk: storytelling / dowód społeczny / wartości WCEEN
+Mon: education / story / problem of the week
+Tue: Językozak AI — webinar invitation 18:00
+Wed: Tuesday follow-up / JZK sale / case study / replay
+Thu: webinar "Jak się uczyć" 18:00
+Fri: Thursday follow-up / course sale / bridge to WSZTP
+Weekend: storytelling / social proof / WCEEN values
 
-Pytanie kontrolne: Do którego segmentu piszemy i jaki jest następny logiczny krok tej osoby?`
+Control question: Which segment are we writing to, and what is the next logical step for that person?`
 }
 
 export function buildWeeklyPlan(): string {
   return `${pickPhrase(OPENERS)}
 
-— CO TYDZIEŃ —
+— WEEKLY CHECKLIST —
 
-Każdy tydzień musi mieć:
-  ✓ Wtorek 18:00 — webinar Językozak AI
-  ✓ Czwartek 18:00 — webinar "Jak się uczyć"
-  ✓ Min. 1 nowa kreacja (film lub obraz)
-  ✓ Segmentowany mailing do bazy
-  ✓ Sprawdzenie CPA Pakietu Pamięciowego i Językowego
-  ✓ Retargeting ATC/IC aktywny
-  ✓ Raport operacyjny poniedziałek rano
+Every week must include:
+  ✓ Tuesday 18:00 — Językozak AI webinar
+  ✓ Thursday 18:00 — "Jak się uczyć" webinar
+  ✓ Min. 1 new creative (video or image)
+  ✓ Segmented mailing to the list
+  ✓ CPA check for Memory Pack and Language Pack
+  ✓ ATC/IC retargeting active
+  ✓ Operational report Monday morning
 
-Nadrzędna zasada: Czy to zwiększa zysk, obniża CPA albo przesuwa klienta bliżej droższego produktu?`
+Overriding rule: Does this increase profit, lower CPA, or move the customer closer to the higher-priced product?`
 }
 
 // ── JSU Webinar Funnel builders ───────────────────────────────────────────────
 
 function noJsuData(what: string): string {
-  return `${pickPhrase(JSU_OPENERS)}\n\n${what}\n\nUruchom najpierw supabase/webinar_funnel_schema.sql i podłącz Make.`
+  return `${pickPhrase(JSU_OPENERS)}\n\n${what}\n\nConnect Make scenarios first — see docs/clickmeeting_make_scenarios.md.`
 }
 
 export function buildJsuWebinarReport(s: JsuFunnelSummary | null): string {
   if (!s || s.bottleneck === 'NO_DATA') {
-    return noJsuData('Brak danych webinarowych JSU w Supabase.')
+    return noJsuData('No JSU webinar data in Supabase.')
   }
   const opener = pickPhrase(JSU_OPENERS)
   const close = s.bottleneck === 'OK' ? pickPhrase(JSU_OK_CLOSES) : pickPhrase(JSU_BOTTLENECK_CLOSES)
@@ -305,17 +310,17 @@ export function buildJsuWebinarReport(s: JsuFunnelSummary | null): string {
     '',
     '— WEBINAR "JAK SIĘ UCZYĆ" —',
     '',
-    `Sesji w historii: ${s.sessions.length}`,
-    `Wysłano maili: ${s.hasEmailData ? s.totals.email_sent.toLocaleString('pl-PL') : 'brak danych z ESP'}`,
-    `Dostarczono: ${s.hasEmailData ? s.totals.email_delivered.toLocaleString('pl-PL') : '—'} (${pct(s.rates.delivery_rate)})`,
-    `Otwarcia: ${s.hasEmailData ? s.totals.email_opens.toLocaleString('pl-PL') : '—'} (OR: ${pct(s.rates.open_rate)})`,
-    `Kliknięcia: ${s.hasEmailData ? s.totals.email_clicks.toLocaleString('pl-PL') : '—'} (CTR: ${pct(s.rates.click_rate)})`,
-    `Zapisy webinar: ${s.hasClickMeetingData ? s.totals.registered.toLocaleString('pl-PL') : 'brak danych z ClickMeeting'}`,
-    `Obecni: ${s.hasClickMeetingData ? s.totals.attendees.toLocaleString('pl-PL') : '—'} (frekwencja: ${pct(s.rates.attendance_rate)})`,
-    `Zakupy 7d: ${s.totals.purchases} (konwersja: ${pct(s.rates.purchase_rate)})`,
-    `Przychód 7d: ${s.totals.revenue.toFixed(2)} zł`,
+    `Sessions in history: ${s.sessions.length}`,
+    `Emails sent: ${s.hasEmailData ? fmtNum(s.totals.email_sent) : 'no ESP data'}`,
+    `Delivered: ${s.hasEmailData ? fmtNum(s.totals.email_delivered) : '—'} (${pct(s.rates.delivery_rate)})`,
+    `Opens: ${s.hasEmailData ? fmtNum(s.totals.email_opens) : '—'} (OR: ${pct(s.rates.open_rate)})`,
+    `Clicks: ${s.hasEmailData ? fmtNum(s.totals.email_clicks) : '—'} (CTR: ${pct(s.rates.click_rate)})`,
+    `Webinar registrations: ${s.hasClickMeetingData ? fmtNum(s.totals.registered) : 'no ClickMeeting data'}`,
+    `Live attendees: ${s.hasClickMeetingData ? fmtNum(s.totals.attendees) : '—'} (show-up: ${pct(s.rates.attendance_rate)})`,
+    `Purchases (7d): ${s.totals.purchases} (conversion: ${pct(s.rates.purchase_rate)})`,
+    `Revenue (7d): ${fmtPln(s.totals.revenue)}`,
     '',
-    `Diagnoza: ${s.diagnosis}`,
+    `Diagnosis: ${s.diagnosis}`,
     '',
     close,
   ]
@@ -324,33 +329,33 @@ export function buildJsuWebinarReport(s: JsuFunnelSummary | null): string {
 
 export function buildWhyCourseNotSelling(s: JsuFunnelSummary | null): string {
   if (!s || s.bottleneck === 'NO_DATA') {
-    return noJsuData('Nie mam pełnych danych funnel — diagnoza niemożliwa.')
+    return noJsuData('No complete funnel data — diagnosis not possible.')
   }
   const opener = pickPhrase(JSU_OPENERS)
   const missing: string[] = []
-  if (!s.hasEmailData) missing.push('Nie mam danych z mailingu, więc nie rozstrzygam deliverability.')
-  if (!s.hasClickMeetingData) missing.push('Nie mam danych z ClickMeeting, więc nie rozstrzygam zapisów i obecności.')
+  if (!s.hasEmailData) missing.push('No email data yet — cannot diagnose deliverability.')
+  if (!s.hasClickMeetingData) missing.push('No ClickMeeting data yet — cannot diagnose registrations or attendance.')
 
   const lines = [
     opener,
     '',
-    '— CZEMU KURS "JAK SIĘ UCZYĆ" NIE SPRZEDAJE? —',
+    '— WHY IS "JAK SIĘ UCZYĆ" NOT SELLING? —',
     '',
   ]
   if (missing.length) lines.push(...missing, '')
   lines.push(
-    `Wąskie gardło: ${s.bottleneck}`,
+    `Bottleneck: ${s.bottleneck}`,
     '',
     s.diagnosis,
   )
   if (s.bottleneck === 'OK') {
     lines.push(
       '',
-      'Możliwe przyczyny przy poprawnym funnelu:',
-      '  1. Baza kupujących Pakiet Pamięciowy już kupiła kurs — brak nowych kandydatów.',
-      '  2. Brak nowego ruchu na kurs (Meta Ads → PP stop lub niski spend).',
-      '  3. Oferta webinaru nie zakomunikowana w follow-upie 24/48/72h.',
-      '  4. Sezonowość lub koliduje z innym wydarzeniem.',
+      'Possible causes when funnel metrics are clean:',
+      '  1. Memory Pack buyers have already bought the course — no new candidates.',
+      '  2. No new traffic into the funnel (Meta Ads → PP paused or low spend).',
+      '  3. Webinar offer not communicated in the 24/48/72h follow-up sequence.',
+      '  4. Seasonality or conflict with another event.',
     )
   }
   return lines.join('\n')
@@ -358,48 +363,48 @@ export function buildWhyCourseNotSelling(s: JsuFunnelSummary | null): string {
 
 export function buildJsuFunnelReport(s: JsuFunnelSummary | null): string {
   if (!s || s.sessions.length === 0) {
-    return noJsuData('Brak sesji JSU w tabeli webinar_sessions.')
+    return noJsuData('No JSU sessions in webinar_sessions table.')
   }
   const opener = pickPhrase(JSU_OPENERS)
   const recent3 = s.sessions.slice(0, 3)
   const lines = [
     opener,
     '',
-    '— FUNNEL JSU — ostatnie webinary —',
+    '— JSU FUNNEL — recent webinars —',
   ]
   for (const sess of recent3) {
-    const date = new Date(sess.scheduled_at).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const date = new Date(sess.scheduled_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
     lines.push(
       '',
       `Webinar ${date}:`,
-      `  Dostarczono: ${sess.email_delivered > 0 ? sess.email_delivered : 'brak'} maili`,
-      `  Frekwencja: ${sess.attendee_count}/${sess.registered_count} (${sess.attendance_rate_pct ?? '—'}%)`,
-      `  Zakupy: ${sess.purchases}, przychód: ${sess.revenue.toFixed(0)} zł`,
+      `  Delivered: ${sess.email_delivered > 0 ? fmtNum(sess.email_delivered) : 'no data'} emails`,
+      `  Show-up: ${sess.attendee_count}/${sess.registered_count} (${sess.attendance_rate_pct ?? '—'}%)`,
+      `  Purchases: ${sess.purchases}, revenue: ${fmtPln(sess.revenue)}`,
     )
   }
-  lines.push('', `Diagnoza: ${s.diagnosis}`)
+  lines.push('', `Diagnosis: ${s.diagnosis}`)
   return lines.join('\n')
 }
 
 export function buildCompareJsuWebinars(s: JsuFunnelSummary | null): string {
   if (!s || s.sessions.length < 2) {
-    return noJsuData('Za mało sesji JSU do porównania (minimum 2).')
+    return noJsuData('Not enough JSU sessions to compare (minimum 2).')
   }
   const opener = pickPhrase(JSU_OPENERS)
-  const lines = [opener, '', '— PORÓWNANIE WEBINARÓW JSU —']
+  const lines = [opener, '', '— JSU WEBINAR COMPARISON —']
   for (const sess of s.sessions.slice(0, 6)) {
-    const date = new Date(sess.scheduled_at).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })
+    const date = new Date(sess.scheduled_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
     const attend = sess.attendance_rate_pct != null ? sess.attendance_rate_pct + '%' : '—'
     const conv   = sess.purchase_rate_pct != null ? sess.purchase_rate_pct + '%' : '—'
-    lines.push(`  ${date}  frekw: ${attend.padEnd(6)}  konw: ${conv.padEnd(6)}  zakupy: ${sess.purchases}  przych: ${sess.revenue.toFixed(0)} zł`)
+    lines.push(`  ${date}  show-up: ${attend.padEnd(6)}  conv: ${conv.padEnd(6)}  sales: ${sess.purchases}  revenue: ${fmtPln(sess.revenue)}`)
   }
-  lines.push('', `Wąskie gardło: ${s.bottleneck}`)
+  lines.push('', `Bottleneck: ${s.bottleneck}`)
   return lines.join('\n')
 }
 
 export function buildDeliverabilityReport(s: JsuFunnelSummary | null): string {
   if (!s || !s.hasEmailData) {
-    return `${pickPhrase(JSU_OPENERS)}\n\nNie mam jeszcze danych z mailingu, więc nie rozstrzygam deliverability.\nPodłącz Make → ESP → Supabase (tabela email_campaigns).`
+    return `${pickPhrase(JSU_OPENERS)}\n\nNo email data yet — cannot diagnose deliverability.\nConnect Make → ESP → Supabase (email_campaigns table).`
   }
   const opener = pickPhrase(JSU_OPENERS)
   const delivRate = s.rates.delivery_rate
@@ -409,22 +414,22 @@ export function buildDeliverabilityReport(s: JsuFunnelSummary | null): string {
   const lines = [
     opener,
     '',
-    '— DELIVERABILITY MAILINGÓW JSU —',
+    '— JSU EMAIL DELIVERABILITY —',
     '',
-    `Wysłano: ${s.totals.email_sent.toLocaleString('pl-PL')}`,
-    `Dostarczono: ${s.totals.email_delivered.toLocaleString('pl-PL')} (${pct(delivRate)})`,
-    `Otwarcia: ${s.totals.email_opens.toLocaleString('pl-PL')} (OR: ${pct(openRate)})`,
+    `Sent: ${fmtNum(s.totals.email_sent)}`,
+    `Delivered: ${fmtNum(s.totals.email_delivered)} (${pct(delivRate)})`,
+    `Opens: ${fmtNum(s.totals.email_opens)} (OR: ${pct(openRate)})`,
     '',
     isOk
-      ? 'Dostarczalność OK — powyżej 85%. Problem leży gdzie indziej.'
-      : 'Dostarczalność poniżej 85% — sprawdź SPF/DKIM/DMARC, bounces, reputację domeny nadawcy.',
+      ? 'Deliverability OK — above 85%. Problem lies elsewhere.'
+      : 'Deliverability below 85% — check SPF/DKIM/DMARC, hard bounces, and sender domain reputation.',
   ]
   return lines.join('\n')
 }
 
 export function buildMailingDiagnosis(s: JsuFunnelSummary | null): string {
   if (!s || !s.hasEmailData) {
-    return `${pickPhrase(JSU_OPENERS)}\n\nNie mam danych z mailingu JSU. Podłącz Make → ESP → Supabase.`
+    return `${pickPhrase(JSU_OPENERS)}\n\nNo JSU mailing data. Connect Make → ESP → Supabase.`
   }
   const opener = pickPhrase(JSU_OPENERS)
   const or = s.rates.open_rate
@@ -432,15 +437,15 @@ export function buildMailingDiagnosis(s: JsuFunnelSummary | null): string {
   const dr = s.rates.delivery_rate
 
   const verdict = (() => {
-    if (dr !== null && dr < 0.85) return 'MAILING SIADŁ — problem z dostarczalnością. Sprawdź domenę i listę.'
-    if (or !== null && or < 0.15) return 'Open rate nisko — temat słaby albo maile w spamie/promocjach.'
-    if (cr !== null && cr < 0.02) return 'Click rate nisko — CTA w mailu nie pracuje. Zmień copy lub układ.'
-    return 'Mailing wygląda OK. Problem leży dalej w funnelu.'
+    if (dr !== null && dr < 0.85) return 'MAILING CRASHED — deliverability problem. Check the domain and the list.'
+    if (or !== null && or < 0.15) return 'Open rate too low — subject line is weak or emails are landing in spam / promotions.'
+    if (cr !== null && cr < 0.02) return 'Click rate too low — the CTA in the email is not working. Rewrite the copy or layout.'
+    return 'Mailing looks OK. Problem lies further down the funnel.'
   })()
 
   return [
     opener, '',
-    '— CZY MAILING DO JSU SIADŁ? —', '',
+    '— DID THE JSU MAILING CRASH? —', '',
     `Delivery rate: ${pct(dr)}`,
     `Open rate: ${pct(or)}`,
     `Click rate: ${pct(cr)}`,
@@ -450,17 +455,17 @@ export function buildMailingDiagnosis(s: JsuFunnelSummary | null): string {
 
 export function buildAttendanceRateReport(s: JsuFunnelSummary | null): string {
   if (!s || !s.hasClickMeetingData) {
-    return `${pickPhrase(JSU_OPENERS)}\n\nNie mam jeszcze danych z ClickMeeting, więc nie rozstrzygam zapisów i obecności.\nPodłącz Make → ClickMeeting → Supabase (webinar_sessions, webinar_participants).`
+    return `${pickPhrase(JSU_OPENERS)}\n\nNo ClickMeeting data yet — cannot diagnose registrations or attendance.\nConnect Make → ClickMeeting → Supabase (webinar_sessions, webinar_participants).`
   }
   const opener = pickPhrase(JSU_OPENERS)
   const ar = s.rates.attendance_rate
   const verdict = ar !== null && ar < 0.60
-    ? `Frekwencja ${pct(ar)} — poniżej 60%. Sprawdź sekwencję przypomnień: email 24h + 1h przed. Godzina 18:00 w czwartek się sprawdza, ale przypomnienia mogą podnieść show-up.`
-    : `Frekwencja ${pct(ar)} — OK lub brak danych historycznych do porównania.`
+    ? `Show-up rate is ${pct(ar)} — below 60%. Check the reminder sequence: email 24h + 1h before. Thursday 18:00 is a solid slot, but reminders can lift attendance.`
+    : `Show-up rate is ${pct(ar)} — OK, or not enough historical data to compare.`
 
-  const lines = [opener, '', '— ATTENDANCE RATE JSU —', '']
+  const lines = [opener, '', '— JSU ATTENDANCE RATE —', '']
   for (const sess of s.sessions.slice(0, 5)) {
-    const date = new Date(sess.scheduled_at).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })
+    const date = new Date(sess.scheduled_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
     lines.push(`  ${date}  ${sess.attendee_count}/${sess.registered_count}  (${sess.attendance_rate_pct ?? '—'}%)`)
   }
   lines.push('', verdict)
@@ -469,21 +474,21 @@ export function buildAttendanceRateReport(s: JsuFunnelSummary | null): string {
 
 export function buildWhoAttendedAndBought(s: JsuFunnelSummary | null): string {
   if (!s || !s.hasClickMeetingData) {
-    return `${pickPhrase(JSU_OPENERS)}\n\nNie mam danych z ClickMeeting.\nPodłącz Make → ClickMeeting → webinar_participants w Supabase.`
+    return `${pickPhrase(JSU_OPENERS)}\n\nNo ClickMeeting data.\nConnect Make → ClickMeeting → webinar_participants in Supabase.`
   }
   const opener = pickPhrase(JSU_OPENERS)
   return [
     opener, '',
-    '— KTO BYŁ I KUPIŁ — JSU —', '',
-    `Łącznie uczestników (wszystkie sesje): ${s.totals.attendees}`,
-    `Łącznie zakupów: ${s.totals.purchases}`,
-    `Konwersja uczestnik → zakup: ${pct(s.rates.purchase_rate)}`,
-    `Przychód łącznie: ${s.totals.revenue.toFixed(2)} zł`,
+    '— WHO ATTENDED AND BOUGHT — JSU —', '',
+    `Total attendees (all sessions): ${fmtNum(s.totals.attendees)}`,
+    `Total purchases: ${s.totals.purchases}`,
+    `Attendee → purchase conversion: ${pct(s.rates.purchase_rate)}`,
+    `Total revenue: ${fmtPln(s.totals.revenue)}`,
     '',
-    'Lista uczestników w zakładce JSU — kliknij "Pokaż uczestników".',
+    'Full participant list is in the JSU tab — click "Show participants".',
     '',
     s.totals.purchases === 0 && s.totals.attendees > 0
-      ? 'Zero zakupów przy obecnych uczestnikach — sprawdź product mapping w Make (email → wix_order_id).'
+      ? 'Zero purchases with attendees present — check product mapping in Make (email → wix_order_id).'
       : s.diagnosis,
   ].join('\n')
 }

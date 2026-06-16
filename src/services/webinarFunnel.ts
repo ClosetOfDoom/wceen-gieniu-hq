@@ -86,7 +86,7 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
 
   if (error) {
     console.warn('v_webinar_jsu_funnel_by_session unavailable:', error.message)
-    return buildEmptySummary('Widok Supabase niedostępny — uruchom najpierw webinar_funnel_schema.sql.')
+    return buildEmptySummary('Supabase view unavailable — run webinar_funnel_schema.sql first.')
   }
 
   return buildSummary((data ?? []) as JsuFunnelRow[])
@@ -119,7 +119,7 @@ function buildEmptySummary(reason = ''): JsuFunnelSummary {
     hasEmailData: false,
     hasClickMeetingData: false,
     bottleneck: 'NO_DATA',
-    diagnosis: reason || 'Brak sesji webinarowych JSU w Supabase.',
+    diagnosis: reason || 'No JSU webinar sessions in Supabase yet.',
     totals: { email_sent: 0, email_delivered: 0, email_opens: 0, email_clicks: 0, registered: 0, attendees: 0, purchases: 0, revenue: 0 },
     rates: { delivery_rate: null, open_rate: null, click_rate: null, reg_rate: null, attendance_rate: null, purchase_rate: null },
   }
@@ -177,9 +177,9 @@ function diagnose(
     return {
       bottleneck: 'NO_SOURCES',
       diagnosis:
-        'Nie mam jeszcze danych z mailingu ani z ClickMeeting. ' +
-        'Podłącz scenariusze Make (patrz: docs/clickmeeting_make_scenarios.md). ' +
-        'Bez tych danych nie rozstrzygam gdzie leży problem.',
+        'No email or ClickMeeting data yet. ' +
+        'Connect Make scenarios — see docs/clickmeeting_make_scenarios.md. ' +
+        'Without this data I cannot determine where the bottleneck is.',
     }
   }
 
@@ -187,9 +187,9 @@ function diagnose(
     return {
       bottleneck: 'DELIVERABILITY',
       diagnosis:
-        `Wskaźnik dostarczalności wynosi ${pct(r.delivery_rate)} — poniżej normy 85%. ` +
-        'To problem z reputacją nadawcy, listą (zbyt wielu bounców/spam traps) lub domeną. ' +
-        'Sprawdź: wyniki w ESP (MailerLite/AC), rekordy SPF/DKIM/DMARC, odsetek twardych bounców.',
+        `Delivery rate is ${pct(r.delivery_rate)} — below the 85% benchmark. ` +
+        'This is a sender reputation, list quality, or domain issue. ' +
+        'Check: ESP dashboard (MailerLite/AC), SPF/DKIM/DMARC records, hard bounce rate.',
     }
   }
 
@@ -197,9 +197,9 @@ function diagnose(
     return {
       bottleneck: 'OPENS',
       diagnosis:
-        `Open rate wynosi ${pct(r.open_rate)} — norma dla bazy WCEEN to 20–30%. ` +
-        'Problem: temat maila nie przyciąga albo maile lądują w spamie/promocjach. ' +
-        'Sprawdź: czy temat personalizowany, czy baza nie jest przesycona, czy godzina wysyłki jest ok.',
+        `Open rate is ${pct(r.open_rate)} — WCEEN baseline is 20–30%. ` +
+        'Subject line is not landing, or emails are going to spam or promotions. ' +
+        'Check: personalised subject, list fatigue, sending time.',
     }
   }
 
@@ -207,9 +207,9 @@ function diagnose(
     return {
       bottleneck: 'CLICKS',
       diagnosis:
-        `Click rate wynosi ${pct(r.click_rate)} — poniżej 2% z dostarczonych. ` +
-        'Otwierają, ale CTA nie konwertuje. ' +
-        'Sprawdź: jeden wyraźny przycisk CTA, copy propozycji wartości webinaru, link działa.',
+        `Click rate is ${pct(r.click_rate)} — below 2% of delivered. ` +
+        'People open but do not click. The CTA is not converting. ' +
+        'Check: single prominent CTA button, value proposition copy, link works.',
     }
   }
 
@@ -217,9 +217,9 @@ function diagnose(
     return {
       bottleneck: 'REGISTRATIONS',
       diagnosis:
-        `Konwersja klik → rejestracja na webinar wynosi ${pct(r.reg_rate)} — poniżej 5%. ` +
-        'Klikają w maila, ale nie rejestrują się. ' +
-        'Sprawdź: landing strona webinaru, formularz rejestracji ClickMeeting, prędkość ładowania.',
+        `Click-to-registration rate is ${pct(r.reg_rate)} — below 5%. ` +
+        'People click the email but do not register for the webinar. ' +
+        'Check: webinar landing page, ClickMeeting registration form, page load speed.',
     }
   }
 
@@ -227,10 +227,10 @@ function diagnose(
     return {
       bottleneck: 'ATTENDANCE',
       diagnosis:
-        `Frekwencja na webinarze wynosi ${pct(r.attendance_rate)} — poniżej 60%. ` +
-        'Rejestrują się, ale nie przychodzą. ' +
-        'Sprawdź: sekwencja przypomnień (email 24h + 1h przed), godzina 18:00 czwartek, ' +
-        'landing po rejestracji potwierdza datę i czas.',
+        `Webinar attendance is ${pct(r.attendance_rate)} — below 60%. ` +
+        'People register but do not show up. ' +
+        'Check: reminder sequence (email 24h + 1h before), Thursday 18:00 slot, ' +
+        'confirmation page shows the correct date and time.',
     }
   }
 
@@ -240,19 +240,19 @@ function diagnose(
       return {
         bottleneck: 'PRODUCT_MAPPING',
         diagnosis:
-          `${t.attendees} uczestników, zero zakupów w systemie. ` +
-          'To może być problem mapowania produktu: sprawdź, czy zamówienia "Jak się uczyć" ' +
-          '(549 zł) w Wix są prawidłowo dopasowywane przez Make do tabeli webinar_participants ' +
-          '(dopasowanie po emailu, okno 7 dni po webinarze).',
+          `${t.attendees} attendees, zero purchases in the system. ` +
+          'This looks like a product mapping issue: verify that "Jak się uczyć" orders (549 PLN) ' +
+          'in Wix are being matched by Make to webinar_participants ' +
+          '(match by email, 7-day window after the webinar).',
       }
     }
     return {
       bottleneck: 'PURCHASE_PITCH',
       diagnosis:
-        `Konwersja uczestnik → zakup wynosi ${pct(r.purchase_rate)} — poniżej 3%. ` +
-        'Przychodzą na webinar, ale nie kupują. ' +
-        'Sprawdź: oferta na końcu webinaru, czas trwania pitcha, strona zakupu, follow-up ' +
-        '24h/48h/72h po webinarze, czy replay dostaje osobną ofertę.',
+        `Attendee-to-purchase conversion is ${pct(r.purchase_rate)} — below 3%. ` +
+        'People attend but do not buy. ' +
+        'Check: offer at the end of the webinar, pitch length, purchase page, ' +
+        '24h/48h/72h follow-up sequence, whether the replay gets its own offer.',
     }
   }
 
@@ -260,8 +260,8 @@ function diagnose(
     return {
       bottleneck: 'OK',
       diagnosis:
-        'Nie mam jeszcze danych z mailingu, więc nie rozstrzygam deliverability ani open/click rate. ' +
-        'ClickMeeting wygląda OK. Podłącz Make → ESP aby pełna diagnoza była możliwa.',
+        'No email data yet, so deliverability, open rate, and click rate cannot be diagnosed. ' +
+        'ClickMeeting looks OK. Connect Make → ESP to enable full diagnosis.',
     }
   }
 
@@ -269,17 +269,17 @@ function diagnose(
     return {
       bottleneck: 'OK',
       diagnosis:
-        'Nie mam jeszcze danych z ClickMeeting, więc nie rozstrzygam zapisów i obecności. ' +
-        'Email funnel wygląda OK. Podłącz Make → ClickMeeting aby diagnoza była kompletna.',
+        'No ClickMeeting data yet, so registrations and attendance cannot be diagnosed. ' +
+        'Email funnel looks OK. Connect Make → ClickMeeting for a complete picture.',
     }
   }
 
   return {
     bottleneck: 'OK',
     diagnosis:
-      'Funnel wygląda sprawnie na każdym etapie. ' +
-      'Możliwe: kurs nie sprzedaje się od tygodnia bo poprzedni kupujący nie wrócili (LTV), ' +
-      'brak nowego ruchu do lejka lub sezonowość. Sprawdź segmentację bazy.',
+      'Funnel looks healthy at every stage. ' +
+      'Possible causes: past buyers have already purchased the course (no new candidates), ' +
+      'insufficient new traffic into the funnel, or seasonality. Check list segmentation.',
   }
 }
 
@@ -294,7 +294,7 @@ export function pct(rate: number | null, decimals = 1): string {
   return (rate * 100).toFixed(decimals) + '%'
 }
 
-export function fmtZlFunnel(n: number | null | undefined): string {
+export function fmtPlnFunnel(n: number | null | undefined): string {
   if (n == null) return '—'
-  return n.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' zł'
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' PLN'
 }

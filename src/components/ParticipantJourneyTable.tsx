@@ -14,14 +14,14 @@ function maskEmail(email: string): string {
 
 function fmtDate(d: string | null): string {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })
+  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
 }
 
 export function ParticipantJourneyTable({ rows, loading }: Props) {
   if (loading) {
     return (
       <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '0.78rem', padding: '12px 0' }}>
-        Ładuję uczestników...
+        Loading participants...
       </div>
     )
   }
@@ -36,9 +36,9 @@ export function ParticipantJourneyTable({ rows, loading }: Props) {
           lineHeight: 1.6,
         }}
       >
-        Brak danych uczestników JSU.
+        No JSU participant data.
         <br />
-        Uruchom Make → ClickMeeting → Supabase (webinar_participants).
+        Connect Make → ClickMeeting → Supabase (webinar_participants).
       </div>
     )
   }
@@ -57,13 +57,13 @@ export function ParticipantJourneyTable({ rows, loading }: Props) {
         }}
       >
         <span style={{ fontSize: '0.72rem', color: '#00ff88', fontFamily: 'monospace' }}>
-          Kupili: {buyers.length}
+          Bought: {buyers.length}
         </span>
         <span style={{ fontSize: '0.72rem', color: '#e8ff00', fontFamily: 'monospace' }}>
-          Byli, nie kupili: {attendedNoBuy.length}
+          Attended, no purchase: {attendedNoBuy.length}
         </span>
         <span style={{ fontSize: '0.72rem', color: '#555', fontFamily: 'monospace' }}>
-          Łącznie uczestników: {rows.filter(r => r.attended).length} / {rows.length} zapisanych
+          Total attendees: {rows.filter(r => r.attended).length} / {rows.length} registered
         </span>
       </div>
       <div style={{ overflowX: 'auto', maxHeight: '280px', overflowY: 'auto' }}>
@@ -79,10 +79,10 @@ export function ParticipantJourneyTable({ rows, loading }: Props) {
             <tr style={{ borderBottom: '1px solid #2a2a2a', color: '#555', position: 'sticky', top: 0, background: '#111' }}>
               <th style={th}>Email</th>
               <th style={th}>Webinar</th>
-              <th style={{ ...th, textAlign: 'center' }}>Był</th>
+              <th style={{ ...th, textAlign: 'center' }}>Attended</th>
               <th style={{ ...th, textAlign: 'right' }}>Min</th>
-              <th style={{ ...th, textAlign: 'center' }}>Kupił</th>
-              <th style={{ ...th, textAlign: 'right' }}>Wartość</th>
+              <th style={{ ...th, textAlign: 'center' }}>Bought</th>
+              <th style={{ ...th, textAlign: 'right' }}>Value</th>
             </tr>
           </thead>
           <tbody>
@@ -100,7 +100,7 @@ export function ParticipantJourneyTable({ rows, loading }: Props) {
                 <td style={{ ...td, textAlign: 'right' }}>{row.attend_duration_min ?? '—'}</td>
                 <td style={{ ...td, textAlign: 'center' }}>{row.purchased_at ? '✓' : '–'}</td>
                 <td style={{ ...td, textAlign: 'right' }}>
-                  {row.purchase_value != null ? row.purchase_value.toFixed(0) + ' zł' : '—'}
+                  {row.purchase_value != null ? row.purchase_value.toFixed(0) + ' PLN' : '—'}
                 </td>
               </tr>
             ))}

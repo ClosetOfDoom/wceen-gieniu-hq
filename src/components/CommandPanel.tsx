@@ -18,7 +18,7 @@ export function CommandPanel({ onCommand, loading }: Props) {
           marginBottom: '12px',
         }}
       >
-        Komendy
+        Commands
       </div>
       <div
         style={{

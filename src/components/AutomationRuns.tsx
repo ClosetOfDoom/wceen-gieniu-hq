@@ -8,24 +8,24 @@ interface Props {
 function timeSince(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const mins = Math.floor(diff / 60000)
-  if (mins < 60) return `${mins} min temu`
+  if (mins < 60) return `${mins} min ago`
   const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs} godz. temu`
-  return `${Math.floor(hrs / 24)} dni temu`
+  if (hrs < 24) return `${hrs} hr ago`
+  return `${Math.floor(hrs / 24)} days ago`
 }
 
 export function AutomationRuns({ runs, loading }: Props) {
   if (loading) {
     return (
       <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '0.8rem', padding: '12px 0' }}>
-        Ładuję automatyzacje...
+        Loading automation runs...
       </div>
     )
   }
   if (runs.length === 0) {
     return (
       <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '0.8rem', padding: '12px 0' }}>
-        Brak danych o automatyzacjach.
+        No automation data.
       </div>
     )
   }
@@ -42,7 +42,7 @@ export function AutomationRuns({ runs, loading }: Props) {
           marginBottom: '10px',
         }}
       >
-        Automatyzacje Make
+        Make Automation Runs
       </div>
       {runs.map(run => (
         <div
@@ -60,7 +60,7 @@ export function AutomationRuns({ runs, loading }: Props) {
               {run.scenario_name}
             </div>
             <div style={{ fontSize: '0.7rem', color: '#555', marginTop: '2px' }}>
-              {timeSince(run.ran_at)} · {run.rows_inserted ?? 0} wierszy
+              {timeSince(run.ran_at)} · {run.rows_inserted ?? 0} rows
             </div>
           </div>
           <span
