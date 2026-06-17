@@ -123,7 +123,7 @@ function Sidebar({
           >
             <span className="nav-icon">{item.icon}</span>
             {item.label}
-            <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.55rem', color: 'var(--muted2)' }}>Soon</span>
+            <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: 'var(--muted2)' }}>Soon</span>
           </button>
         ))}
       </nav>
@@ -131,9 +131,9 @@ function Sidebar({
       <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '10px' }}>
         <GieniuAvatar size={52} />
         <div>
-          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.72rem', color: 'var(--gold)', fontWeight: 600 }}>Gieniu</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--muted)', marginTop: '1px' }}>Revenue Advisor</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: 'var(--teal)', marginTop: '2px', letterSpacing: '0.04em' }}>● George voice</div>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.82rem', color: 'var(--gold)', fontWeight: 600 }}>Gieniu</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted)', marginTop: '2px' }}>Revenue Advisor</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--teal)', marginTop: '3px', letterSpacing: '0.04em' }}>● George voice</div>
         </div>
       </div>
     </aside>
@@ -174,16 +174,16 @@ function TopBar({
     }}>
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '4px' }}>
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.14em' }}>
+          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.14em' }}>
             GIENIU HQ
           </h1>
           <StatusBadge status={status} />
         </div>
-        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.62rem', color: 'var(--muted)', letterSpacing: '0.1em' }}>
+        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.75rem', color: 'var(--muted)', letterSpacing: '0.1em' }}>
           Revenue &amp; Ops Command Center
         </div>
         <div style={{ marginTop: '8px', padding: '5px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: '2px solid var(--gold-dim)', borderRadius: '3px', display: 'inline-block' }}>
-          <span style={{ fontFamily: 'var(--font-serif)', fontSize: '0.62rem', color: 'var(--muted)', fontStyle: 'italic', letterSpacing: '0.05em' }}>
+          <span style={{ fontFamily: 'var(--font-serif)', fontSize: '0.72rem', color: 'var(--muted)', fontStyle: 'italic', letterSpacing: '0.05em' }}>
             "Steady hands, sharp numbers, calm decisions."
           </span>
         </div>
@@ -195,11 +195,11 @@ function TopBar({
       </div>
 
       <div style={{ textAlign: 'right' }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text2)' }}>{timeStr}</div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--muted)', marginTop: '2px' }}>{dateStr}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: 'var(--text2)' }}>{timeStr}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted)', marginTop: '2px' }}>{dateStr}</div>
         <div style={{ marginTop: '8px', display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
           {lastRefresh && (
-            <span style={{ fontSize: '0.6rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)', alignSelf: 'center' }}>
+            <span style={{ fontSize: '0.68rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)', alignSelf: 'center' }}>
               refreshed {lastRefresh.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
@@ -245,13 +245,13 @@ function RightPanel({
   return (
     <aside className="hud-right">
       {/* Response area — scrollable */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.62rem', color: 'var(--gold)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 22px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.74rem', color: 'var(--gold)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>
             Gieniu Says
           </div>
           {speaking && (
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: 'var(--teal)', animation: 'pulse-mic 1.2s infinite' }} />
               Speaking
             </div>
@@ -259,13 +259,13 @@ function RightPanel({
         </div>
 
         {response ? (
-          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '0.78rem', lineHeight: 1.75, color: 'var(--text)', margin: 0 }}>
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '0.93rem', lineHeight: 1.8, color: 'var(--text)', margin: 0 }}>
             {response}
           </pre>
         ) : (
           <div style={{ padding: '20px', background: 'var(--surface)', border: '1px dashed var(--border)', borderRadius: '4px', textAlign: 'center' }}>
             <div style={{ fontSize: '1.5rem', marginBottom: '8px', opacity: 0.4 }}>📜</div>
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.72rem', color: 'var(--muted)', lineHeight: 1.6, fontStyle: 'italic' }}>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.86rem', color: 'var(--muted)', lineHeight: 1.6, fontStyle: 'italic' }}>
               Speak or type to receive the briefing.
             </div>
           </div>
@@ -273,7 +273,7 @@ function RightPanel({
       </div>
 
       {/* Input area — fixed at bottom */}
-      <div style={{ flexShrink: 0, padding: '14px 18px' }}>
+      <div style={{ flexShrink: 0, padding: '18px 20px' }}>
         {transcript && (
           <div className="transcript-display">
             Heard: "{transcript}"
@@ -306,12 +306,12 @@ function RightPanel({
             className={`btn-mic${listening ? ' listening' : ''}`}
             onClick={onMic}
             title={listening ? 'Stop listening' : 'Start voice input'}
-            style={{ width: 52, height: 52, fontSize: '1.2rem' }}
+            style={{ }}
           >
             {listening ? '⏹' : '🎙'}
           </button>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '5px' }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: listening ? 'var(--teal)' : 'var(--muted2)' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: listening ? 'var(--teal)' : 'var(--muted2)' }}>
               {listening ? 'Listening…' : 'Tap to speak'}
             </div>
             <button
@@ -325,7 +325,7 @@ function RightPanel({
         </div>
 
         {/* Prompt chips */}
-        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.5rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '5px' }}>
+        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.64rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '6px' }}>
           Quick
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
@@ -534,7 +534,7 @@ export default function App() {
           onRefresh={() => { loadData(); loadAds(); loadRuns(); loadJsuFunnel() }}
         />
 
-        <div style={{ flex: 1, padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto' }}>
+        <div style={{ flex: 1, padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '24px', overflowY: 'auto' }}>
 
           {/* ── COMMAND CENTER ─────────────────────────────────────── */}
           {section === 'command-center' && (
@@ -556,13 +556,13 @@ export default function App() {
                 <div className="section-title section-title-gold" style={{ marginBottom: '10px' }}>Revenue Trend — 7 Days</div>
                 <RevenueTrendChart rows={trend} loading={loading} />
                 <div style={{ marginTop: '8px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)' }}>Real ROAS = Wix Revenue ÷ Meta Spend</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)' }}>Real CPA = Meta Spend ÷ Wix Orders</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)' }}>Real ROAS = Wix Revenue ÷ Meta Spend</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)' }}>Real CPA = Meta Spend ÷ Wix Orders</span>
                 </div>
               </div>
 
               <div style={{ padding: '10px 16px', background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: '2px solid var(--gold-dim)', borderRadius: '4px' }}>
-                <span style={{ fontFamily: 'var(--font-serif)', fontSize: '0.62rem', color: 'var(--muted)', fontStyle: 'italic' }}>
+                <span style={{ fontFamily: 'var(--font-serif)', fontSize: '0.8rem', color: 'var(--muted)', fontStyle: 'italic' }}>
                   Ask Gieniu anything — speak or type in the panel on the right.
                   Try: "How are we doing today?", "What needs attention?", "Compare Meta to Wix."
                 </span>

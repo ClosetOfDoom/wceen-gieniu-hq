@@ -28,14 +28,13 @@ export function KPICard({ label, value, accent, warning, dim, sublabel }: Props)
         background: 'var(--surface)',
         border: `1px solid ${borderColor}`,
         borderRadius: '4px',
-        padding: '14px 18px',
-        minWidth: '120px',
-        flex: '1 1 120px',
+        padding: '18px 22px',
+        minWidth: '140px',
+        flex: '1 1 140px',
         position: 'relative',
         overflow: 'hidden',
       }}
     >
-      {/* Subtle top accent line */}
       {(accent || warning) && (
         <div style={{
           position: 'absolute',
@@ -49,16 +48,16 @@ export function KPICard({ label, value, accent, warning, dim, sublabel }: Props)
 
       <div style={{
         fontFamily: 'var(--font-serif)',
-        fontSize: '0.58rem',
+        fontSize: '0.7rem',
         color: 'var(--muted)',
         textTransform: 'uppercase',
-        letterSpacing: '0.16em',
+        letterSpacing: '0.14em',
         marginBottom: '10px',
       }}>
         {label}
       </div>
       <div style={{
-        fontSize: '1.45rem',
+        fontSize: 'clamp(1.5rem, 2.2vw, 2.0rem)',
         fontWeight: 700,
         color: valueColor,
         fontVariantNumeric: 'tabular-nums',
@@ -68,7 +67,7 @@ export function KPICard({ label, value, accent, warning, dim, sublabel }: Props)
         {value}
       </div>
       {sublabel && (
-        <div style={{ fontSize: '0.65rem', color: 'var(--muted2)', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
+        <div style={{ fontSize: '0.7rem', color: 'var(--muted2)', marginTop: '5px', fontFamily: 'var(--font-mono)' }}>
           {sublabel}
         </div>
       )}

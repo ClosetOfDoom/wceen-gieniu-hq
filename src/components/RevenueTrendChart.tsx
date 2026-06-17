@@ -13,7 +13,7 @@ function fmtK(n: number): string {
 export function RevenueTrendChart({ rows, loading }: Props) {
   if (loading) {
     return (
-      <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>
+      <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>
         Loading trend…
       </div>
     )
@@ -22,15 +22,15 @@ export function RevenueTrendChart({ rows, loading }: Props) {
   const sorted = [...rows].reverse() // oldest → newest
   if (sorted.length === 0) {
     return (
-      <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>
+      <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>
         No trend data yet
       </div>
     )
   }
 
-  const W = 640
-  const H = 160
-  const pad = { top: 14, right: 14, bottom: 32, left: 46 }
+  const W = 680
+  const H = 200
+  const pad = { top: 18, right: 16, bottom: 38, left: 52 }
   const chartW = W - pad.left - pad.right
   const chartH = H - pad.top - pad.bottom
   const n = sorted.length
@@ -56,7 +56,7 @@ export function RevenueTrendChart({ rows, loading }: Props) {
   const gridValues = [0.25, 0.5, 0.75, 1]
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: H, display: 'block' }}>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', minHeight: 160 }}>
       <defs>
         <linearGradient id="gRevGrad" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%"   stopColor="#c9a96e" stopOpacity="0.35" />
@@ -73,7 +73,7 @@ export function RevenueTrendChart({ rows, loading }: Props) {
         return (
           <g key={frac}>
             <line x1={pad.left} y1={gy} x2={W - pad.right} y2={gy} stroke="var(--border)" strokeWidth="1" strokeDasharray="3 5" />
-            <text x={pad.left - 5} y={gy + 4} textAnchor="end" fill="var(--muted2)" fontSize="9" fontFamily="monospace">
+            <text x={pad.left - 6} y={gy + 4} textAnchor="end" fill="var(--muted2)" fontSize="11" fontFamily="monospace">
               {fmtK(maxY * frac)}
             </text>
           </g>
@@ -98,14 +98,14 @@ export function RevenueTrendChart({ rows, loading }: Props) {
         points={revLine}
         fill="none"
         stroke="var(--gold)"
-        strokeWidth="2"
+        strokeWidth="2.5"
         strokeLinejoin="round"
         clipPath="url(#chartClip)"
       />
 
       {/* Dots on revenue */}
       {sorted.map((r, i) => (
-        <circle key={r.date} cx={x(i)} cy={y(r.wix_revenue ?? 0)} r="3.5" fill="var(--gold)" stroke="var(--bg)" strokeWidth="1.5" />
+        <circle key={r.date} cx={x(i)} cy={y(r.wix_revenue ?? 0)} r="4" fill="var(--gold)" stroke="var(--bg)" strokeWidth="1.5" />
       ))}
 
       {/* X-axis labels */}
@@ -113,17 +113,17 @@ export function RevenueTrendChart({ rows, loading }: Props) {
         if (n > 5 && i % 2 !== 0) return null
         const label = new Date(r.date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
         return (
-          <text key={r.date + '-lbl'} x={x(i)} y={H - 8} textAnchor="middle" fill="var(--muted)" fontSize="9" fontFamily="monospace">
+          <text key={r.date + '-lbl'} x={x(i)} y={H - 10} textAnchor="middle" fill="var(--muted)" fontSize="11" fontFamily="monospace">
             {label}
           </text>
         )
       })}
 
       {/* Legend */}
-      <line x1={W - 90} y1={pad.top + 8} x2={W - 75} y2={pad.top + 8} stroke="var(--gold)" strokeWidth="2" />
-      <text x={W - 72} y={pad.top + 12} fill="var(--gold)" fontSize="9" fontFamily="monospace">Revenue</text>
-      <line x1={W - 90} y1={pad.top + 20} x2={W - 75} y2={pad.top + 20} stroke="var(--teal)" strokeWidth="1.5" strokeDasharray="4 2" />
-      <text x={W - 72} y={pad.top + 24} fill="var(--teal)" fontSize="9" fontFamily="monospace">Ad Spend</text>
+      <line x1={W - 100} y1={pad.top + 10} x2={W - 82} y2={pad.top + 10} stroke="var(--gold)" strokeWidth="2.5" />
+      <text x={W - 78} y={pad.top + 14} fill="var(--gold)" fontSize="11" fontFamily="monospace">Revenue</text>
+      <line x1={W - 100} y1={pad.top + 26} x2={W - 82} y2={pad.top + 26} stroke="var(--teal)" strokeWidth="1.5" strokeDasharray="4 2" />
+      <text x={W - 78} y={pad.top + 30} fill="var(--teal)" fontSize="11" fontFamily="monospace">Ad Spend</text>
     </svg>
   )
 }
