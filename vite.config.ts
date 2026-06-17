@@ -1,8 +1,18 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { execSync } from 'child_process'
+
+const commitHash = (() => {
+  try { return execSync('git rev-parse --short HEAD').toString().trim() }
+  catch { return 'dev' }
+})()
 
 export default defineConfig({
+  define: {
+    __BUILD_HASH__: JSON.stringify(commitHash),
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     react(),
     VitePWA({
@@ -23,12 +33,15 @@ export default defineConfig({
         ]
       },
       workbox: {
+        cacheId: 'gieniu-hq-v4',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/phwhsteaqwrijoivqnif\.supabase\.co/,
             handler: 'NetworkFirst',
-            options: { cacheName: 'supabase-cache', networkTimeoutSeconds: 10 }
+            options: { cacheName: 'supabase-v4', networkTimeoutSeconds: 10 }
           }
         ]
       }

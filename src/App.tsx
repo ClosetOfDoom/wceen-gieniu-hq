@@ -259,7 +259,7 @@ function RightPanel({
         </div>
 
         {response ? (
-          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '0.93rem', lineHeight: 1.8, color: 'var(--text)', margin: 0 }}>
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', lineHeight: 1.85, color: 'var(--text)', margin: 0 }}>
             {response}
           </pre>
         ) : (
@@ -430,6 +430,8 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log(`GIENIU HQ build ${__BUILD_HASH__} loaded (${__BUILD_TIME__})`)
     loadData()
     loadAds()
     loadRuns()
@@ -534,7 +536,7 @@ export default function App() {
           onRefresh={() => { loadData(); loadAds(); loadRuns(); loadJsuFunnel() }}
         />
 
-        <div style={{ flex: 1, padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '24px', overflowY: 'auto' }}>
+        <div style={{ flex: 1, padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: '28px', overflowY: 'auto' }}>
 
           {/* ── COMMAND CENTER ─────────────────────────────────────── */}
           {section === 'command-center' && (
@@ -617,6 +619,11 @@ export default function App() {
         onMuteToggle={() => setMuted(m => !m)}
         transcript={transcript}
       />
+
+      {/* Build stamp */}
+      <div className="build-stamp">
+        GIENIU build: {__BUILD_HASH__}
+      </div>
 
     </div>
   )

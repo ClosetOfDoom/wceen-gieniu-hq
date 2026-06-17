@@ -13,7 +13,7 @@ function fmtK(n: number): string {
 export function RevenueTrendChart({ rows, loading }: Props) {
   if (loading) {
     return (
-      <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>
+      <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>
         Loading trend…
       </div>
     )
@@ -22,15 +22,15 @@ export function RevenueTrendChart({ rows, loading }: Props) {
   const sorted = [...rows].reverse() // oldest → newest
   if (sorted.length === 0) {
     return (
-      <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>
+      <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>
         No trend data yet
       </div>
     )
   }
 
   const W = 680
-  const H = 200
-  const pad = { top: 18, right: 16, bottom: 38, left: 52 }
+  const H = 280
+  const pad = { top: 20, right: 16, bottom: 44, left: 58 }
   const chartW = W - pad.left - pad.right
   const chartH = H - pad.top - pad.bottom
   const n = sorted.length

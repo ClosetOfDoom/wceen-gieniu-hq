@@ -28,9 +28,9 @@ export function KPICard({ label, value, accent, warning, dim, sublabel }: Props)
         background: 'var(--surface)',
         border: `1px solid ${borderColor}`,
         borderRadius: '4px',
-        padding: '18px 22px',
-        minWidth: '140px',
-        flex: '1 1 140px',
+        padding: '20px 24px',
+        minWidth: '150px',
+        flex: '1 1 150px',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -48,7 +48,7 @@ export function KPICard({ label, value, accent, warning, dim, sublabel }: Props)
 
       <div style={{
         fontFamily: 'var(--font-serif)',
-        fontSize: '0.7rem',
+        fontSize: '0.74rem',
         color: 'var(--muted)',
         textTransform: 'uppercase',
         letterSpacing: '0.14em',
@@ -57,7 +57,7 @@ export function KPICard({ label, value, accent, warning, dim, sublabel }: Props)
         {label}
       </div>
       <div style={{
-        fontSize: 'clamp(1.5rem, 2.2vw, 2.0rem)',
+        fontSize: 'clamp(2.0rem, 3vw, 2.8rem)',
         fontWeight: 700,
         color: valueColor,
         fontVariantNumeric: 'tabular-nums',
