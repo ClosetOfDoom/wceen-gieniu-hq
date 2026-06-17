@@ -69,9 +69,42 @@ function buildCampaignSummary(ads: MetaAdDaily[]): string {
   return lines.join('\n')
 }
 
+function fmtPlnLocal(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return n.toFixed(2) + ' PLN'
+}
+
 export function resolveIntent(query: string, ctx: IntentContext): string {
   const q = query.toLowerCase().trim()
   const { perf, status, ads, metaStats, jsuSummary, trend } = ctx
+
+  // When today has no data but trend/history is available, give a useful partial briefing
+  // rather than saying "no data" for any operational query.
+  const isOperationalQuery = has(q,
+    'today', 'how are we', 'doing', 'status', 'revenue', 'orders',
+    'spend', 'briefing', 'summary', 'dashboard', 'numbers', 'situation',
+    'update', 'overview', 'give me', 'tell me', 'read me', 'whats up', "what's up",
+    'boss', 'report', 'snapshot'
+  )
+  if (status === 'NO_DATA' && trend.length > 0 && isOperationalQuery) {
+    const latest = trend[0]
+    const lDate  = latest.date
+    const orders  = latest.wix_orders ?? 0
+    const revenue = latest.wix_revenue ?? 0
+    const spend   = latest.meta_spend ?? 0
+    const cpa     = latest.real_cpa
+    const roas    = latest.real_roas
+
+    const lines = [
+      'No data for today yet — Make may not have synced yet, or the day is still early.', '',
+      `Most recent data point: ${lDate}`,
+      `  Orders: ${orders}  |  Revenue: ${fmtPlnLocal(revenue)}  |  Ad spend: ${fmtPlnLocal(spend)}`,
+    ]
+    if (cpa != null)  lines.push(`  Real CPA: ${fmtPlnLocal(cpa)}`)
+    if (roas != null) lines.push(`  Real ROAS: ${roas.toFixed(2)}x`)
+    lines.push('', 'Try: "how was yesterday?" or "last 7 days" for a full picture.')
+    return lines.join('\n')
+  }
 
   // JSU / webinar funnel
   if (has(q, 'webinar', 'jsu', 'jak się', 'jak sie', 'jak się ucz', 'jak sie ucz', 'funnel')) {

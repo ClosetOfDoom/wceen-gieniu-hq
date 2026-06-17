@@ -63,35 +63,35 @@ button:disabled {
 
 .hud-layout {
   display: grid;
-  grid-template-columns: 220px 1fr 400px;
+  grid-template-columns: 200px 1fr 440px;
   grid-template-rows: 100vh;
   height: 100vh;
   overflow: hidden;
 }
 
-/* Large desktop — even wider panels */
+/* Large desktop — even wider Gieniu panel */
 @media (min-width: 1600px) {
   .hud-layout {
-    grid-template-columns: 250px 1fr 460px;
+    grid-template-columns: 230px 1fr 520px;
   }
 }
 
 /* Medium desktop */
 @media (max-width: 1399px) and (min-width: 1200px) {
   .hud-layout {
-    grid-template-columns: 210px 1fr 360px;
+    grid-template-columns: 190px 1fr 400px;
   }
 }
 
-/* Tablet — sidebar hidden, 2 columns */
+/* Tablet — sidebar hidden, 2 columns; Gieniu panel takes min 320px */
 @media (max-width: 1199px) and (min-width: 769px) {
   .hud-layout {
-    grid-template-columns: 1fr 340px;
+    grid-template-columns: 1fr 360px;
   }
   .hud-sidebar { display: none; }
 }
 
-/* Mobile — single column, right panel first */
+/* Mobile — single column, Gieniu panel first */
 @media (max-width: 768px) {
   html, body { font-size: 16px; }
 
@@ -109,7 +109,7 @@ button:disabled {
     order: -1;
     overflow: visible;
     height: auto;
-    min-height: 300px;
+    min-height: 340px;
     border-left: none;
     border-bottom: 2px solid var(--border-gold);
   }
@@ -517,10 +517,10 @@ button:disabled {
   bottom: 8px;
   right: 12px;
   font-family: var(--font-mono);
-  font-size: 0.6rem;
-  color: var(--muted2);
+  font-size: 0.65rem;
+  color: var(--muted);
   letter-spacing: 0.08em;
-  opacity: 0.7;
+  opacity: 0.85;
   pointer-events: none;
   z-index: 9999;
 }

@@ -35,33 +35,6 @@ function statusLabel(s: DataStatus): string {
   }
 }
 
-// ── Dashboard command types ───────────────────────────────────────────────────
-
-export type CommandKey =
-  | 'revenue dzisiaj'
-  | 'raport operacyjny'
-  | 'pipeline'
-  | 'progi CPA'
-  | 'progi CPA językowy'
-  | 'red flagi'
-  | 'kreatywy'
-  | 'retargeting'
-  | 'rytm maili'
-  | 'co tydzień'
-
-export const COMMANDS: { key: CommandKey; label: string }[] = [
-  { key: 'revenue dzisiaj',    label: 'Revenue Today' },
-  { key: 'raport operacyjny',  label: 'Ops Report' },
-  { key: 'pipeline',           label: 'Pipeline' },
-  { key: 'progi CPA',          label: 'CPA Thresholds' },
-  { key: 'progi CPA językowy', label: 'CPA Thresholds — Lang' },
-  { key: 'red flagi',          label: 'Red Flags' },
-  { key: 'kreatywy',           label: 'Creatives' },
-  { key: 'retargeting',        label: 'Retargeting' },
-  { key: 'rytm maili',         label: 'Mailing Rhythm' },
-  { key: 'co tydzień',         label: 'Weekly Checklist' },
-]
-
 // ── JSU command type ──────────────────────────────────────────────────────────
 
 export type JsuCommandKey =

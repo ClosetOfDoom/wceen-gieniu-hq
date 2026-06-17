@@ -25,3 +25,20 @@
   for = "/*.css"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# Service-worker scripts must never be immutably cached — browsers must
+# be able to re-fetch them to detect updates.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/registerSW.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"

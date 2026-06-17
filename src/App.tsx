@@ -182,11 +182,6 @@ function TopBar({
         <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.75rem', color: 'var(--muted)', letterSpacing: '0.1em' }}>
           Revenue &amp; Ops Command Center
         </div>
-        <div style={{ marginTop: '8px', padding: '5px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: '2px solid var(--gold-dim)', borderRadius: '3px', display: 'inline-block' }}>
-          <span style={{ fontFamily: 'var(--font-serif)', fontSize: '0.72rem', color: 'var(--muted)', fontStyle: 'italic', letterSpacing: '0.05em' }}>
-            "Steady hands, sharp numbers, calm decisions."
-          </span>
-        </div>
         {isStale && (
           <div className="stale-banner" style={{ marginTop: '8px' }}>
             ⚠ Meta data may be stale — no ads synced for today Warsaw time.
@@ -212,7 +207,7 @@ function TopBar({
   )
 }
 
-// ── Right panel — conversational AI interface ─────────────────────────────────
+// ── Right panel — voice-first conversational interface ────────────────────────
 
 const CHIPS = [
   'How are we doing today?',
@@ -223,16 +218,27 @@ const CHIPS = [
 ]
 
 function RightPanel({
-  response, onQuery, speaking, onMic, listening, muted, onMuteToggle, transcript,
+  response,
+  onQuery,
+  speaking,
+  onSpeak,
+  onMic,
+  listening,
+  muted,
+  onMuteToggle,
+  transcript,
+  ttsError,
 }: {
   response: string
   onQuery: (query: string) => void
   speaking: boolean
+  onSpeak: () => void
   onMic: () => void
   listening: boolean
   muted: boolean
   onMuteToggle: () => void
   transcript: string
+  ttsError: string
 }) {
   const [inputVal, setInputVal] = useState('')
 
@@ -246,47 +252,74 @@ function RightPanel({
   return (
     <aside className="hud-right">
       {/* Response area — scrollable */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 22px', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 22px' }}>
+
+        {/* Header row */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.74rem', color: 'var(--gold)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.78rem', color: 'var(--gold)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>
             Gieniu Says
           </div>
           {speaking && (
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: 'var(--teal)', animation: 'pulse-mic 1.2s infinite' }} />
-              Speaking
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--teal)', animation: 'pulse-mic 1.2s infinite' }} />
+              George is speaking…
             </div>
           )}
         </div>
 
+        {/* Response text */}
         {response ? (
-          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', lineHeight: 1.85, color: 'var(--text)', margin: 0 }}>
-            {response}
-          </pre>
+          <>
+            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', lineHeight: 1.85, color: 'var(--text)', margin: 0, marginBottom: '14px' }}>
+              {response}
+            </pre>
+
+            {/* Speak again / stop */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                className="btn-sm"
+                onClick={onSpeak}
+                style={{ borderColor: speaking ? 'var(--teal)' : undefined, color: speaking ? 'var(--teal)' : undefined }}
+              >
+                {speaking ? '⏹ Stop' : '▶ Speak again'}
+              </button>
+              {ttsError && (
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)' }}>
+                  Audio playback failed — click Speak again or unmute.
+                </span>
+              )}
+            </div>
+          </>
         ) : (
-          <div style={{ padding: '20px', background: 'var(--surface)', border: '1px dashed var(--border)', borderRadius: '4px', textAlign: 'center' }}>
-            <div style={{ fontSize: '1.5rem', marginBottom: '8px', opacity: 0.4 }}>📜</div>
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.86rem', color: 'var(--muted)', lineHeight: 1.6, fontStyle: 'italic' }}>
+          <div style={{ padding: '28px 20px', background: 'var(--surface)', border: '1px dashed var(--border)', borderRadius: '4px', textAlign: 'center' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '10px', opacity: 0.35 }}>🎙</div>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.9rem', color: 'var(--muted)', lineHeight: 1.7, fontStyle: 'italic' }}>
               Speak or type to receive the briefing.
+            </div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', marginTop: '10px', lineHeight: 1.6 }}>
+              Try: "how are we doing?"<br />
+              "how was yesterday?" · "this week so far"<br />
+              "what's wrong with ads?"
             </div>
           </div>
         )}
       </div>
 
       {/* Input area — fixed at bottom */}
-      <div style={{ flexShrink: 0, padding: '18px 20px' }}>
+      <div style={{ flexShrink: 0, padding: '16px 20px', borderTop: '1px solid var(--border)' }}>
+
         {transcript && (
-          <div className="transcript-display">
+          <div className="transcript-display" style={{ marginBottom: '10px' }}>
             Heard: "{transcript}"
           </div>
         )}
 
         {/* Text input */}
-        <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
           <input
             type="text"
             className="gieniu-input"
-            placeholder="Ask Gieniu anything…"
+            placeholder="Ask about revenue, ads, Wix, Meta, or webinars…"
             value={inputVal}
             onChange={e => setInputVal(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
@@ -295,24 +328,23 @@ function RightPanel({
             className="btn-sm"
             onClick={handleSubmit}
             disabled={!inputVal.trim()}
-            style={{ flexShrink: 0 }}
+            style={{ flexShrink: 0, minWidth: 52 }}
           >
             Ask
           </button>
         </div>
 
         {/* Mic + mute row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', marginBottom: '14px' }}>
           <button
             className={`btn-mic${listening ? ' listening' : ''}`}
             onClick={onMic}
             title={listening ? 'Stop listening' : 'Start voice input'}
-            style={{ }}
           >
             {listening ? '⏹' : '🎙'}
           </button>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '5px' }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: listening ? 'var(--teal)' : 'var(--muted2)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: listening ? 'var(--teal)' : 'var(--muted2)' }}>
               {listening ? 'Listening…' : 'Tap to speak'}
             </div>
             <button
@@ -326,7 +358,7 @@ function RightPanel({
         </div>
 
         {/* Prompt chips */}
-        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.64rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.65rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '7px' }}>
           Quick
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
@@ -386,6 +418,7 @@ export default function App() {
   const [muted, setMuted]             = useState(false)
   const [listening, setListening]     = useState(false)
   const [transcript, setTranscript]   = useState('')
+  const [ttsError, setTtsError]       = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
 
@@ -444,22 +477,47 @@ export default function App() {
 
   // ── Auto-speak every answer ──────────────────────────────────────────────────
 
-  function speakAnswer(text: string) {
+  async function speakAnswer(text: string) {
     setResponse(text)
+    setTtsError('')
+    // eslint-disable-next-line no-console
+    console.log('GIENIU answer generated', text.slice(0, 80) + (text.length > 80 ? '…' : ''))
     if (muted || !text.trim()) return
     stopAudio()
     setSpeaking(true)
-    speak(text).then(() => setSpeaking(false)).catch(() => setSpeaking(false))
+    const result = await speak(text)
+    setSpeaking(false)
+    if (!result.ok) {
+      setTtsError(result.error ?? 'unknown error')
+      // eslint-disable-next-line no-console
+      console.warn('GIENIU TTS failed:', result.error)
+    }
   }
 
-  // ── Intent handler — natural language to response ────────────────────────────
+  // Speak again / stop current audio
+  function handleSpeakAgain() {
+    if (speaking) {
+      stopAudio()
+      setSpeaking(false)
+      return
+    }
+    if (!response.trim()) return
+    setTtsError('')
+    setSpeaking(true)
+    speak(response).then(res => {
+      setSpeaking(false)
+      if (!res.ok) setTtsError(res.error ?? 'unknown error')
+    })
+  }
+
+  // ── Intent handler ────────────────────────────────────────────────────────────
 
   function handleIntentQuery(query: string) {
     const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend })
     speakAnswer(result)
   }
 
-  // ── JSU command handler — webinar panel embedded buttons ─────────────────────
+  // ── JSU command handler ───────────────────────────────────────────────────────
 
   function handleJsuCommand(key: JsuCommandKey) {
     let text = ''
@@ -518,8 +576,11 @@ export default function App() {
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
-  const cpaHigh  = perf?.real_cpa != null && perf.real_cpa > 50
-  const jsuAlert = !!jsuSummary && jsuSummary.bottleneck !== 'OK' && jsuSummary.bottleneck !== 'NO_DATA' && jsuSummary.bottleneck !== 'NO_SOURCES'
+  // Use most recent trend row when today has no data, so KPI cards are never blank if history exists
+  const displayPerf = perf ?? (trend.length > 0 ? trend[0] : null)
+  const perfIsStale  = !perf && trend.length > 0
+  const cpaHigh      = displayPerf?.real_cpa != null && displayPerf.real_cpa > 50
+  const jsuAlert     = !!jsuSummary && jsuSummary.bottleneck !== 'OK' && jsuSummary.bottleneck !== 'NO_DATA' && jsuSummary.bottleneck !== 'NO_SOURCES'
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -545,14 +606,21 @@ export default function App() {
               {loading ? (
                 <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>Loading data…</div>
               ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                  <KPICard label="Wix Orders" value={fmtNum(perf?.wix_orders)} />
-                  <KPICard label="Wix Revenue" value={fmtPln(perf?.wix_revenue)} accent />
-                  <KPICard label="Ad Spend" value={fmtPln(perf?.meta_spend)} />
-                  <KPICard label="Real CPA" value={perf?.real_cpa != null ? fmtPln(perf.real_cpa) : '—'} warning={cpaHigh} sublabel="Meta spend / Wix orders" />
-                  <KPICard label="Real ROAS" value={fmtRoas(perf?.real_roas)} sublabel="Wix revenue / Meta spend" />
-                  <KPICard label="Meta Attr." value={fmtNum(metaStats.meta_purchases)} dim sublabel="Meta-reported purchases" />
-                </div>
+                <>
+                  {perfIsStale && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--amber)', padding: '8px 14px', background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '3px' }}>
+                      No data for today yet — showing latest available: {trend[0]?.date}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                    <KPICard label="Wix Orders" value={fmtNum(displayPerf?.wix_orders)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
+                    <KPICard label="Wix Revenue" value={fmtPln(displayPerf?.wix_revenue)} accent sublabel={perfIsStale ? trend[0]?.date : undefined} />
+                    <KPICard label="Ad Spend" value={fmtPln(displayPerf?.meta_spend)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
+                    <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Meta spend / Wix orders" />
+                    <KPICard label="Real ROAS" value={fmtRoas(displayPerf?.real_roas)} sublabel="Wix revenue / Meta spend" />
+                    <KPICard label="Meta Attr." value={fmtNum(metaStats.meta_purchases)} dim sublabel="Meta-reported purchases" />
+                  </div>
+                </>
               )}
 
               <div className="card">
@@ -562,13 +630,6 @@ export default function App() {
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)' }}>Real ROAS = Wix Revenue ÷ Meta Spend</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)' }}>Real CPA = Meta Spend ÷ Wix Orders</span>
                 </div>
-              </div>
-
-              <div style={{ padding: '10px 16px', background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: '2px solid var(--gold-dim)', borderRadius: '4px' }}>
-                <span style={{ fontFamily: 'var(--font-serif)', fontSize: '0.8rem', color: 'var(--muted)', fontStyle: 'italic' }}>
-                  Ask Gieniu anything — speak or type in the panel on the right.
-                  Try: "How are we doing today?", "What needs attention?", "Compare Meta to Wix."
-                </span>
               </div>
             </>
           )}
@@ -614,14 +675,16 @@ export default function App() {
         response={response}
         onQuery={handleIntentQuery}
         speaking={speaking}
+        onSpeak={handleSpeakAgain}
         onMic={handleMic}
         listening={listening}
         muted={muted}
         onMuteToggle={() => setMuted(m => !m)}
         transcript={transcript}
+        ttsError={ttsError}
       />
 
-      {/* Build stamp */}
+      {/* Build stamp — always visible, bottom-right */}
       <div className="build-stamp">
         GIENIU build: {__BUILD_HASH__}
       </div>

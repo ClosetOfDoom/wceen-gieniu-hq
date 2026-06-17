@@ -58,9 +58,9 @@ export const SALES_WARNING_VERDICTS = [
 ]
 
 export const NO_DATA_VERDICTS = [
-  'Nothing to analyze — no data for today.',
-  'Supabase is empty. Check the Make scenarios.',
-  'Zero data. Either Make did not run or the day is too young.',
+  'No data for today yet. Day may be too young for Make to sync.',
+  'Nothing for today. Check whether the Make automation ran.',
+  'Today is a blank slate so far. Ask about yesterday or last 7 days instead.',
 ]
 
 export const NEXT_MOVES = [
