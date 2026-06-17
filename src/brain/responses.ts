@@ -7,6 +7,7 @@ import {
   NO_DATA_VERDICTS, NEXT_MOVES, META_NOT_LIVE_NOTES,
   JSU_OPENERS, JSU_BOTTLENECK_CLOSES, JSU_OK_CLOSES,
 } from './personality'
+import { yesterdayWaw, thisWeekStartWaw, lastWeekStartWaw, lastWeekEndWaw } from './timeParser'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -620,4 +621,328 @@ export function buildMetaVsWix(
   }
 
   return lines.join('\n')
+}
+
+// ── Time-aware builders ───────────────────────────────────────────────────────
+
+function dailySummaryBlock(row: DailyPerformance, label: string): string {
+  const lines = [
+    `${label} (${row.date}):`,
+    `  Orders: ${row.wix_orders}  |  Revenue: ${fmtPln(row.wix_revenue)}  |  Spend: ${fmtPln(row.meta_spend)}`,
+  ]
+  if (row.real_cpa != null)  lines.push(`  CPA: ${fmtPln(row.real_cpa)}  |  ROAS: ${row.real_roas != null ? fmt(row.real_roas, 2, 'x') : '—'}`)
+  return lines.join('\n')
+}
+
+export function buildYesterdaySummary(trend: DailyPerformance[]): string {
+  const yDate = yesterdayWaw()
+  const row = trend.find(r => r.date === yDate) ?? trend[1] ?? null
+
+  if (!row) {
+    return `${pickPhrase(OPENERS)}\n\nNo data for yesterday. Make may not have synced it yet, or the day is still being processed.`
+  }
+
+  const orders  = row.wix_orders ?? 0
+  const revenue = row.wix_revenue ?? 0
+  const spend   = row.meta_spend ?? 0
+  const cpa     = row.real_cpa
+  const roas    = row.real_roas
+
+  const lines = [
+    pickPhrase(OPENERS), '',
+    `— YESTERDAY — ${row.date} —`, '',
+    `Orders: ${orders}`,
+    `Revenue: ${fmtPln(revenue)}`,
+    `Meta spend: ${fmtPln(spend)}`,
+  ]
+
+  if (cpa != null)  lines.push(`Real CPA: ${fmtPln(cpa)}`)
+  if (roas != null) lines.push(`Real ROAS: ${fmt(roas, 2, 'x')}`)
+
+  if (spend > 0 && orders === 0) {
+    lines.push('\nMoney went out, nothing came back. Something broke in the funnel yesterday.')
+  } else if (cpa != null && cpa > 50) {
+    lines.push(`\nCPA was above 50 PLN — costly acquisition day.`)
+  } else if (roas != null && roas >= 3) {
+    lines.push(`\nROAS at ${fmt(roas, 2, 'x')} — that was a good day, Lifidi.`)
+  } else if (roas != null && roas < 2) {
+    lines.push(`\nROAS below 2x yesterday. Ads were not paying for themselves.`)
+  } else if (orders > 0) {
+    lines.push('\nNumbers came in. Not breaking records, not breaking down.')
+  }
+
+  return lines.join('\n')
+}
+
+export function buildWeekToDate(trend: DailyPerformance[]): string {
+  const weekStart = thisWeekStartWaw()
+  const rows = trend.filter(r => r.date >= weekStart).sort((a, b) => a.date < b.date ? -1 : 1)
+
+  if (rows.length === 0) {
+    return `${pickPhrase(OPENERS)}\n\nNo data for this week yet. Either today is Monday morning or Make has not synced.`
+  }
+
+  const totalOrders  = rows.reduce((s, r) => s + (r.wix_orders ?? 0), 0)
+  const totalRevenue = rows.reduce((s, r) => s + (r.wix_revenue ?? 0), 0)
+  const totalSpend   = rows.reduce((s, r) => s + (r.meta_spend ?? 0), 0)
+  const wtdCPA  = totalSpend > 0 && totalOrders > 0 ? totalSpend / totalOrders : null
+  const wtdROAS = totalSpend > 0 ? totalRevenue / totalSpend : null
+
+  const lines = [
+    pickPhrase(OPENERS), '',
+    `— WEEK SO FAR — (${rows.length} day${rows.length > 1 ? 's' : ''}, since ${weekStart}) —`, '',
+    `Total orders: ${totalOrders}`,
+    `Total revenue: ${fmtPln(totalRevenue)}`,
+    `Total Meta spend: ${fmtPln(totalSpend)}`,
+  ]
+
+  if (wtdCPA != null)  lines.push(`Avg CPA: ${fmtPln(wtdCPA)}`)
+  if (wtdROAS != null) lines.push(`Avg ROAS: ${fmt(wtdROAS, 2, 'x')}`)
+
+  const best = rows.reduce((a, b) => (b.wix_revenue ?? 0) > (a.wix_revenue ?? 0) ? b : a)
+  lines.push('', `Best day: ${best.date} — ${fmtPln(best.wix_revenue)}, ${best.wix_orders} orders.`)
+
+  if (wtdCPA != null && wtdCPA > 50) {
+    lines.push('CPA running above 50 PLN for the week. Creatives need a look.')
+  } else if (wtdROAS != null && wtdROAS >= 3) {
+    lines.push('ROAS above 3x — strong week so far. Keep the machine running.')
+  } else if (wtdROAS != null && wtdROAS < 2) {
+    lines.push('ROAS below 2x for the week. Margin is thin — check targeting and creatives.')
+  }
+
+  return lines.join('\n')
+}
+
+export function buildLastWeekSummary(trend: DailyPerformance[]): string {
+  const lastStart = lastWeekStartWaw()
+  const lastEnd   = lastWeekEndWaw()
+  const rows = trend.filter(r => r.date >= lastStart && r.date <= lastEnd)
+
+  if (rows.length === 0) {
+    return `${pickPhrase(OPENERS)}\n\nLast week (${lastStart} to ${lastEnd}) is outside the 7-day history window. Cannot show it without fetching more data.`
+  }
+
+  const totalOrders  = rows.reduce((s, r) => s + (r.wix_orders ?? 0), 0)
+  const totalRevenue = rows.reduce((s, r) => s + (r.wix_revenue ?? 0), 0)
+  const totalSpend   = rows.reduce((s, r) => s + (r.meta_spend ?? 0), 0)
+  const lwCPA  = totalSpend > 0 && totalOrders > 0 ? totalSpend / totalOrders : null
+  const lwROAS = totalSpend > 0 ? totalRevenue / totalSpend : null
+
+  const lines = [
+    pickPhrase(OPENERS), '',
+    `— LAST WEEK — (${rows.length} day${rows.length > 1 ? 's' : ''} visible, ${lastStart}–${lastEnd}) —`, '',
+    `Total orders: ${totalOrders}`,
+    `Total revenue: ${fmtPln(totalRevenue)}`,
+    `Total Meta spend: ${fmtPln(totalSpend)}`,
+  ]
+
+  if (lwCPA != null)  lines.push(`Avg CPA: ${fmtPln(lwCPA)}`)
+  if (lwROAS != null) lines.push(`Avg ROAS: ${fmt(lwROAS, 2, 'x')}`)
+
+  if (rows.length < 7) {
+    lines.push(`\n(Only ${rows.length} of 7 last-week days are in the 7-day window. Earlier days are not visible.)`)
+  }
+
+  return lines.join('\n')
+}
+
+export function buildLast7Days(trend: DailyPerformance[]): string {
+  if (trend.length === 0) {
+    return `${pickPhrase(OPENERS)}\n\nNo data for the last 7 days.`
+  }
+
+  const sorted = [...trend].sort((a, b) => a.date < b.date ? -1 : 1)
+  const from   = sorted[0].date
+  const to     = sorted[sorted.length - 1].date
+
+  const totalOrders  = sorted.reduce((s, r) => s + (r.wix_orders ?? 0), 0)
+  const totalRevenue = sorted.reduce((s, r) => s + (r.wix_revenue ?? 0), 0)
+  const totalSpend   = sorted.reduce((s, r) => s + (r.meta_spend ?? 0), 0)
+  const avgCPA  = totalSpend > 0 && totalOrders > 0 ? totalSpend / totalOrders : null
+  const avgROAS = totalSpend > 0 ? totalRevenue / totalSpend : null
+  const dailyAvgRev = totalRevenue / sorted.length
+
+  const lines = [
+    pickPhrase(OPENERS), '',
+    `— LAST 7 DAYS — (${from} → ${to}) —`, '',
+    `Total orders: ${totalOrders}`,
+    `Total revenue: ${fmtPln(totalRevenue)}`,
+    `Total Meta spend: ${fmtPln(totalSpend)}`,
+    `Daily avg revenue: ${fmtPln(dailyAvgRev)}`,
+  ]
+
+  if (avgCPA != null)  lines.push(`Avg CPA: ${fmtPln(avgCPA)}`)
+  if (avgROAS != null) lines.push(`Avg ROAS: ${fmt(avgROAS, 2, 'x')}`)
+
+  const best  = sorted.reduce((a, b) => (b.wix_revenue ?? 0) > (a.wix_revenue ?? 0) ? b : a)
+  const worst = sorted.reduce((a, b) => (b.wix_revenue ?? 0) < (a.wix_revenue ?? 0) ? b : a)
+  lines.push('', `Best day: ${best.date} — ${fmtPln(best.wix_revenue)}, ${best.wix_orders} orders.`)
+  if (worst.date !== best.date) {
+    lines.push(`Weakest day: ${worst.date} — ${fmtPln(worst.wix_revenue)}, ${worst.wix_orders} orders.`)
+  }
+
+  return lines.join('\n')
+}
+
+export function buildPeriodComparison(
+  trend: DailyPerformance[],
+  type: 'today-vs-yesterday' | 'this-week-vs-last-week'
+): string {
+  if (type === 'today-vs-yesterday') {
+    const sorted = [...trend].sort((a, b) => b.date < a.date ? -1 : 1) // desc
+    const todayRow = sorted[0] ?? null
+    const yRow     = sorted[1] ?? null
+
+    if (!todayRow) return `${pickPhrase(OPENERS)}\n\nNot enough data to compare today and yesterday.`
+
+    const lines = [pickPhrase(OPENERS), '', '— TODAY vs YESTERDAY —', '']
+
+    lines.push(dailySummaryBlock(todayRow, 'Today'))
+    lines.push('')
+    if (yRow) {
+      lines.push(dailySummaryBlock(yRow, 'Yesterday'))
+      lines.push('')
+
+      const revDelta   = (todayRow.wix_revenue ?? 0) - (yRow.wix_revenue ?? 0)
+      const orderDelta = (todayRow.wix_orders ?? 0)  - (yRow.wix_orders ?? 0)
+      const sign = revDelta >= 0 ? '+' : ''
+
+      lines.push(`Delta: ${sign}${fmtPln(revDelta)} revenue, ${sign}${orderDelta} orders vs yesterday.`)
+      if (revDelta > 0) {
+        lines.push('Today is ahead. Keep it up, Lifidi.')
+      } else if (revDelta < 0) {
+        lines.push('Today is behind yesterday. Day not over — push creatives.')
+      } else {
+        lines.push('Identical to yesterday. Very consistent, for better or worse.')
+      }
+    } else {
+      lines.push('No yesterday data in the 7-day window.')
+    }
+
+    return lines.join('\n')
+  }
+
+  // this-week-vs-last-week
+  const weekStart = thisWeekStartWaw()
+  const lastStart = lastWeekStartWaw()
+  const lastEnd   = lastWeekEndWaw()
+
+  const twRows = trend.filter(r => r.date >= weekStart)
+  const lwRows = trend.filter(r => r.date >= lastStart && r.date <= lastEnd)
+
+  const sum = (rows: DailyPerformance[]) => ({
+    orders:  rows.reduce((s, r) => s + (r.wix_orders ?? 0), 0),
+    revenue: rows.reduce((s, r) => s + (r.wix_revenue ?? 0), 0),
+    spend:   rows.reduce((s, r) => s + (r.meta_spend ?? 0), 0),
+    days:    rows.length,
+  })
+
+  const tw = sum(twRows)
+  const lw = sum(lwRows)
+
+  const lines = [pickPhrase(OPENERS), '', '— THIS WEEK vs LAST WEEK —', '']
+
+  lines.push(`This week (${tw.days} days, from ${weekStart}):`)
+  lines.push(`  Orders: ${tw.orders}  |  Revenue: ${fmtPln(tw.revenue)}  |  Spend: ${fmtPln(tw.spend)}`)
+  const twCPA  = tw.spend > 0 && tw.orders > 0 ? tw.spend / tw.orders : null
+  const twROAS = tw.spend > 0 ? tw.revenue / tw.spend : null
+  if (twCPA)  lines.push(`  CPA: ${fmtPln(twCPA)}`)
+  if (twROAS) lines.push(`  ROAS: ${fmt(twROAS, 2, 'x')}`)
+  lines.push('')
+
+  if (lw.days > 0) {
+    lines.push(`Last week (${lw.days} day${lw.days > 1 ? 's' : ''} visible, from ${lastStart}):`)
+    lines.push(`  Orders: ${lw.orders}  |  Revenue: ${fmtPln(lw.revenue)}  |  Spend: ${fmtPln(lw.spend)}`)
+    const lwCPA  = lw.spend > 0 && lw.orders > 0 ? lw.spend / lw.orders : null
+    const lwROAS = lw.spend > 0 ? lw.revenue / lw.spend : null
+    if (lwCPA)  lines.push(`  CPA: ${fmtPln(lwCPA)}`)
+    if (lwROAS) lines.push(`  ROAS: ${fmt(lwROAS, 2, 'x')}`)
+    lines.push('')
+
+    const revDelta   = tw.revenue - lw.revenue
+    const orderDelta = tw.orders - lw.orders
+    if (revDelta > 0) {
+      lines.push(`This week running ${fmtPln(revDelta)} ahead in revenue vs last week's visible days. ${orderDelta > 0 ? `${orderDelta} more orders.` : ''}`)
+    } else if (revDelta < 0) {
+      lines.push(`This week is ${fmtPln(Math.abs(revDelta))} behind last week's visible days. Worth investigating.`)
+    } else {
+      lines.push('Revenue tracking identical to last week. Very consistent.')
+    }
+
+    if (lw.days < 7) {
+      lines.push(`\n(Only ${lw.days} last-week days are in the 7-day window — comparison is partial.)`)
+    }
+  } else {
+    lines.push('Last week is outside the 7-day history window — cannot compare.')
+  }
+
+  return lines.join('\n')
+}
+
+export function buildAdsDiagnosis(
+  perf: DailyPerformance | null,
+  metaStats: MetaStatsToday,
+  ads: MetaAdDaily[]
+): string {
+  if (!perf) {
+    return `${pickPhrase(OPENERS)}\n\nNo data today — ads diagnosis not possible. Check Make scenarios first.`
+  }
+
+  const issues: string[] = []
+  const spend  = perf.meta_spend ?? 0
+  const orders = perf.wix_orders ?? 0
+  const cpa    = perf.real_cpa
+  const roas   = perf.real_roas
+  const lc     = perf.link_clicks ?? 0
+  const metaPurchases = metaStats.meta_purchases
+
+  if (spend === 0) {
+    issues.push('No Meta spend today — campaigns may be paused or budget has run out.')
+  }
+  if (spend > 0 && orders === 0) {
+    issues.push('Spend is running but Wix shows zero orders. Funnel is broken — check landing page and checkout flow.')
+  }
+  if (lc > 50 && orders === 0) {
+    issues.push(`${lc} link clicks with zero purchases — traffic is arriving but dropping off before the buy.`)
+  }
+  if (cpa != null && cpa > 50) {
+    issues.push(`CPA at ${fmtPln(cpa)} — above the 50 PLN alert threshold. Creatives or targeting need work.`)
+  }
+  if (roas != null && roas < 2) {
+    issues.push(`ROAS at ${fmt(roas, 2, 'x')} — below 2x. Ads are not covering their cost.`)
+  }
+  if (metaPurchases > 0 && orders > metaPurchases) {
+    issues.push(`Meta undercounting: ${orders - metaPurchases} real Wix orders have no Meta attribution. Pixel may be misfiring.`)
+  }
+  if (metaPurchases > orders && orders >= 0) {
+    const overcount = metaPurchases - orders
+    if (overcount > 0) {
+      issues.push(`Meta overcounting: claims ${overcount} more purchases than Wix recorded. View-through or duplicate events.`)
+    }
+  }
+  if (metaStats.isStale) {
+    issues.push('Meta data is stale — ad spend figures may not reflect today accurately.')
+  }
+  if (ads.length > 0) {
+    const total = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
+    const top   = ads[0]
+    if (total > 0 && top.spend / total > 0.7) {
+      issues.push(`Concentration risk: "${top.campaign_name ?? top.campaign_id}" is consuming ${((top.spend / total) * 100).toFixed(0)}% of the budget.`)
+    }
+    const burning = ads.filter(a => (a.purchases ?? 0) === 0 && (a.spend ?? 0) > 10)
+    if (burning.length > 0) {
+      issues.push(`${burning.length} campaign${burning.length > 1 ? 's' : ''} spending over 10 PLN with zero attributed conversions.`)
+    }
+  }
+
+  const opener = pickPhrase(OPENERS)
+  if (issues.length === 0) {
+    return `${opener}\n\nAds look healthy today, Lifidi. Spend is running, ROAS is above 2x, no tracking anomalies. Eyes on the CPA.`
+  }
+
+  return [
+    opener, '',
+    '— ADS DIAGNOSIS —', '',
+    ...issues.map((iss, i) => `${i + 1}. ${iss}`),
+  ].join('\n')
 }

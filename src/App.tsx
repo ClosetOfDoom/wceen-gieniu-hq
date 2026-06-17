@@ -216,9 +216,10 @@ function TopBar({
 
 const CHIPS = [
   'How are we doing today?',
+  'How was yesterday?',
+  'This week so far',
+  'Today vs yesterday',
   'What needs attention?',
-  'Top campaign',
-  'Compare Meta to Wix',
 ]
 
 function RightPanel({
@@ -454,7 +455,7 @@ export default function App() {
   // ── Intent handler — natural language to response ────────────────────────────
 
   function handleIntentQuery(query: string) {
-    const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary })
+    const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend })
     speakAnswer(result)
   }
 

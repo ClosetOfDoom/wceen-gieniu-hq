@@ -8,6 +8,8 @@ import {
   buildCompareJsuWebinars, buildDeliverabilityReport, buildMailingDiagnosis,
   buildAttendanceRateReport, buildWhoAttendedAndBought,
   buildOpsBriefing, buildMetaVsWix,
+  buildYesterdaySummary, buildWeekToDate, buildLastWeekSummary,
+  buildLast7Days, buildPeriodComparison, buildAdsDiagnosis,
 } from './responses'
 
 export interface IntentContext {
@@ -16,10 +18,31 @@ export interface IntentContext {
   ads: MetaAdDaily[]
   metaStats: MetaStatsToday
   jsuSummary: JsuFunnelSummary | null
+  trend: DailyPerformance[]
 }
 
 function has(text: string, ...terms: string[]): boolean {
   return terms.some(t => text.includes(t))
+}
+
+type TimeRange =
+  | 'yesterday'
+  | 'this-week'
+  | 'last-week'
+  | 'last-7-days'
+  | 'today-vs-yesterday'
+  | 'this-week-vs-last-week'
+
+function detectTimeRange(q: string): TimeRange | null {
+  // Comparisons first — more specific than individual periods
+  if (has(q, 'vs yesterday', 'vs wczoraj', 'today vs', 'dzisiaj vs', 'compare today', 'today against yesterday')) return 'today-vs-yesterday'
+  if (has(q, 'this week vs', 'week vs last', 'compare week', 'tydzień vs', 'week comparison', 'ten vs zeszły')) return 'this-week-vs-last-week'
+  // Individual periods
+  if (has(q, 'yesterday', 'wczoraj', 'jak było wczoraj', 'what happened yesterday', 'how was yesterday')) return 'yesterday'
+  if (has(q, 'this week', 'week so far', 'ten tydzień', 'jak idzie tydzień', 'week to date', 'wtd')) return 'this-week'
+  if (has(q, 'last week', 'zeszły tydzień', 'poprzedni tydzień', 'ubiegły tydzień')) return 'last-week'
+  if (has(q, 'last 7', 'last seven', 'past 7', 'past seven', 'ostatnie 7', 'ostatni tydzień', '7 days', 'seven days')) return 'last-7-days'
+  return null
 }
 
 function buildCampaignSummary(ads: MetaAdDaily[]): string {
@@ -48,7 +71,7 @@ function buildCampaignSummary(ads: MetaAdDaily[]): string {
 
 export function resolveIntent(query: string, ctx: IntentContext): string {
   const q = query.toLowerCase().trim()
-  const { perf, status, ads, metaStats, jsuSummary } = ctx
+  const { perf, status, ads, metaStats, jsuSummary, trend } = ctx
 
   // JSU / webinar funnel
   if (has(q, 'webinar', 'jsu', 'jak się', 'jak sie', 'jak się ucz', 'jak sie ucz', 'funnel')) {
@@ -65,6 +88,22 @@ export function resolveIntent(query: string, ctx: IntentContext): string {
   // Meta vs Wix / ad efficiency
   if (has(q, 'meta vs', 'vs wix', 'compare meta', 'meta wasting', 'wasting money', 'ads working', 'are ads', 'roas', 'attribution', 'discrepancy', 'pixel', 'tracking')) {
     return buildMetaVsWix(perf, metaStats, ads)
+  }
+
+  // Ads diagnosis — "what's wrong with ads / why no sales"
+  if (has(q, 'diagnose ads', 'ads not working', "aren't ads", 'ads broken', 'co z reklamami', 'reklamy nie', 'what\'s wrong with ads', 'whats wrong with ads', 'why no conversions', 'ads problem', 'why no orders', 'dlaczego brak')) {
+    return buildAdsDiagnosis(perf, metaStats, ads)
+  }
+
+  // Time-range queries — must run before generic keywords like "today", "this week"
+  {
+    const timeRange = detectTimeRange(q)
+    if (timeRange === 'today-vs-yesterday')    return buildPeriodComparison(trend, 'today-vs-yesterday')
+    if (timeRange === 'this-week-vs-last-week') return buildPeriodComparison(trend, 'this-week-vs-last-week')
+    if (timeRange === 'yesterday')             return buildYesterdaySummary(trend)
+    if (timeRange === 'this-week')             return buildWeekToDate(trend)
+    if (timeRange === 'last-week')             return buildLastWeekSummary(trend)
+    if (timeRange === 'last-7-days')           return buildLast7Days(trend)
   }
 
   // Top campaigns
