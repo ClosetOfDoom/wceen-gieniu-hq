@@ -33,7 +33,7 @@ export default defineConfig({
         ]
       },
       workbox: {
-        cacheId: 'gieniu-hq-v5',
+        cacheId: 'gieniu-hq-v6',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         skipWaiting: true,
         clientsClaim: true,

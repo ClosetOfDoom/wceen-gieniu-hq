@@ -23,7 +23,7 @@ export const handler = async (event) => {
   let body
   try { body = JSON.parse(event.body ?? '{}') } catch { return { statusCode: 400, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Invalid JSON' }) } }
 
-  const voiceId = body.voiceId || process.env.ELEVENLABS_VOICE_ID || 'CwhRBWXzGAHq8TQ4Fs17'
+  const voiceId = body.voiceId || process.env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb'
   const text = (body.text || 'Test głosu. Jeden, dwa, trzy.').slice(0, 500)
   const outputFormat = process.env.ELEVENLABS_OUTPUT_FORMAT || 'mp3_44100_128'
   const modelId = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2'

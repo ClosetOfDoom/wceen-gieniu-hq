@@ -21,6 +21,13 @@ export interface IntentContext {
   trend: DailyPerformance[]
 }
 
+function normalizePl(text: string): string {
+  return text
+    .replace(/ą/g, 'a').replace(/ć/g, 'c').replace(/ę/g, 'e')
+    .replace(/ł/g, 'l').replace(/ń/g, 'n').replace(/ó/g, 'o')
+    .replace(/ś/g, 's').replace(/ź/g, 'z').replace(/ż/g, 'z')
+}
+
 function has(text: string, ...terms: string[]): boolean {
   return terms.some(t => text.includes(t))
 }
@@ -36,12 +43,12 @@ type TimeRange =
 function detectTimeRange(q: string): TimeRange | null {
   // Comparisons first — more specific than individual periods
   if (has(q, 'vs yesterday', 'vs wczoraj', 'today vs', 'dzisiaj vs', 'compare today', 'today against yesterday')) return 'today-vs-yesterday'
-  if (has(q, 'this week vs', 'week vs last', 'compare week', 'tydzień vs', 'week comparison', 'ten vs zeszły')) return 'this-week-vs-last-week'
-  // Individual periods
-  if (has(q, 'yesterday', 'wczoraj', 'jak było wczoraj', 'what happened yesterday', 'how was yesterday')) return 'yesterday'
-  if (has(q, 'this week', 'week so far', 'ten tydzień', 'jak idzie tydzień', 'week to date', 'wtd')) return 'this-week'
-  if (has(q, 'last week', 'zeszły tydzień', 'poprzedni tydzień', 'ubiegły tydzień')) return 'last-week'
-  if (has(q, 'last 7', 'last seven', 'past 7', 'past seven', 'ostatnie 7', 'ostatni tydzień', '7 days', 'seven days')) return 'last-7-days'
+  if (has(q, 'this week vs', 'week vs last', 'compare week', 'tydzien vs', 'week comparison', 'ten vs zeszly')) return 'this-week-vs-last-week'
+  // Individual periods — Polish synonyms normalized (no diacritics)
+  if (has(q, 'yesterday', 'wczoraj', 'jak bylo wczoraj', 'jak wczoraj', 'wyniki wczoraj', 'co bylo wczoraj', 'jakie revenue wczoraj', 'what happened yesterday', 'how was yesterday')) return 'yesterday'
+  if (has(q, 'this week', 'week so far', 'ten tydzien', 'jak idzie tydzien', 'jak ten tydzien', 'jak tydzien', 'week to date', 'wtd')) return 'this-week'
+  if (has(q, 'last week', 'zeszly tydzien', 'poprzedni tydzien', 'ubiegly tydzien')) return 'last-week'
+  if (has(q, 'last 7', 'last seven', 'past 7', 'past seven', 'ostatnie 7', 'ostatnich 7', 'ostatni tydzien', '7 days', 'seven days')) return 'last-7-days'
   return null
 }
 
@@ -75,7 +82,7 @@ function fmtPlnLocal(n: number | null | undefined): string {
 }
 
 export function resolveIntent(query: string, ctx: IntentContext): string {
-  const q = query.toLowerCase().trim()
+  const q = normalizePl(query.toLowerCase().trim())
   const { perf, status, ads, metaStats, jsuSummary, trend } = ctx
 
   // When today has no data but trend/history is available, give a useful partial briefing
@@ -84,7 +91,10 @@ export function resolveIntent(query: string, ctx: IntentContext): string {
     'today', 'how are we', 'doing', 'status', 'revenue', 'orders',
     'spend', 'briefing', 'summary', 'dashboard', 'numbers', 'situation',
     'update', 'overview', 'give me', 'tell me', 'read me', 'whats up', "what's up",
-    'boss', 'report', 'snapshot'
+    'boss', 'report', 'snapshot',
+    // Polish
+    'jak idzie', 'co sie dzieje', 'co tam', 'co nowego', 'jak leci',
+    'sytuacja', 'dzisiaj', 'dzis', 'hajs', 'zamowien', 'przychod', 'kasa'
   )
   if (status === 'NO_DATA' && trend.length > 0 && isOperationalQuery) {
     const latest = trend[0]
@@ -107,7 +117,7 @@ export function resolveIntent(query: string, ctx: IntentContext): string {
   }
 
   // JSU / webinar funnel
-  if (has(q, 'webinar', 'jsu', 'jak się', 'jak sie', 'jak się ucz', 'jak sie ucz', 'funnel')) {
+  if (has(q, 'webinar', 'jsu', 'jak sie ucz', 'jak sie ucz', 'funnel', 'webinary', 'lejek')) {
     if (has(q, 'selling', 'not selling', 'not work', 'problem', 'why', 'czemu')) return buildWhyCourseNotSelling(jsuSummary)
     if (has(q, 'compare', 'comparison', 'history', 'historical', 'previous')) return buildCompareJsuWebinars(jsuSummary)
     if (has(q, 'deliver', 'deliverability', 'inbox', 'bounce', 'spam')) return buildDeliverabilityReport(jsuSummary)
@@ -119,12 +129,15 @@ export function resolveIntent(query: string, ctx: IntentContext): string {
   }
 
   // Meta vs Wix / ad efficiency
-  if (has(q, 'meta vs', 'vs wix', 'compare meta', 'meta wasting', 'wasting money', 'ads working', 'are ads', 'roas', 'attribution', 'discrepancy', 'pixel', 'tracking')) {
+  if (has(q, 'meta vs', 'vs wix', 'compare meta', 'meta wasting', 'wasting money', 'ads working', 'are ads', 'roas', 'attribution', 'discrepancy', 'pixel', 'tracking',
+    'meta dzis', 'meta dzisiaj', 'wix dzis', 'wix dzisiaj', 'porownaj meta', 'czy meta')) {
     return buildMetaVsWix(perf, metaStats, ads)
   }
 
   // Ads diagnosis — "what's wrong with ads / why no sales"
-  if (has(q, 'diagnose ads', 'ads not working', "aren't ads", 'ads broken', 'co z reklamami', 'reklamy nie', 'what\'s wrong with ads', 'whats wrong with ads', 'why no conversions', 'ads problem', 'why no orders', 'dlaczego brak')) {
+  if (has(q, 'diagnose ads', 'ads not working', "aren't ads", 'ads broken', 'co z reklamami', 'reklamy nie',
+    'what\'s wrong with ads', 'whats wrong with ads', 'why no conversions', 'ads problem', 'why no orders',
+    'dlaczego brak', 'co z adsami', 'adsy nie', 'adsy dzis', 'adsy dzisiaj', 'co z meta', 'gdzie wycieka')) {
     return buildAdsDiagnosis(perf, metaStats, ads)
   }
 
@@ -140,7 +153,8 @@ export function resolveIntent(query: string, ctx: IntentContext): string {
   }
 
   // Top campaigns
-  if (has(q, 'campaign', 'which ad', 'best ad', 'top ad', 'top campaign', 'which campaign', 'wasting budget', 'concentration')) {
+  if (has(q, 'campaign', 'which ad', 'best ad', 'top ad', 'top campaign', 'which campaign', 'wasting budget', 'concentration',
+    'adsy', 'reklamy', 'ktora reklama', 'jakie reklamy')) {
     return buildCampaignSummary(ads)
   }
 
@@ -183,10 +197,12 @@ export function resolveIntent(query: string, ctx: IntentContext): string {
   }
 
   // Revenue / orders (specific)
-  if (has(q, 'revenue', 'how much money', 'how much did we make', 'earnings', 'income from')) {
+  if (has(q, 'revenue', 'how much money', 'how much did we make', 'earnings', 'income from',
+    'hajs', 'hajsu', 'przychod', 'ile hajsu', 'kasa', 'zarobki', 'ile zarobily')) {
     return buildRevenueReport(perf, status)
   }
-  if (has(q, 'how many orders', 'orders today', 'wix orders', 'purchases today', 'sales today')) {
+  if (has(q, 'how many orders', 'orders today', 'wix orders', 'purchases today', 'sales today',
+    'ile zamowien', 'zamowienia', 'zamowien', 'ile sprzedazy')) {
     return buildRevenueReport(perf, status)
   }
 
@@ -206,7 +222,8 @@ export function resolveIntent(query: string, ctx: IntentContext): string {
   }
 
   // Full ops briefing — matches any conversational query about status/today
-  if (has(q, 'how are we', 'doing today', 'give me', 'tell me', 'read me', 'whats up', "what's up", 'update', 'status', 'situation', 'brief', 'briefing', 'summary', 'report', 'ops', 'overview', 'numbers', 'today', 'dashboard', 'snapshot')) {
+  if (has(q, 'how are we', 'doing today', 'give me', 'tell me', 'read me', 'whats up', "what's up", 'update', 'status', 'situation', 'brief', 'briefing', 'summary', 'report', 'ops', 'overview', 'numbers', 'today', 'dashboard', 'snapshot',
+    'jak idzie', 'co sie dzieje', 'co tam', 'co nowego', 'jak leci', 'sytuacja', 'dzisiaj', 'dzis')) {
     return buildOpsBriefing(perf, status, metaStats, ads)
   }
 

@@ -14,7 +14,7 @@ export const handler = async (event) => {
 
   if (event.httpMethod === 'GET') {
     const apiKey = process.env.ELEVENLABS_API_KEY
-    const voiceId = process.env.ELEVENLABS_VOICE_ID || 'CwhRBWXzGAHq8TQ4Fs17'
+    const voiceId = process.env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb'
     const modelId = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2'
     return {
       statusCode: 200,
@@ -48,7 +48,7 @@ export const handler = async (event) => {
     return { statusCode: 400, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Invalid JSON' }) }
   }
 
-  const voiceId = body.voiceId || process.env.ELEVENLABS_VOICE_ID || 'CwhRBWXzGAHq8TQ4Fs17'
+  const voiceId = body.voiceId || process.env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb'
   const modelId = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2'
   const outputFormat = process.env.ELEVENLABS_OUTPUT_FORMAT || 'mp3_44100_128'
   const text = (body.text || '').slice(0, 2500)

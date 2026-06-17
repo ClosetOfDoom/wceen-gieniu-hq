@@ -2,6 +2,9 @@ import { cleanForTTS } from './textClean'
 
 export const DEFAULT_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb' // George — British narrator
 
+// eslint-disable-next-line no-console
+console.log('GIENIU voice: George JBFqnCBsd6RMkjVDRZzb')
+
 let currentAudio: HTMLAudioElement | null = null
 
 export function stopAudio(): void {

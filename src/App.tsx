@@ -221,6 +221,7 @@ function RightPanel({
   response,
   onQuery,
   speaking,
+  thinking,
   onSpeak,
   onMic,
   listening,
@@ -232,6 +233,7 @@ function RightPanel({
   response: string
   onQuery: (query: string) => void
   speaking: boolean
+  thinking: boolean
   onSpeak: () => void
   onMic: () => void
   listening: boolean
@@ -259,7 +261,19 @@ function RightPanel({
           <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.78rem', color: 'var(--gold)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>
             Gieniu Says
           </div>
-          {speaking && (
+          {listening && (
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--teal)', animation: 'pulse-mic 1.2s infinite' }} />
+              Listening...
+            </div>
+          )}
+          {thinking && !listening && (
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', animation: 'pulse-mic 1.2s infinite' }} />
+              Thinking...
+            </div>
+          )}
+          {speaking && !listening && !thinking && (
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--teal)', animation: 'pulse-mic 1.2s infinite' }} />
               George is speaking…
@@ -339,13 +353,13 @@ function RightPanel({
           <button
             className={`btn-mic${listening ? ' listening' : ''}`}
             onClick={onMic}
-            title={listening ? 'Stop listening' : 'Start voice input'}
+            title={speaking ? 'Interrupt George' : listening ? 'Stop listening' : 'Start voice input'}
           >
-            {listening ? '⏹' : '🎙'}
+            {listening ? '⏹' : speaking ? '✋' : '🎙'}
           </button>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: listening ? 'var(--teal)' : 'var(--muted2)' }}>
-              {listening ? 'Listening…' : 'Tap to speak'}
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: listening ? 'var(--teal)' : thinking ? 'var(--gold)' : speaking ? 'var(--teal)' : 'var(--muted2)' }}>
+              {listening ? 'Listening...' : thinking ? 'Thinking...' : speaking ? 'Speaking...' : 'Tap to speak'}
             </div>
             <button
               className={`btn-mute${muted ? ' muted' : ''}`}
@@ -415,12 +429,14 @@ export default function App() {
   // Conversational state
   const [response, setResponse]       = useState('')
   const [speaking, setSpeaking]       = useState(false)
+  const [thinking, setThinking]       = useState(false)
   const [muted, setMuted]             = useState(false)
   const [listening, setListening]     = useState(false)
   const [transcript, setTranscript]   = useState('')
   const [ttsError, setTtsError]       = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
+  const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Loaders ─────────────────────────────────────────────────────────────────
 
@@ -513,6 +529,11 @@ export default function App() {
   // ── Intent handler ────────────────────────────────────────────────────────────
 
   function handleIntentQuery(query: string) {
+    // Stop any current audio before processing new query
+    if (speaking) {
+      stopAudio()
+      setSpeaking(false)
+    }
     const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend })
     speakAnswer(result)
   }
@@ -537,6 +558,12 @@ export default function App() {
   // ── Voice input ───────────────────────────────────────────────────────────────
 
   function handleMic() {
+    // If speaking, interrupt: stop audio and start listening
+    if (speaking) {
+      stopAudio()
+      setSpeaking(false)
+    }
+
     if (listening) {
       recognitionRef.current?.stop()
       setListening(false)
@@ -553,7 +580,7 @@ export default function App() {
     }
 
     const rec = new SR()
-    rec.lang = 'en-US'
+    rec.lang = 'pl-PL'
     rec.interimResults = false
     rec.maxAlternatives = 1
     recognitionRef.current = rec
@@ -563,10 +590,15 @@ export default function App() {
       const heard = event.results[0][0].transcript.trim()
       setListening(false)
       setTranscript(heard)
-      handleIntentQuery(heard)
+      setThinking(true)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        setThinking(false)
+        handleIntentQuery(heard)
+      }, 750)
     }
 
-    rec.onerror = () => { setListening(false) }
+    rec.onerror = () => { setListening(false); setThinking(false) }
     rec.onend   = () => { setListening(false) }
 
     rec.start()
@@ -675,6 +707,7 @@ export default function App() {
         response={response}
         onQuery={handleIntentQuery}
         speaking={speaking}
+        thinking={thinking}
         onSpeak={handleSpeakAgain}
         onMic={handleMic}
         listening={listening}
