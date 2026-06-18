@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { extractEmail, extractRegistrationDate, normalizeParticipantFields } from '../lib/clickmeetingNormalize'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,7 +22,7 @@ export interface JsuFunnelRow {
 
 export interface JsuParticipantRow {
   participant_id: string
-  session_id: string          // exposed by view — used for optional drill-down filter
+  session_id: string
   email: string
   session_date: string
   session_name: string
@@ -57,17 +58,21 @@ export interface FunnelTotals {
 }
 
 export interface FunnelRates {
-  delivery_rate: number | null    // delivered / sent
-  open_rate: number | null        // opens / delivered
-  click_rate: number | null       // clicks / delivered
-  reg_rate: number | null         // registered / clicks (if email data exists)
-  attendance_rate: number | null  // attendees / registered
-  purchase_rate: number | null    // purchases / attendees
+  delivery_rate: number | null
+  open_rate: number | null
+  click_rate: number | null
+  reg_rate: number | null
+  attendance_rate: number | null
+  purchase_rate: number | null
 }
 
 export interface JsuFunnelDebug {
   sessionsCount: number
   participantsCount: number
+  uniqueEmails?: number
+  registrationsFromParticipants?: boolean  // true = registered_count taken from participant rows
+  attendanceStatus?: 'populated' | 'not_populated'
+  purchaseMappingStatus?: 'mapped' | 'not_mapped_yet'
   source: 'view' | 'raw_tables' | 'none'
   latestSessionDate?: string
   latestSessionName?: string
@@ -102,28 +107,43 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
   const viewRows = (viewData ?? []) as JsuFunnelRow[]
 
   if (viewRows.length > 0) {
-    const s = buildSummary(viewRows)
-    // Get raw participant count for debug (lightweight, count-only)
+    // Check if view shows 0 registrations (common when registered_count column is not populated)
+    const viewTotalRegistered = viewRows.reduce((s, r) => s + (r.registered_count ?? 0), 0)
+
+    // Always get participant count to know if raw data exists
     const { count: partCount } = await supabase
       .from('webinar_participants')
       .select('*', { count: 'exact', head: true })
-    const debug: JsuFunnelDebug = {
-      sessionsCount: viewRows.length,
-      participantsCount: partCount ?? 0,
-      source: 'view',
-      latestSessionDate: viewRows[0]?.session_date,
-      latestSessionName: viewRows[0]?.session_name,
+
+    if (viewTotalRegistered === 0 && (partCount ?? 0) > 0) {
+      // View has sessions but 0 registered_count — participants exist but aren't counted.
+      // Fall through to raw tables path for accurate per-session registration counts.
+      console.log('GIENIU webinar: view shows 0 registrations with', partCount, 'participant rows — using raw tables for accurate counts')
+      // (fall through to raw tables below)
+    } else {
+      const s = buildSummary(viewRows)
+      const debug: JsuFunnelDebug = {
+        sessionsCount: viewRows.length,
+        participantsCount: partCount ?? 0,
+        source: 'view',
+        latestSessionDate: viewRows[0]?.session_date,
+        latestSessionName: viewRows[0]?.session_name,
+        attendanceStatus: s.totals.attendees > 0 ? 'populated' : 'not_populated',
+        purchaseMappingStatus: s.totals.purchases > 0 ? 'mapped' : 'not_mapped_yet',
+      }
+      s._debug = debug
+      console.log('GIENIU data sources', { webinarRows: viewRows.length, participants: partCount, source: 'view', hasClickMeeting: s.hasClickMeetingData, hasEmail: s.hasEmailData })
+      return s
     }
-    s._debug = debug
-    console.log('GIENIU data sources', { webinarRows: viewRows.length, participants: partCount, source: 'view', hasClickMeeting: s.hasClickMeetingData, hasEmail: s.hasEmailData })
-    return s
   }
 
   // Fallback: query raw webinar_sessions + webinar_participants tables directly
-  // This handles cases where the view exists but email joins return 0 rows.
   const [{ data: rawSessions, error: sessErr }, { data: rawParticipants, error: partErr }] = await Promise.all([
     supabase.from('webinar_sessions').select('*').order('scheduled_at', { ascending: false }).limit(12),
-    supabase.from('webinar_participants').select('session_id, attended, attend_duration_min, purchased_at, purchase_value, wix_order_id').limit(500),
+    supabase
+      .from('webinar_participants')
+      .select('id, session_id, email, registered_at, registration_date, attended, attend_duration_min, purchased_at, purchase_value, wix_order_id, created_at')
+      .limit(500),
   ])
 
   if (sessErr) console.warn('webinar_sessions error:', sessErr.message)
@@ -139,16 +159,39 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
     attendee_count?: number
   }
   type RawParticipant = {
+    id?: string
     session_id: string
+    email?: string | null
+    registered_at?: string | null
+    registration_date?: string | null
     attended?: boolean
     attend_duration_min?: number | null
     purchased_at?: string | null
     purchase_value?: number | null
     wix_order_id?: string | null
+    created_at?: string | null
   }
 
-  const sessions      = (rawSessions      ?? []) as RawSession[]
-  const participantRows = (rawParticipants ?? []) as RawParticipant[]
+  const sessions        = (rawSessions      ?? []) as RawSession[]
+  const rawPartRows     = (rawParticipants   ?? []) as RawParticipant[]
+
+  // Normalize emails and extract registration dates from potentially malformed fields
+  const participantRows = rawPartRows.map(p => {
+    const { email, registered_at } = normalizeParticipantFields({
+      email: p.email,
+      registered_at: p.registered_at,
+      registration_date: p.registration_date,
+      created_at: p.created_at,
+    })
+    return { ...p, email, registered_at }
+  })
+
+  // Count unique valid emails
+  const uniqueEmails = new Set(
+    participantRows
+      .map(p => p.email?.toLowerCase() ?? '')
+      .filter(e => e.includes('@'))
+  ).size
 
   if (sessions.length === 0 && participantRows.length === 0) {
     console.log('GIENIU data sources', { webinarRows: 0, source: 'none', sessErr: sessErr?.message, partErr: partErr?.message })
@@ -158,31 +201,55 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
   }
 
   // Aggregate from raw tables
-  const registered = sessions.reduce((s, r) => s + (r.registered_count ?? 0), 0)
-  const attendees  = sessions.reduce((s, r) => s + (r.attendee_count  ?? 0), 0)
+  // Use participant count per session as registered_count fallback when column is 0/null
+  const registeredFromSessions = sessions.reduce((s, r) => s + (r.registered_count ?? 0), 0)
+  const registered = registeredFromSessions > 0 ? registeredFromSessions : participantRows.length
+  const registrationsFromParticipants = registeredFromSessions === 0 && participantRows.length > 0
+
+  const attendeesFromSessions = sessions.reduce((s, r) => s + (r.attendee_count ?? 0), 0)
+  const attendeesFromParticipants = participantRows.filter(p => p.attended).length
+  const attendees = attendeesFromSessions > 0 ? attendeesFromSessions : attendeesFromParticipants
+
   const purchases  = participantRows.filter(p => p.purchased_at || p.wix_order_id).length
   const revenue    = participantRows.reduce((s, p) => s + (p.purchase_value ?? 0), 0)
 
   const hasClickMeetingData = registered > 0 || attendees > 0 || sessions.length > 0
-  const attendanceRate  = registered > 0 ? attendees  / registered : null
-  const purchaseRate    = attendees   > 0 ? purchases  / attendees  : null
+  const attendanceRate  = registered > 0 && attendees > 0 ? attendees  / registered : null
+  const purchaseRate    = attendees   > 0                  ? purchases  / attendees  : null
 
   // Build synthetic JsuFunnelRows from raw sessions
   const syntheticRows: JsuFunnelRow[] = sessions.map(s => {
     const sessParticipants = participantRows.filter(p => p.session_id === s.id)
     const sessPurchases    = sessParticipants.filter(p => p.purchased_at || p.wix_order_id)
     const sessRevenue      = sessParticipants.reduce((acc, p) => acc + (p.purchase_value ?? 0), 0)
+    const sessAttendees    = sessParticipants.filter(p => p.attended).length
+
+    // registered_count: prefer session column if > 0, else count participant rows for this session
+    const sessRegistered = (s.registered_count ?? 0) > 0
+      ? s.registered_count!
+      : sessParticipants.length
+
+    // attendee_count: prefer session column if > 0, else count attended participant rows
+    const sessAttendeeCount = (s.attendee_count ?? 0) > 0 ? s.attendee_count! : sessAttendees
+
+    const sessAttRate = sessRegistered > 0 && sessAttendeeCount > 0
+      ? Math.round((sessAttendeeCount / sessRegistered) * 100)
+      : null
+    const sessPurchRate = sessAttendeeCount > 0 && sessPurchases.length > 0
+      ? Math.round((sessPurchases.length / sessAttendeeCount) * 100)
+      : null
+
     return {
       session_id:          s.id,
       session_name:        s.session_name ?? s.id,
       session_date:        s.scheduled_at?.slice(0, 10) ?? '',
       scheduled_at:        s.scheduled_at ?? '',
-      registered_count:    s.registered_count ?? 0,
-      attendee_count:      s.attendee_count   ?? 0,
-      attendance_rate_pct: s.registered_count ? Math.round((s.attendee_count ?? 0) / s.registered_count * 100) : null,
+      registered_count:    sessRegistered,
+      attendee_count:      sessAttendeeCount,
+      attendance_rate_pct: sessAttRate,
       purchases:           sessPurchases.length,
       revenue:             sessRevenue,
-      purchase_rate_pct:   s.attendee_count ? Math.round(sessPurchases.length / s.attendee_count * 100) : null,
+      purchase_rate_pct:   sessPurchRate,
       email_sent:      0,
       email_delivered: 0,
       email_opens:     0,
@@ -202,7 +269,7 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
 
   const { bottleneck, diagnosis } = diagnose(totals, rates, false, hasClickMeetingData)
 
-  console.log('GIENIU data sources', { rawSessions: sessions.length, participants: participantRows.length, registered, attendees, purchases, source: 'raw_tables' })
+  console.log('GIENIU data sources', { rawSessions: sessions.length, participants: participantRows.length, registered, attendees, purchases, uniqueEmails, source: 'raw_tables', registrationsFromParticipants })
 
   return {
     sessions: syntheticRows,
@@ -215,9 +282,13 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
     _debug: {
       sessionsCount: sessions.length,
       participantsCount: participantRows.length,
+      uniqueEmails,
+      registrationsFromParticipants,
       source: 'raw_tables',
       latestSessionDate: sessions[0]?.scheduled_at?.slice(0, 10),
       latestSessionName: sessions[0]?.session_name,
+      attendanceStatus: attendees > 0 ? 'populated' : 'not_populated',
+      purchaseMappingStatus: purchases > 0 ? 'mapped' : 'not_mapped_yet',
     },
   }
 }
@@ -225,6 +296,7 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
 export async function loadJsuParticipantJourney(
   sessionId?: string
 ): Promise<JsuParticipantRow[]> {
+  // Try view first
   const base = supabase
     .from('v_webinar_jsu_participant_journey')
     .select('*')
@@ -235,10 +307,75 @@ export async function loadJsuParticipantJourney(
 
   if (error) {
     console.warn('v_webinar_jsu_participant_journey unavailable:', error.message)
+    return loadJsuParticipantsRaw(sessionId)
+  }
+
+  const rows = (data ?? []) as JsuParticipantRow[]
+
+  // If view returned nothing, try raw table fallback
+  if (rows.length === 0) {
+    const rawRows = await loadJsuParticipantsRaw(sessionId)
+    if (rawRows.length > 0) {
+      console.log('GIENIU: participant view empty — using raw table, found', rawRows.length, 'rows')
+      return rawRows
+    }
     return []
   }
 
-  return (data ?? []) as JsuParticipantRow[]
+  // Normalize emails in case of malformed data from Make
+  return rows.map(row => {
+    const rawEmail = String(row.email ?? '')
+    const cleanEmail = extractEmail(rawEmail)
+    const regAt = row.registered_at
+      ?? extractRegistrationDate(rawEmail)
+      ?? null
+    return {
+      ...row,
+      email: cleanEmail || rawEmail,
+      registered_at: regAt,
+    }
+  })
+}
+
+async function loadJsuParticipantsRaw(sessionId?: string): Promise<JsuParticipantRow[]> {
+  let query = supabase
+    .from('webinar_participants')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  if (sessionId) query = query.eq('session_id', sessionId)
+
+  const { data, error } = await query
+
+  if (error) {
+    console.warn('webinar_participants raw query error:', error.message)
+    return []
+  }
+
+  return ((data ?? []) as Record<string, unknown>[]).map(r => {
+    const rawEmail = String(r.email ?? '')
+    const { email, registered_at } = normalizeParticipantFields({
+      email: rawEmail,
+      registered_at: r.registered_at as string | null,
+      registration_date: r.registration_date as string | null,
+      created_at: r.created_at as string | null,
+    })
+
+    return {
+      participant_id:      String(r.id ?? r.participant_id ?? String(Math.random())),
+      session_id:          String(r.session_id ?? ''),
+      email,
+      session_date:        String(r.session_date ?? registered_at?.slice(0, 10) ?? ''),
+      session_name:        String(r.session_name ?? ''),
+      registered_at,
+      attended:            Boolean(r.attended ?? false),
+      attend_duration_min: (r.attend_duration_min as number | null) ?? null,
+      purchased_at:        (r.purchased_at as string | null) ?? null,
+      purchase_value:      (r.purchase_value as number | null) ?? null,
+      wix_order_id:        (r.wix_order_id as string | null) ?? null,
+    }
+  })
 }
 
 // ── Diagnosis engine ─────────────────────────────────────────────────────────
@@ -274,7 +411,6 @@ function buildSummary(sessions: JsuFunnelRow[]): JsuFunnelSummary {
   }
 
   const hasEmailData = totals.email_sent > 0
-  // sessions.length > 0 means the ClickMeeting Make scenario has run and pushed data
   const hasClickMeetingData = sessions.length > 0 || totals.registered > 0 || totals.attendees > 0
 
   const rates: FunnelRates = {
@@ -388,6 +524,17 @@ function diagnose(
   }
 
   if (!hasEmail) {
+    // Attendance populated?
+    if (hasClickMeeting && t.registered > 0 && t.attendees === 0) {
+      return {
+        bottleneck: 'OK',
+        diagnosis:
+          `${t.registered} registration${t.registered > 1 ? 's' : ''} found in ClickMeeting. ` +
+          'Attendance data is not populated yet — the webinar may not have taken place or the attend column has not been synced. ' +
+          'Purchases are not mapped yet. ' +
+          'Connect Make → ESP to enable full email funnel diagnosis.',
+      }
+    }
     return {
       bottleneck: 'OK',
       diagnosis:

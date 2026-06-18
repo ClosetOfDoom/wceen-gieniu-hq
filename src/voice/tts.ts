@@ -7,6 +7,27 @@ console.log(`GIENIU voice: ${GIENIU_VOICE_NAME} ${GIENIU_VOICE_ID}`)
 let currentAudio: HTMLAudioElement | null = null
 let currentFetchAbort: AbortController | null = null
 
+// AudioContext used to unlock browser autoplay policy during user gesture.
+// Call prewarmAudio() synchronously inside a click handler (before any await)
+// so that subsequent audio.play() calls succeed even after async TTS fetch.
+let _warmCtx: AudioContext | null = null
+
+export function prewarmAudio(): void {
+  try {
+    type WebkitWindow = Window & { webkitAudioContext?: typeof AudioContext }
+    const AC = window.AudioContext ?? (window as WebkitWindow).webkitAudioContext
+    if (!AC) return
+    if (!_warmCtx || _warmCtx.state === 'closed') {
+      _warmCtx = new AC()
+    }
+    if (_warmCtx.state !== 'running') {
+      void _warmCtx.resume()
+    }
+  } catch {
+    // non-fatal — older browsers without AudioContext
+  }
+}
+
 export function stopAudio(): void {
   // Abort any in-flight TTS fetch first — this is the key fix
   if (currentFetchAbort) {
@@ -45,7 +66,7 @@ export async function speak(text: string): Promise<TTSResult> {
   currentFetchAbort = ac
 
   try {
-    const res = await fetch('/.netlify/functions/eleven-tts', {
+    const res = await fetch('/.netlify/functions/gieniu-tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: cleaned }),
@@ -78,10 +99,43 @@ export async function speak(text: string): Promise<TTSResult> {
         return { ok: false, source: 'elevenlabs', error: msg }
       }
     } else {
-      const errText = await res.text().catch(() => res.status.toString())
-      // eslint-disable-next-line no-console
-      console.warn(`GIENIU TTS failed: ElevenLabs HTTP ${res.status}`, errText)
-      return { ok: false, source: 'elevenlabs', error: `HTTP ${res.status}: ${errText.slice(0, 120)}` }
+      // Try to parse structured error from the function
+      let errorMsg: string
+      try {
+        const json = await res.json() as {
+          stage?: string
+          elevenStatus?: number
+          message?: string
+          hasApiKey?: boolean
+          keyLength?: number
+          keyLooksQuoted?: boolean
+          keyHasBearerPrefix?: boolean
+          keyHasWhitespace?: boolean
+          apiKeySource?: string
+        }
+        // eslint-disable-next-line no-console
+        console.log('GIENIU TTS error detail', json)
+        const stage  = json.stage ?? 'unknown_stage'
+        const status = json.elevenStatus ?? res.status
+        const msg    = json.message ?? ''
+
+        // Include key diagnostics in error string so getTtsErrorMessage can pattern-match
+        const keyInfo = [
+          json.keyHasBearerPrefix && 'bearerPrefix',
+          json.keyLooksQuoted     && 'quotedKey',
+          json.keyHasWhitespace   && 'whitespace',
+          json.apiKeySource       && `src:${json.apiKeySource}`,
+          json.keyLength != null  && `len:${json.keyLength}`,
+        ].filter(Boolean).join(',')
+
+        errorMsg = `HTTP ${res.status}: ${stage} / elevenStatus ${status} — ${msg}${keyInfo ? ` [${keyInfo}]` : ''}`
+      } catch {
+        const errText = await res.text().catch(() => res.status.toString())
+        // eslint-disable-next-line no-console
+        console.log('GIENIU TTS error detail (non-JSON)', errText.slice(0, 200))
+        errorMsg = `HTTP ${res.status}: ${errText.slice(0, 200)}`
+      }
+      return { ok: false, source: 'elevenlabs', error: errorMsg }
     }
   } catch (err) {
     currentFetchAbort = null

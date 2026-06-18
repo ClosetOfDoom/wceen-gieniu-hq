@@ -28,11 +28,11 @@ import {
   type InsightChartSpec,
 } from './brain/responses'
 import { resolveIntent } from './brain/intent'
-import { speak, stopAudio } from './voice/tts'
+import { speak, stopAudio, prewarmAudio } from './voice/tts'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const OPENING_KEY  = 'gieniu_opening_spoken_v1'
+const VOICE_UNLOCK_KEY = 'gieniu_voice_unlocked_v1'
 const OPENING_TEXT = "Lifidi, GIENIU HQ is awake. I'm watching revenue, Meta, Wix, webinars, and operational leaks. Ask me what's moving, what's wasting money, or what needs your attention first."
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ function Sidebar({
         <div>
           <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.82rem', color: 'var(--gold)', fontWeight: 600 }}>Gieniu</div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted)', marginTop: '2px' }}>Revenue Advisor</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--teal)', marginTop: '3px', letterSpacing: '0.04em' }}>● George voice</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--teal)', marginTop: '3px', letterSpacing: '0.04em' }}>● Active</div>
         </div>
       </div>
     </aside>
@@ -239,9 +239,38 @@ const CHIPS = [
   'What needs attention?',
 ]
 
+function getTtsErrorMessage(err: string): string {
+  if (!err) return ''
+  if (/NotAllowedError|play\(\) failed|autoplay|interrupted/i.test(err))
+    return 'Browser blocked autoplay — click "Start voice" once to unlock.'
+  if (/missing_api_key/i.test(err))
+    return 'Voice unavailable: No API key found in Netlify env. Check ELEVENLABS_API_KEY (scope must be All, not Build-only).'
+  if (/quota_exceeded/i.test(err))
+    return 'Voice paused: quota exhausted. Upgrade the plan or wait for the monthly reset.'
+  if (/elevenStatus 401/i.test(err)) {
+    if (/bearerPrefix/i.test(err))
+      return 'Voice: API key has "Bearer" prefix — was stripped. If still failing, update the key in Netlify env.'
+    if (/quotedKey/i.test(err))
+      return 'Voice: API key was quoted — quotes stripped. If still failing, update the key in Netlify env.'
+    if (/len:0|len:1[0-9]$/i.test(err))
+      return 'Voice: API key looks too short (possibly truncated). Check ELEVENLABS_API_KEY in Netlify env vars.'
+    return 'Voice: API key rejected (401). Check ELEVENLABS_API_KEY in Netlify env vars — scope must be "All" not "Build".'
+  }
+  if (/elevenStatus 422/i.test(err))
+    return 'Voice: TTS request rejected (422). Voice ID or model may be wrong.'
+  if (/elevenStatus 429/i.test(err))
+    return 'Voice: Rate limit hit (429). Character quota may be exhausted.'
+  if (/elevenlabs_http_error|HTTP [45]\d\d/i.test(err))
+    return `Voice unavailable: ${err.replace(/^HTTP \d+: /, '').slice(0, 140)}`
+  return 'Tab may be muted. Unmute the tab in browser settings, then click Speak again.'
+}
+
 function RightPanel({
   response,
   chart,
+  lastQuery,
+  voiceUnlocked,
+  onStartGeorgeVoice,
   onQuery,
   speaking,
   thinking,
@@ -252,11 +281,12 @@ function RightPanel({
   onMuteToggle,
   transcript,
   ttsError,
-  openingBlocked,
-  onStartBriefing,
 }: {
   response: string
   chart?: InsightChartSpec
+  lastQuery?: string
+  voiceUnlocked?: boolean
+  onStartGeorgeVoice?: () => void
   onQuery: (query: string) => void
   speaking: boolean
   thinking: boolean
@@ -267,8 +297,6 @@ function RightPanel({
   onMuteToggle: () => void
   transcript: string
   ttsError: string
-  openingBlocked?: boolean
-  onStartBriefing?: () => void
 }) {
   const [inputVal, setInputVal] = useState('')
 
@@ -304,7 +332,7 @@ function RightPanel({
           {speaking && !listening && !thinking && (
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--teal)', animation: 'pulse-mic 1.2s infinite' }} />
-              George is speaking…
+              Speaking…
             </div>
           )}
         </div>
@@ -312,34 +340,44 @@ function RightPanel({
         {/* Response text */}
         {response ? (
           <>
+            {lastQuery && (
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--muted2)', marginBottom: '10px', padding: '4px 8px', background: 'var(--surface)', borderLeft: '2px solid var(--border)', borderRadius: '2px' }}>
+                ↑ {lastQuery}
+              </div>
+            )}
+
             <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', lineHeight: 1.85, color: 'var(--text)', margin: 0, marginBottom: chart ? '8px' : '14px' }}>
               {response}
             </pre>
 
             {chart && <InsightChart spec={chart} />}
 
-            {/* Speak again / stop */}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-              {openingBlocked && onStartBriefing ? (
+            {/* Voice controls */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: chart ? '10px' : '0' }}>
+              {!voiceUnlocked ? (
                 <button
                   className="btn-sm"
-                  onClick={onStartBriefing}
-                  style={{ borderColor: 'var(--gold)', color: 'var(--gold)', fontWeight: 600 }}
+                  onClick={onStartGeorgeVoice}
+                  style={{ borderColor: 'var(--gold)', color: 'var(--gold)', fontWeight: 700, padding: '6px 14px' }}
                 >
-                  🎙 Start voice briefing
+                  ▶ Start voice
                 </button>
-              ) : (
+              ) : speaking ? (
                 <button
                   className="btn-sm"
                   onClick={onSpeak}
-                  style={{ borderColor: speaking ? 'var(--teal)' : undefined, color: speaking ? 'var(--teal)' : undefined }}
+                  style={{ borderColor: 'var(--teal)', color: 'var(--teal)' }}
                 >
-                  {speaking ? '⏹ Stop' : '▶ Speak again'}
+                  ⏹ Stop speaking
+                </button>
+              ) : (
+                <button className="btn-sm" onClick={onSpeak}>
+                  ▶ Speak again
                 </button>
               )}
-              {ttsError && !openingBlocked && (
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)' }}>
-                  Audio playback failed — click Speak again or unmute.
+              {ttsError && (
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--orange)', lineHeight: 1.4, maxWidth: '200px' }}>
+                  {getTtsErrorMessage(ttsError)}
                 </span>
               )}
             </div>
@@ -476,7 +514,8 @@ export default function App() {
   const [listening, setListening]         = useState(false)
   const [transcript, setTranscript]       = useState('')
   const [ttsError, setTtsError]           = useState('')
-  const [openingBlocked, setOpeningBlocked] = useState(false)
+  const [voiceUnlocked, setVoiceUnlocked] = useState(() => sessionStorage.getItem(VOICE_UNLOCK_KEY) === '1')
+  const [lastQuery, setLastQuery]         = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
   const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -546,26 +585,24 @@ export default function App() {
     return () => clearInterval(interval)
   }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants])
 
-  // ── Opening greeting — once per session ──────────────────────────────────────
+  // ── Opening greeting — always shown, TTS only if voice already unlocked ────────
 
   useEffect(() => {
-    if (sessionStorage.getItem(OPENING_KEY)) return
-    sessionStorage.setItem(OPENING_KEY, '1')
+    // Always show greeting text on fresh load
     setResponse(OPENING_TEXT)
-    // eslint-disable-next-line no-console
-    console.log('GIENIU opening line queued')
+    setResponseSpoken(OPENING_TEXT)
+    if (sessionStorage.getItem(VOICE_UNLOCK_KEY) !== '1') return  // wait for "Start George voice" click
     const t = setTimeout(async () => {
       setSpeaking(true)
       const result = await speak(OPENING_TEXT)
       setSpeaking(false)
-      if (result.ok) {
+      if (!result.ok && !result.aborted) {
+        // eslint-disable-next-line no-console
+        console.log('GIENIU TTS error detail', result.error)
+        setTtsError(result.error ?? 'unknown error')
+      } else if (result.ok) {
         // eslint-disable-next-line no-console
         console.log('GIENIU opening line spoken')
-      } else if (!result.aborted) {
-        // eslint-disable-next-line no-console
-        console.log('GIENIU opening line blocked by autoplay')
-        setOpeningBlocked(true)
-        setTtsError(result.error ?? 'autoplay blocked')
       }
     }, 900)
     return () => clearTimeout(t)
@@ -590,7 +627,7 @@ export default function App() {
     setTtsError('')
     // eslint-disable-next-line no-console
     console.log('GIENIU spokenText', gr.spokenText.slice(0, 100))
-    if (muted || !gr.spokenText.trim()) return
+    if (muted || !voiceUnlocked || !gr.spokenText.trim()) return
     setSpeaking(true)
     const result = await speak(gr.spokenText)
     if (ttsSessionRef.current !== session) return  // newer session took over
@@ -598,7 +635,7 @@ export default function App() {
     if (!result.ok && !result.aborted) {
       setTtsError(result.error ?? 'unknown error')
       // eslint-disable-next-line no-console
-      console.warn('GIENIU TTS failed:', result.error)
+      console.log('GIENIU TTS error detail', result.error)
     }
   }
 
@@ -608,6 +645,7 @@ export default function App() {
       stopSpeaking()
       return
     }
+    prewarmAudio() // unlock audio during user gesture before async speak
     const toSpeak = responseSpoken || response
     if (!toSpeak.trim()) return
     const session = ++ttsSessionRef.current
@@ -616,30 +654,50 @@ export default function App() {
     speak(toSpeak).then(res => {
       if (ttsSessionRef.current !== session) return
       setSpeaking(false)
-      if (!res.ok && !res.aborted) setTtsError(res.error ?? 'unknown error')
+      if (res.ok && !voiceUnlocked) {
+        sessionStorage.setItem(VOICE_UNLOCK_KEY, '1')
+        setVoiceUnlocked(true)
+        // eslint-disable-next-line no-console
+        console.log('GIENIU voice unlocked', true)
+      } else if (!res.ok && !res.aborted) {
+        setTtsError(res.error ?? 'unknown error')
+        // eslint-disable-next-line no-console
+        console.log('GIENIU TTS error detail', res.error)
+      }
     })
   }
 
   // ── Intent handler ────────────────────────────────────────────────────────────
 
   function handleIntentQuery(query: string) {
+    setLastQuery(query)
     stopSpeaking()
     const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend })
     speakAnswer(result)
   }
 
-  // ── Start voice briefing (when autoplay was blocked) ─────────────────────────
+  // ── Start George voice (voice unlock + speak) ─────────────────────────────────
 
-  function handleStartBriefing() {
-    setOpeningBlocked(false)
+  async function handleStartGeorgeVoice() {
+    prewarmAudio() // unlock browser audio NOW — synchronous, during user gesture, before any await
     setTtsError('')
+    // eslint-disable-next-line no-console
+    console.log('GIENIU Start voice — endpoint: /.netlify/functions/gieniu-tts')
     const session = ++ttsSessionRef.current
     setSpeaking(true)
-    speak(responseSpoken || response || OPENING_TEXT).then(res => {
-      if (ttsSessionRef.current !== session) return
-      setSpeaking(false)
-      if (!res.ok && !res.aborted) setTtsError(res.error ?? 'unknown error')
-    })
+    const result = await speak(responseSpoken || response || OPENING_TEXT)
+    if (ttsSessionRef.current !== session) return
+    setSpeaking(false)
+    if (result.ok) {
+      sessionStorage.setItem(VOICE_UNLOCK_KEY, '1')
+      setVoiceUnlocked(true)
+      // eslint-disable-next-line no-console
+      console.log('GIENIU voice unlocked', true)
+    } else if (!result.aborted) {
+      setTtsError(result.error ?? 'unknown error')
+      // eslint-disable-next-line no-console
+      console.log('GIENIU TTS error detail', result.error)
+    }
   }
 
   // ── PWA install ───────────────────────────────────────────────────────────────
@@ -857,6 +915,9 @@ export default function App() {
       <RightPanel
         response={response}
         chart={responseChart}
+        lastQuery={lastQuery}
+        voiceUnlocked={voiceUnlocked}
+        onStartGeorgeVoice={handleStartGeorgeVoice}
         onQuery={handleIntentQuery}
         speaking={speaking}
         thinking={thinking}
@@ -867,8 +928,6 @@ export default function App() {
         onMuteToggle={() => setMuted(m => !m)}
         transcript={transcript}
         ttsError={ttsError}
-        openingBlocked={openingBlocked}
-        onStartBriefing={openingBlocked ? handleStartBriefing : undefined}
       />
 
       {/* Build stamp — always visible, bottom-right */}

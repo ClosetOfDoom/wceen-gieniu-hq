@@ -481,14 +481,24 @@ export function buildAttendanceRateReport(s: JsuFunnelSummary | null): string {
   }
   const opener = pickPhrase(JSU_OPENERS)
   const ar = s.rates.attendance_rate
-  const verdict = ar !== null && ar < 0.60
-    ? `Show-up rate is ${pct(ar)} — below 60%. Check the reminder sequence: email 24h + 1h before. Thursday 18:00 is a solid slot, but reminders can lift attendance.`
-    : `Show-up rate is ${pct(ar)} — OK, or not enough historical data to compare.`
+  const attendancePopulated = (s._debug?.attendanceStatus === 'populated') || s.totals.attendees > 0
+
+  let verdict: string
+  if (!attendancePopulated && s.totals.registered > 0) {
+    verdict = `${s.totals.registered} registration${s.totals.registered > 1 ? 's' : ''} found. Attendance data is not populated yet — the attended column has not been filled in from ClickMeeting. This may mean the webinar has not taken place yet, or Make has not synced the attend status.`
+  } else if (ar !== null && ar < 0.60) {
+    verdict = `Show-up rate is ${pct(ar)} — below 60%. Check the reminder sequence: email 24h + 1h before. Thursday 18:00 is a solid slot, but reminders can lift attendance.`
+  } else {
+    verdict = `Show-up rate is ${pct(ar)} — ${ar != null ? 'OK, above 60%.' : 'not enough data to compare.'}`
+  }
 
   const lines = [opener, '', '— JSU ATTENDANCE RATE —', '']
   for (const sess of s.sessions.slice(0, 5)) {
     const date = new Date(sess.scheduled_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
-    lines.push(`  ${date}  ${sess.attendee_count}/${sess.registered_count}  (${sess.attendance_rate_pct ?? '—'}%)`)
+    const attendDisplay = attendancePopulated
+      ? `${sess.attendee_count}/${sess.registered_count}  (${sess.attendance_rate_pct ?? '—'}%)`
+      : `${sess.registered_count} registered  (attendance not populated)`
+    lines.push(`  ${date}  ${attendDisplay}`)
   }
   lines.push('', verdict)
   return lines.join('\n')
@@ -499,20 +509,35 @@ export function buildWhoAttendedAndBought(s: JsuFunnelSummary | null): string {
     return `${pickPhrase(JSU_OPENERS)}\n\nNo ClickMeeting data.\nConnect Make → ClickMeeting → webinar_participants in Supabase.`
   }
   const opener = pickPhrase(JSU_OPENERS)
-  return [
-    opener, '',
-    '— WHO ATTENDED AND BOUGHT — JSU —', '',
-    `Total attendees (all sessions): ${fmtNum(s.totals.attendees)}`,
-    `Total purchases: ${s.totals.purchases}`,
-    `Attendee → purchase conversion: ${pct(s.rates.purchase_rate)}`,
-    `Total revenue: ${fmtPln(s.totals.revenue)}`,
-    '',
-    'Full participant list is in the JSU tab — click "Show participants".',
-    '',
-    s.totals.purchases === 0 && s.totals.attendees > 0
-      ? 'Zero purchases with attendees present — check product mapping in Make (email → wix_order_id).'
-      : s.diagnosis,
-  ].join('\n')
+  const attendancePopulated = (s._debug?.attendanceStatus === 'populated') || s.totals.attendees > 0
+  const purchasesMapped     = (s._debug?.purchaseMappingStatus === 'mapped') || s.totals.purchases > 0
+
+  const lines = [opener, '', '— WHO ATTENDED AND BOUGHT — JSU —', '']
+  lines.push(`Total registrations: ${fmtNum(s.totals.registered)}`)
+  if (attendancePopulated) {
+    lines.push(`Total attendees: ${fmtNum(s.totals.attendees)}`)
+    lines.push(`Attendance rate: ${pct(s.rates.attendance_rate)}`)
+  } else {
+    lines.push('Attendance data: not populated yet')
+  }
+  if (purchasesMapped) {
+    lines.push(`Total purchases: ${s.totals.purchases}`)
+    lines.push(`Attendee → purchase conversion: ${pct(s.rates.purchase_rate)}`)
+    lines.push(`Total revenue: ${fmtPln(s.totals.revenue)}`)
+  } else {
+    lines.push('Purchases: not mapped yet (Make → Wix → webinar_participants not connected)')
+  }
+  lines.push('')
+  lines.push('Full participant list is in the JSU tab — click "Show participants".')
+  lines.push('')
+  if (s.totals.purchases === 0 && s.totals.attendees > 0) {
+    lines.push('Zero purchases with attendees present — check product mapping in Make (email → wix_order_id).')
+  } else if (!purchasesMapped) {
+    lines.push('Purchases not mapped yet — connect Make to match Wix orders to webinar participants.')
+  } else {
+    lines.push(s.diagnosis)
+  }
+  return lines.join('\n')
 }
 
 // ── Conversational briefing builders ─────────────────────────────────────────
@@ -803,8 +828,12 @@ export function buildWeekToDate(trend: DailyPerformance[]): string {
   if (wtdCPA != null)  lines.push(`Avg CPA: ${fmtPln(wtdCPA)}`)
   if (wtdROAS != null) lines.push(`Avg ROAS: ${fmt(wtdROAS, 2, 'x')}`)
 
-  const best = rows.reduce((a, b) => (b.wix_revenue ?? 0) > (a.wix_revenue ?? 0) ? b : a)
+  const best   = rows.reduce((a, b) => (b.wix_revenue ?? 0) > (a.wix_revenue ?? 0) ? b : a)
+  const worst  = rows.reduce((a, b) => (b.wix_revenue ?? 0) < (a.wix_revenue ?? 0) ? b : a)
   lines.push('', `Best day: ${best.date} — ${fmtPln(best.wix_revenue)}, ${best.wix_orders} orders.`)
+  if (rows.length > 1 && worst.date !== best.date) {
+    lines.push(`Weakest day: ${worst.date} — ${fmtPln(worst.wix_revenue)}, ${worst.wix_orders} orders.`)
+  }
 
   if (wtdCPA != null && wtdCPA > 50) {
     lines.push('CPA running above 50 PLN for the week. Creatives need a look.')
@@ -908,16 +937,26 @@ export function buildPeriodComparison(
       lines.push('')
 
       const revDelta   = (todayRow.wix_revenue ?? 0) - (yRow.wix_revenue ?? 0)
-      const orderDelta = (todayRow.wix_orders ?? 0)  - (yRow.wix_orders ?? 0)
-      const sign = revDelta >= 0 ? '+' : ''
+      const orderDelta = (todayRow.wix_orders  ?? 0) - (yRow.wix_orders  ?? 0)
+      const spendDelta = (todayRow.meta_spend  ?? 0) - (yRow.meta_spend  ?? 0)
+      const sign = (n: number) => n >= 0 ? '+' : ''
 
-      lines.push(`Delta: ${sign}${fmtPln(revDelta)} revenue, ${sign}${orderDelta} orders vs yesterday.`)
+      lines.push('— DELTAS vs YESTERDAY —')
+      lines.push(`  Revenue: ${sign(revDelta)}${fmtPln(revDelta)}  |  Orders: ${sign(orderDelta)}${orderDelta}  |  Spend: ${sign(spendDelta)}${fmtPln(spendDelta)}`)
+
+      if (todayRow.real_cpa != null || yRow.real_cpa != null) {
+        const cpaPart   = `CPA: ${todayRow.real_cpa != null ? fmtPln(todayRow.real_cpa) : '—'} today vs ${yRow.real_cpa != null ? fmtPln(yRow.real_cpa) : '—'} yesterday`
+        const roasPart  = `ROAS: ${todayRow.real_roas != null ? fmt(todayRow.real_roas, 2, 'x') : '—'} today vs ${yRow.real_roas != null ? fmt(yRow.real_roas, 2, 'x') : '—'} yesterday`
+        lines.push(`  ${cpaPart}  |  ${roasPart}`)
+      }
+      lines.push('')
+
       if (revDelta > 0) {
-        lines.push('Today is ahead. Keep it up, Lifidi.')
+        lines.push('Verdict: Today is ahead. Keep it up, Lifidi.')
       } else if (revDelta < 0) {
-        lines.push('Today is behind yesterday. Day not over — push creatives.')
+        lines.push('Verdict: Today is behind yesterday. Day not over — push creatives or pause worst campaigns.')
       } else {
-        lines.push('Identical to yesterday. Very consistent, for better or worse.')
+        lines.push('Verdict: Identical to yesterday. Very consistent, for better or worse.')
       }
     } else {
       lines.push('No yesterday data in the 7-day window.')
@@ -1012,21 +1051,33 @@ export function buildAdsDiagnosis(
   const totalSpend     = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
   const totalPurchases = ads.reduce((s, a) => s + (a.purchases ?? 0), 0)
 
-  const lines: string[] = [opener, '', '— ADS DIAGNOSIS TODAY —', '']
+  const adsDate = ads[0]?.date ?? ''
+  const today   = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const isStaleAds = adsDate !== '' && adsDate < today
+
+  const lines: string[] = [opener, '', `— ADS DIAGNOSIS — ${isStaleAds ? adsDate + ' (latest available)' : 'TODAY'} —`, '']
+
+  if (isStaleAds) {
+    lines.push(`Note: Today's Meta data has not arrived yet. Showing campaign data from ${adsDate}.`)
+    lines.push('')
+  }
 
   // Per-campaign breakdown
   lines.push('Campaign breakdown:')
   for (const ad of ads) {
-    const name = ad.campaign_name ?? ad.campaign_id ?? '?'
+    const name     = ad.campaign_name ?? ad.campaign_id ?? '?'
     const spendPct = totalSpend > 0 ? ((ad.spend / totalSpend) * 100).toFixed(0) : '?'
     const metaCpa  = ad.spend > 0 && ad.purchases > 0 ? ad.spend / ad.purchases : null
     const purchStr = ad.purchases > 0
-      ? `${ad.purchases} Meta purchases  Meta CPA: ${fmtPln(metaCpa)}`
-      : '0 Meta purchases'
+      ? `${ad.purchases} purchases  CPA: ${fmtPln(metaCpa)}`
+      : '0 purchases'
+    // Compute CTR and CPC if not stored
+    const ctr = ad.ctr ?? (ad.link_clicks > 0 && ad.impressions > 0 ? (ad.link_clicks / ad.impressions) * 100 : null)
+    const cpc = ad.cpc ?? (ad.link_clicks > 0 ? ad.spend / ad.link_clicks : null)
     lines.push(`  "${name}"`)
-    lines.push(`    spend: ${fmtPln(ad.spend)} (${spendPct}%)  ${purchStr}  clicks: ${ad.link_clicks ?? 0}`)
+    lines.push(`    spend: ${fmtPln(ad.spend)} (${spendPct}%)  ${purchStr}  clicks: ${ad.link_clicks ?? 0}${ctr != null ? `  CTR: ${ctr.toFixed(1)}%` : ''}${cpc != null ? `  CPC: ${fmtPln(cpc)}` : ''}`)
   }
-  lines.push(`  Total: ${fmtPln(totalSpend)} spend  ${totalPurchases} Meta purchases`)
+  lines.push(`  Total: ${fmtPln(totalSpend)} spend  ${totalPurchases} purchases`)
   lines.push('')
 
   // ── Winner / Watch ────────────────────────────────────────────────────────
@@ -1063,9 +1114,14 @@ export function buildAdsDiagnosis(
     }
   }
 
-  // Zero purchases note
+  // Zero-attribution day note
   if (totalPurchases === 0 && totalSpend > 0) {
-    lines.push('Meta spend exists, but Meta purchases are zero in the database. Attribution mapping or Meta API has not reported purchases yet.')
+    lines.push('Zero-attribution day: Meta spend is tracked, but Meta purchase events are zero.')
+    lines.push('This is NOT missing data — Meta spend is syncing correctly.')
+    lines.push('Causes: attribution delay (~24h), Meta pixel not firing on Wix order confirmation, or purchase value mapping issue.')
+    if (perf && perf.wix_orders > 0) {
+      lines.push(`Wix real orders: ${perf.wix_orders} — cross-reference Meta spend against this, not Meta purchases.`)
+    }
   }
 
   lines.push('')
@@ -1187,10 +1243,18 @@ export function buildAdsDiagnosisSpoken(
 ): string {
   if (ads.length === 0) return 'No campaign data for today yet. Check the automation panel.'
 
+  const adsDate    = ads[0]?.date ?? ''
+  const today      = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const isStaleAds = adsDate !== '' && adsDate < today
+
   const totalSpend    = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
   const zeroBurners   = ads.filter(a => (a.spend ?? 0) > 10 && (a.purchases ?? 0) === 0)
   const withPurchases = ads.filter(a => (a.purchases ?? 0) > 0)
   const parts: string[] = []
+
+  if (isStaleAds) {
+    parts.push(`Heads up, Lifidi — today's Meta data is not in yet. I am using campaign data from ${adsDate}.`)
+  }
 
   if (withPurchases.length > 0) {
     const best    = withPurchases.reduce((a, b) => (a.spend / a.purchases!) < (b.spend / b.purchases!) ? a : b)
@@ -1206,8 +1270,18 @@ export function buildAdsDiagnosisSpoken(
     const names = zeroBurners.map(a => `"${a.campaign_name ?? a.campaign_id}" spending ${a.spend.toFixed(0)} zloty`).join(' and ')
     parts.push(`${names} ${zeroBurners.length === 1 ? 'is' : 'are'} burning budget with zero Meta purchases. Consider pausing.`)
   }
-  if (withPurchases.length === 0 && zeroBurners.length === 0) {
-    parts.push(`Total spend: ${totalSpend.toFixed(0)} zloty. No Meta purchases attributed yet — data may still be processing.`)
+  if (withPurchases.length === 0) {
+    // Zero-attribution day — Meta spending but no purchases reported
+    parts.push(`Zero-attribution day, Lifidi. Meta spent ${totalSpend.toFixed(0)} zloty but reports zero purchases. This is not missing data — it is attribution delay or pixel mapping.`)
+    if (perf?.wix_orders && perf.wix_orders > 0) {
+      parts.push(`Wix shows ${perf.wix_orders} real orders — the business IS selling. Judge by real C P A, not Meta C P A.`)
+    }
+    const topSpender = ads[0]
+    if (topSpender) {
+      parts.push(`Biggest spender: "${topSpender.campaign_name ?? topSpender.campaign_id}" at ${topSpender.spend.toFixed(0)} zloty.`)
+    }
+    parts.push('Campaign breakdown is on screen.')
+    return parts.join(' ')
   }
   if (perf) {
     const cpa = perf.real_cpa
@@ -1227,16 +1301,69 @@ export function buildPeriodComparisonSpoken(
     const today     = sorted[sorted.length - 1] ?? null
     const yesterday = sorted[sorted.length - 2] ?? null
     if (!today) return 'Not enough data for comparison.'
-    const parts: string[] = [
-      `Today: ${today.wix_orders} Wix orders, ${(today.wix_revenue ?? 0).toFixed(0)} Polish zloty revenue.`,
-    ]
+
+    const tRev   = today.wix_revenue ?? 0
+    const tOrd   = today.wix_orders  ?? 0
+    const tSpend = today.meta_spend  ?? 0
+    const tCPA   = today.real_cpa
+    const tROAS  = today.real_roas
+
+    const parts: string[] = []
+
     if (yesterday) {
-      parts.push(`Yesterday had ${yesterday.wix_orders} orders and ${(yesterday.wix_revenue ?? 0).toFixed(0)} zloty.`)
-      const delta = (today.wix_revenue ?? 0) - (yesterday.wix_revenue ?? 0)
-      if (delta > 0)      parts.push(`Today is ${delta.toFixed(0)} zloty ahead. Keep going, Lifidi.`)
-      else if (delta < 0) parts.push(`Today is ${Math.abs(delta).toFixed(0)} zloty behind yesterday. Day is not over.`)
-      else                parts.push('Revenue identical to yesterday.')
+      const yRev   = yesterday.wix_revenue ?? 0
+      const yOrd   = yesterday.wix_orders  ?? 0
+      const ySpend = yesterday.meta_spend  ?? 0
+      const yCPA   = yesterday.real_cpa
+      const revDelta   = tRev - yRev
+      const ordDelta   = tOrd - yOrd
+      const spendDelta = tSpend - ySpend
+
+      // Opening verdict
+      if (revDelta > 0) {
+        parts.push(`Today is ahead of yesterday, Lifidi. Revenue up from ${yRev.toFixed(0)} to ${tRev.toFixed(0)} Polish zloty.`)
+      } else if (revDelta < 0) {
+        parts.push(`Today is weaker than yesterday, Lifidi. Revenue dropped from ${yRev.toFixed(0)} to ${tRev.toFixed(0)} Polish zloty.`)
+      } else {
+        parts.push(`Today matches yesterday exactly, Lifidi. Revenue at ${tRev.toFixed(0)} Polish zloty.`)
+      }
+
+      // Orders
+      if (ordDelta > 0)       parts.push(`Orders up from ${yOrd} to ${tOrd}.`)
+      else if (ordDelta < 0)  parts.push(`Orders down from ${yOrd} to ${tOrd}.`)
+      else                    parts.push(`Orders unchanged at ${tOrd}.`)
+
+      // Spend comparison
+      if (Math.abs(spendDelta) > 5) {
+        parts.push(`Ad spend is ${spendDelta > 0 ? 'higher' : 'lower'} today: ${tSpend.toFixed(0)} vs ${ySpend.toFixed(0)} zloty yesterday.`)
+      }
+
+      // CPA
+      if (tCPA != null) {
+        if (yCPA != null) {
+          const cpaDelta = tCPA - yCPA
+          if (Math.abs(cpaDelta) > 3) {
+            parts.push(`Real C P A is ${tCPA.toFixed(0)} zloty${cpaDelta > 0 ? ' — worse' : ' — better'} than ${yCPA.toFixed(0)} yesterday.`)
+          } else {
+            parts.push(`Real C P A is ${tCPA.toFixed(0)} zloty, similar to yesterday.`)
+          }
+        } else {
+          parts.push(`Real C P A is ${tCPA.toFixed(0)} zloty today.`)
+        }
+      }
+
+      // ROAS verdict
+      if (tROAS != null) {
+        if (tROAS < 1)       parts.push(`Real R O A S is below one at ${tROAS.toFixed(2)} — ads losing money today. Campaign-level review needed.`)
+        else if (tROAS < 2)  parts.push(`Real R O A S at ${tROAS.toFixed(2)} — marginal. Watch creatives.`)
+        else if (tROAS >= 3) parts.push(`Real R O A S at ${tROAS.toFixed(2)} — ads are paying off well.`)
+        else                 parts.push(`Real R O A S at ${tROAS.toFixed(2)}.`)
+      }
+    } else {
+      parts.push(`Today: ${tOrd} orders, ${tRev.toFixed(0)} Polish zloty. No yesterday data available.`)
+      if (tCPA != null) parts.push(`Real C P A is ${tCPA.toFixed(0)} zloty.`)
     }
+
     parts.push('Comparison chart is on screen.')
     return parts.join(' ')
   }
@@ -1268,29 +1395,54 @@ export function buildWeekToDateSpoken(trend: DailyPerformance[]): string {
   const totalSpend   = rows.reduce((s, r) => s + (r.meta_spend  ?? 0), 0)
   const wtdCPA  = totalSpend > 0 && totalOrders > 0 ? totalSpend / totalOrders : null
   const wtdROAS = totalSpend > 0 ? totalRevenue / totalSpend : null
-  const best    = rows.reduce((a, b) => (b.wix_revenue ?? 0) > (a.wix_revenue ?? 0) ? b : a)
+  const best  = rows.reduce((a, b) => (b.wix_revenue ?? 0) > (a.wix_revenue ?? 0) ? b : a)
+  const worst = rows.reduce((a, b) => (b.wix_revenue ?? 0) < (a.wix_revenue ?? 0) ? b : a)
 
   const parts: string[] = [
     `This week so far, ${rows.length} day${rows.length > 1 ? 's' : ''}: ${totalOrders} orders, ${totalRevenue.toFixed(0)} Polish zloty revenue, ${totalSpend.toFixed(0)} zloty Meta spend.`,
   ]
   if (wtdCPA != null) parts.push(`Average C P A is ${wtdCPA.toFixed(0)} zloty.`)
+  if (wtdROAS != null) parts.push(`Average R O A S is ${wtdROAS.toFixed(2)}.`)
   parts.push(`Best day was ${best.date} with ${(best.wix_revenue ?? 0).toFixed(0)} zloty and ${best.wix_orders} orders.`)
+  if (rows.length > 1 && worst.date !== best.date) {
+    parts.push(`Weakest day was ${worst.date} with ${(worst.wix_revenue ?? 0).toFixed(0)} zloty and ${worst.wix_orders} orders.`)
+  }
   if (wtdCPA != null && wtdCPA > 50)       parts.push('C P A running above 50 zloty for the week. Creatives need attention.')
   else if (wtdROAS != null && wtdROAS >= 3) parts.push('R O A S above 3 — strong week. Keep the machine running.')
   else if (wtdROAS != null && wtdROAS < 2)  parts.push('R O A S below 2 for the week. Margin is thin.')
-  parts.push('Revenue chart is on screen.')
+  parts.push('Week chart is on screen.')
   return parts.join(' ')
 }
 
 export function buildJsuWebinarSpoken(s: JsuFunnelSummary | null): string {
-  if (!s || s.bottleneck === 'NO_DATA')    return 'No JSU webinar data available yet. Connect the ClickMeeting Make scenario.'
-  if (s.bottleneck === 'NO_SOURCES') return 'No email or ClickMeeting data yet. Connect the Make scenarios to enable full diagnosis.'
+  if (!s || s.bottleneck === 'NO_DATA') return 'No JSU webinar data available yet. Connect the ClickMeeting Make scenario.'
+
+  const partCount = s._debug?.participantsCount ?? 0
+  const attendancePopulated = (s._debug?.attendanceStatus === 'populated') || s.totals.attendees > 0
+  const purchasesMapped     = (s._debug?.purchaseMappingStatus === 'mapped') || s.totals.purchases > 0
+
+  if (s.bottleneck === 'NO_SOURCES') {
+    if (partCount > 0) {
+      return `ClickMeeting data is available. I found ${partCount} participant row${partCount > 1 ? 's' : ''} with ${s._debug?.uniqueEmails ?? partCount} unique email${(s._debug?.uniqueEmails ?? partCount) > 1 ? 's' : ''}. Attendance data is not populated yet, so show-up rate cannot be calculated. Purchases are not mapped yet.`
+    }
+    return 'No email or ClickMeeting data yet. Connect the Make scenarios to enable full diagnosis.'
+  }
 
   const parts: string[] = []
   if (s.hasClickMeetingData) {
-    parts.push(`Webinar data: ${s.totals.registered} registered, ${s.totals.attendees} attended, ${s.totals.purchases} purchases.`)
-    if (s.rates.attendance_rate != null) parts.push(`Show-up rate is ${pct(s.rates.attendance_rate)}.`)
-    if (s.rates.purchase_rate   != null) parts.push(`Conversion to purchase is ${pct(s.rates.purchase_rate)}.`)
+    parts.push(`Webinar data: ${s.totals.registered} registered.`)
+    if (attendancePopulated) {
+      parts.push(`${s.totals.attendees} attended.`)
+      if (s.rates.attendance_rate != null) parts.push(`Show-up rate is ${pct(s.rates.attendance_rate)}.`)
+    } else {
+      parts.push('Attendance data is not populated yet.')
+    }
+    if (purchasesMapped) {
+      parts.push(`${s.totals.purchases} purchases.`)
+      if (s.rates.purchase_rate != null) parts.push(`Conversion to purchase is ${pct(s.rates.purchase_rate)}.`)
+    } else {
+      parts.push('Purchases are not mapped yet.')
+    }
   } else {
     parts.push('ClickMeeting registration data is not populated yet.')
   }
@@ -1386,10 +1538,12 @@ export function buildCampaignChart(ads: MetaAdDaily[]): InsightChartSpec | undef
 
 export function buildWebinarFunnelChart(s: JsuFunnelSummary | null): InsightChartSpec | undefined {
   if (!s || !s.hasClickMeetingData) return undefined
+  const attendancePopulated = (s._debug?.attendanceStatus === 'populated') || s.totals.attendees > 0
+  const purchasesMapped     = (s._debug?.purchaseMappingStatus === 'mapped') || s.totals.purchases > 0
   const data = [
     { stage: 'Registered', count: s.totals.registered },
-    { stage: 'Attended',   count: s.totals.attendees   },
-    { stage: 'Purchased',  count: s.totals.purchases   },
+    ...(attendancePopulated ? [{ stage: 'Attended', count: s.totals.attendees }] : []),
+    ...(purchasesMapped     ? [{ stage: 'Purchased', count: s.totals.purchases }] : []),
   ].filter(d => d.count > 0)
   if (data.length === 0) return undefined
   return {
