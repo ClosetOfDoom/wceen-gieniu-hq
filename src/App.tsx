@@ -26,6 +26,11 @@ import {
 import { resolveIntent } from './brain/intent'
 import { speak, stopAudio } from './voice/tts'
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const OPENING_KEY  = 'gieniu_opening_spoken_v1'
+const OPENING_TEXT = "Lifidi, GIENIU HQ is awake. I'm watching revenue, Meta, Wix, webinars, and operational leaks. Ask me what's moving, what's wasting money, or what needs your attention first."
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type NavSection =
@@ -242,6 +247,8 @@ function RightPanel({
   onMuteToggle,
   transcript,
   ttsError,
+  openingBlocked,
+  onStartBriefing,
 }: {
   response: string
   onQuery: (query: string) => void
@@ -254,6 +261,8 @@ function RightPanel({
   onMuteToggle: () => void
   transcript: string
   ttsError: string
+  openingBlocked?: boolean
+  onStartBriefing?: () => void
 }) {
   const [inputVal, setInputVal] = useState('')
 
@@ -303,14 +312,24 @@ function RightPanel({
 
             {/* Speak again / stop */}
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <button
-                className="btn-sm"
-                onClick={onSpeak}
-                style={{ borderColor: speaking ? 'var(--teal)' : undefined, color: speaking ? 'var(--teal)' : undefined }}
-              >
-                {speaking ? '⏹ Stop' : '▶ Speak again'}
-              </button>
-              {ttsError && (
+              {openingBlocked && onStartBriefing ? (
+                <button
+                  className="btn-sm"
+                  onClick={onStartBriefing}
+                  style={{ borderColor: 'var(--gold)', color: 'var(--gold)', fontWeight: 600 }}
+                >
+                  🎙 Start voice briefing
+                </button>
+              ) : (
+                <button
+                  className="btn-sm"
+                  onClick={onSpeak}
+                  style={{ borderColor: speaking ? 'var(--teal)' : undefined, color: speaking ? 'var(--teal)' : undefined }}
+                >
+                  {speaking ? '⏹ Stop' : '▶ Speak again'}
+                </button>
+              )}
+              {ttsError && !openingBlocked && (
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)' }}>
                   Audio playback failed — click Speak again or unmute.
                 </span>
@@ -440,13 +459,14 @@ export default function App() {
   const [jsuParticipantsLoading, setJsuParticipantsLoading] = useState(false)
 
   // Conversational state
-  const [response, setResponse]       = useState('')
-  const [speaking, setSpeaking]       = useState(false)
-  const [thinking, setThinking]       = useState(false)
-  const [muted, setMuted]             = useState(false)
-  const [listening, setListening]     = useState(false)
-  const [transcript, setTranscript]   = useState('')
-  const [ttsError, setTtsError]       = useState('')
+  const [response, setResponse]           = useState('')
+  const [speaking, setSpeaking]           = useState(false)
+  const [thinking, setThinking]           = useState(false)
+  const [muted, setMuted]                 = useState(false)
+  const [listening, setListening]         = useState(false)
+  const [transcript, setTranscript]       = useState('')
+  const [ttsError, setTtsError]           = useState('')
+  const [openingBlocked, setOpeningBlocked] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
   const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -514,6 +534,32 @@ export default function App() {
     return () => clearInterval(interval)
   }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants])
 
+  // ── Opening greeting — once per session ──────────────────────────────────────
+
+  useEffect(() => {
+    if (sessionStorage.getItem(OPENING_KEY)) return
+    sessionStorage.setItem(OPENING_KEY, '1')
+    setResponse(OPENING_TEXT)
+    // eslint-disable-next-line no-console
+    console.log('GIENIU opening line queued')
+    const t = setTimeout(async () => {
+      setSpeaking(true)
+      const result = await speak(OPENING_TEXT)
+      setSpeaking(false)
+      if (result.ok) {
+        // eslint-disable-next-line no-console
+        console.log('GIENIU opening line spoken')
+      } else {
+        // eslint-disable-next-line no-console
+        console.log('GIENIU opening line blocked by autoplay')
+        setOpeningBlocked(true)
+        setTtsError(result.error ?? 'autoplay blocked')
+      }
+    }, 900)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // mount-only: intentionally no deps
+
   // ── Auto-speak every answer ──────────────────────────────────────────────────
 
   async function speakAnswer(text: string) {
@@ -559,6 +605,18 @@ export default function App() {
     }
     const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend })
     speakAnswer(result)
+  }
+
+  // ── Start voice briefing (when autoplay was blocked) ─────────────────────────
+
+  function handleStartBriefing() {
+    setOpeningBlocked(false)
+    setTtsError('')
+    setSpeaking(true)
+    speak(response || OPENING_TEXT).then(res => {
+      setSpeaking(false)
+      if (!res.ok) setTtsError(res.error ?? 'unknown error')
+    })
   }
 
   // ── PWA install ───────────────────────────────────────────────────────────────
@@ -747,6 +805,8 @@ export default function App() {
         onMuteToggle={() => setMuted(m => !m)}
         transcript={transcript}
         ttsError={ttsError}
+        openingBlocked={openingBlocked}
+        onStartBriefing={openingBlocked ? handleStartBriefing : undefined}
       />
 
       {/* Build stamp — always visible, bottom-right */}

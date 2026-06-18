@@ -10,6 +10,7 @@ import {
   buildOpsBriefing, buildMetaVsWix,
   buildYesterdaySummary, buildWeekToDate, buildLastWeekSummary,
   buildLast7Days, buildPeriodComparison, buildAdsDiagnosis,
+  buildWorkflowInstructions,
 } from './responses'
 
 export interface IntentContext {
@@ -170,6 +171,15 @@ export function resolveIntent(query: string, ctx: IntentContext): string {
   // Weekly checklist
   if (has(q, 'weekly checklist', 'weekly plan', 'this week checklist', 'what this week')) {
     return buildWeeklyPlan()
+  }
+
+  // Workflow / next steps / action plan
+  if (has(q,
+    'what should i do', 'what to do', 'next move', 'next step', 'next steps',
+    'workflow', 'give me workflow', 'plan next', 'action plan', 'plan of action',
+    'co robic', 'co teraz robic', 'jakie kroki', 'co dalej', 'plan dzialan'
+  )) {
+    return buildWorkflowInstructions(perf, status, ads, metaStats)
   }
 
   // Red flags / what needs attention

@@ -535,6 +535,88 @@ export function buildOpsBriefing(
   return lines.join('\n')
 }
 
+export function buildWorkflowInstructions(
+  perf: DailyPerformance | null,
+  status: DataStatus,
+  ads: MetaAdDaily[],
+  metaStats: MetaStatsToday
+): string {
+  const lines: string[] = ['OPERATIONAL WORKFLOW — Lifidi', '']
+
+  // 1. Data freshness
+  if (metaStats.isStale && !perf) {
+    lines.push('1. DATA ALERT: Neither Wix nor Meta synced for today (Warsaw time).')
+    lines.push('   → Check Make automation runs. Are both scenarios active and scheduled?')
+  } else if (metaStats.isStale) {
+    lines.push('1. DATA ALERT: Wix data OK, but Meta ads not synced today.')
+    lines.push('   → Check the Meta ads Make scenario.')
+  } else if (!perf && ads.length === 0) {
+    lines.push('1. DATA GAP: No Wix or Meta data yet — day may be early or sync failed.')
+    lines.push('   → Check automation panel and wait until after 09:00 Warsaw.')
+  } else {
+    lines.push('1. DATA: Fresh — Wix and Meta synced. Proceed.')
+  }
+  lines.push('')
+
+  // 2. Revenue check
+  if (perf) {
+    const { real_cpa: cpa, wix_orders: orders, wix_revenue: revenue, meta_spend: spend } = perf
+    if (orders === 0 && spend > 0) {
+      lines.push(`2. ALERT: Zero Wix orders despite ${fmtPln(spend)} ad spend.`)
+      lines.push('   → Check checkout flow, Wix payment gateway, and landing page.')
+    } else if (cpa != null && cpa > 50) {
+      lines.push(`2. CPA ALARM: Real CPA is ${fmtPln(cpa)} — above 50 PLN threshold.`)
+      lines.push('   → Review campaign detail below and pause the worst performer.')
+    } else if (orders > 0) {
+      lines.push(`2. REVENUE OK: ${orders} orders, ${fmtPln(revenue)} today.`)
+      lines.push('   → Keep current campaigns running. Review creatives weekly.')
+    }
+  } else {
+    lines.push('2. REVENUE: No Wix data yet — cannot assess.')
+  }
+  lines.push('')
+
+  // 3. Ads check
+  if (ads.length > 0) {
+    const zeroBurners = ads.filter(a => (a.spend ?? 0) > 10 && (a.purchases ?? 0) === 0)
+    const withPurchases = ads.filter(a => (a.purchases ?? 0) > 0)
+    const winner = withPurchases.sort((a, b) => (a.spend / a.purchases!) - (b.spend / b.purchases!))[0]
+
+    if (zeroBurners.length > 0) {
+      lines.push(`3. BUDGET BURN: ${zeroBurners.length} campaign(s) spending with zero Meta purchases.`)
+      lines.push(`   Burning: ${zeroBurners.map(a => `"${a.campaign_name ?? a.campaign_id}" (${fmtPln(a.spend)})`).join(', ')}`)
+      lines.push('   → Pause these campaigns immediately and review creatives.')
+    } else if (winner) {
+      lines.push(`3. CAMPAIGNS: Winner — "${winner.campaign_name ?? winner.campaign_id}" (CPA: ${fmtPln(winner.spend / winner.purchases!)}).`)
+      lines.push('   → Consider scaling budget on winner. Review underperformers.')
+    } else {
+      lines.push('3. CAMPAIGNS: All campaigns running — no purchases attributed yet.')
+    }
+  } else {
+    lines.push('3. CAMPAIGNS: No campaign-level data — check Meta sync.')
+  }
+  lines.push('')
+
+  // 4. Attribution gap
+  if (perf && metaStats.meta_purchases > 0 && perf.wix_orders > 0) {
+    const gap = perf.wix_orders - metaStats.meta_purchases
+    if (Math.abs(gap) > 2) {
+      lines.push(`4. TRACKING GAP: Wix=${perf.wix_orders} orders vs Meta=${metaStats.meta_purchases} attributed.`)
+      lines.push(gap > 0
+        ? '   → Verify Meta pixel fires on Wix order confirmation page.'
+        : '   → Check for duplicate pixel events or cross-device attribution.')
+    } else {
+      lines.push('4. TRACKING: Attribution consistent. No action needed.')
+    }
+  } else {
+    lines.push('4. TRACKING: Insufficient data — check after orders come in today.')
+  }
+  lines.push('')
+
+  lines.push('Ask "diagnose ads" for campaign detail or "how was yesterday" for trend context.')
+  return lines.join('\n')
+}
+
 export function buildMetaVsWix(
   perf: DailyPerformance | null,
   metaStats: MetaStatsToday,
