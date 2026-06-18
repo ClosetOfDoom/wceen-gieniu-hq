@@ -3,6 +3,7 @@ import type { JsuFunnelSummary, JsuFunnelRow, JsuParticipantRow, FunnelBottlenec
 import { pct, fmtPlnFunnel } from '../services/webinarFunnel'
 import { ParticipantJourneyTable } from './ParticipantJourneyTable'
 import type { JsuCommandKey } from '../brain/responses'
+import { normalizeProduct, type ProductTag } from '../lib/webinarProduct'
 
 interface Props {
   summary: JsuFunnelSummary | null
@@ -131,10 +132,14 @@ function DataDebugBar({ debug }: { debug?: JsuFunnelDebug }) {
       flexWrap: 'wrap',
     }}>
       <span>data debug:</span>
+      <span>source: <span style={{ color: debug.source === 'raw_tables' ? '#00ff88' : '#666' }}>{debug.source}</span></span>
       <span>sessions: <span style={{ color: debug.sessionsCount > 0 ? '#00ff88' : '#555' }}>{debug.sessionsCount}</span></span>
-      <span>participants: <span style={{ color: debug.participantsCount > 0 ? '#00ff88' : '#555' }}>{debug.participantsCount}</span></span>
-      {debug.uniqueEmails != null && <span>unique emails: <span style={{ color: debug.uniqueEmails > 0 ? '#e0e0e0' : '#555' }}>{debug.uniqueEmails}</span></span>}
-      <span>source: <span style={{ color: '#666' }}>{debug.source}</span></span>
+      <span>participants: <span style={{ color: debug.participantsCount > 0 ? '#00ff88' : '#ff6b00' }}>{debug.participantsCount}</span></span>
+      {debug.rawParticipants != null && debug.rawParticipants !== debug.participantsCount && (
+        <span>raw: <span style={{ color: debug.rawParticipants > 0 ? '#e8ff00' : '#555' }}>{debug.rawParticipants}</span></span>
+      )}
+      {debug.uniqueEmails != null && <span>unique: <span style={{ color: debug.uniqueEmails > 0 ? '#e0e0e0' : '#555' }}>{debug.uniqueEmails}</span></span>}
+      {debug.hasMismatch && <span style={{ color: '#ff6b00' }}>⚠ view mismatch: raw participants available</span>}
       {debug.registrationsFromParticipants && <span style={{ color: '#e8ff00' }}>reg from participants ↑</span>}
       {debug.attendanceStatus === 'not_populated' && <span style={{ color: '#ff6b00' }}>attendance: not populated</span>}
       {debug.purchaseMappingStatus === 'not_mapped_yet' && <span style={{ color: '#555' }}>purchases: not mapped</span>}
@@ -156,19 +161,21 @@ function SessionRow({ s, attendancePopulated, purchasesMapped }: {
     return '#555'
   })()
 
+  const product = normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name })
+  const productColor = product.canonicalTag === 'JZK' ? '#2dd4bf' : product.canonicalTag === 'JSU' ? '#c9a96e' : '#555'
+
   return (
     <tr style={{ borderBottom: '1px solid #1a1a1a', fontSize: '0.73rem', fontFamily: 'monospace' }}>
       <td style={{ padding: '5px 8px', color: '#ccc', whiteSpace: 'nowrap' }}>
         {s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : s.session_date}
       </td>
-      <td style={{ padding: '5px 8px', color: '#888', textAlign: 'right' }}>
-        {s.email_delivered > 0 ? s.email_delivered.toLocaleString('en-US') : '—'}
-      </td>
-      <td style={{ padding: '5px 8px', color: '#888', textAlign: 'right' }}>
-        {s.email_opens > 0 ? pct(s.email_opens / (s.email_delivered || 1)) : '—'}
-      </td>
-      <td style={{ padding: '5px 8px', color: '#888', textAlign: 'right' }}>
-        {s.email_clicks > 0 ? pct(s.email_clicks / (s.email_delivered || 1)) : '—'}
+      <td style={{ padding: '5px 8px', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '0.65rem', color: productColor, border: `1px solid ${productColor}44`, borderRadius: '3px', padding: '1px 5px' }}>
+          {product.canonicalTag}
+        </span>
+        {product.reason.includes('overridden') && (
+          <span style={{ marginLeft: '4px', fontSize: '0.6rem', color: '#ff6b00' }} title={product.reason}>⚠</span>
+        )}
       </td>
       <td style={{ padding: '5px 8px', color: '#ccc', textAlign: 'right' }}>
         {s.registered_count > 0 ? s.registered_count : <span style={{ color: '#444' }}>—</span>}
@@ -193,8 +200,20 @@ function SessionRow({ s, attendancePopulated, purchasesMapped }: {
   )
 }
 
+function detectProduct(sessions: JsuFunnelRow[]): ProductTag {
+  const counts: Record<ProductTag, number> = { JSU: 0, JZK: 0, OTHER: 0 }
+  for (const s of sessions) {
+    const p = normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name })
+    counts[p.canonicalTag]++
+  }
+  if (counts.JZK > counts.JSU) return 'JZK'
+  if (counts.JSU > 0) return 'JSU'
+  return 'OTHER'
+}
+
 export function WebinarFunnelPanel({ summary, participants, participantsLoading, loading, onCommand, gieniuResponse }: Props) {
   const [showParticipants, setShowParticipants] = useState(false)
+  const [productFilter, setProductFilter] = useState<ProductTag | 'ALL'>('ALL')
 
   if (loading) {
     return (
@@ -212,6 +231,22 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
   const attendancePopulated = debug?.attendanceStatus === 'populated' || (summary?.totals.attendees ?? 0) > 0
   const purchasesMapped     = debug?.purchaseMappingStatus === 'mapped' || (summary?.totals.purchases ?? 0) > 0
 
+  // Filtered sessions for table view
+  const filteredSessions = summary?.sessions.filter(s => {
+    if (productFilter === 'ALL') return true
+    const p = normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name })
+    return p.canonicalTag === productFilter
+  }) ?? []
+
+  // Detect dominant product from all sessions
+  const dominantProduct = summary?.sessions.length ? detectProduct(summary.sessions) : 'JSU'
+  const productLabel = dominantProduct === 'JZK' ? 'Językozak AI' : 'Jak się uczyć'
+  const productSubtitle = dominantProduct === 'JZK' ? 'Language webinar · Tuesday 18:00' : 'Memory webinar · Thursday 18:00'
+
+  // Count products for tab badges
+  const jsuCount = summary?.sessions.filter(s => normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name }).canonicalTag === 'JSU').length ?? 0
+  const jzkCount = summary?.sessions.filter(s => normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name }).canonicalTag === 'JZK').length ?? 0
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
@@ -219,10 +254,10 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.9rem', color: '#e0e0e0', letterSpacing: '0.05em' }}>
-            JAK SIĘ UCZYĆ — webinar funnel
+            WEBINARS — funnel
           </div>
           <div style={{ fontSize: '0.68rem', color: '#555', fontFamily: 'monospace', marginTop: '4px' }}>
-            549 PLN · Thursday 18:00 · memory path
+            {summary?.sessions.length ? `${summary.sessions.length} sessions · dominant: ${productLabel}` : productSubtitle}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -253,6 +288,33 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
           missing={!summary?.hasClickMeetingData}
           notMapped={summary?.hasClickMeetingData && !purchasesMapped} />
       </div>
+
+      {/* Product filter tabs */}
+      {(jsuCount > 0 || jzkCount > 0) && (
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {(['ALL', 'JSU', 'JZK'] as const).map(tag => {
+            const count = tag === 'ALL' ? (summary?.sessions.length ?? 0) : tag === 'JSU' ? jsuCount : jzkCount
+            if (tag !== 'ALL' && count === 0) return null
+            const isActive = productFilter === tag
+            return (
+              <button
+                key={tag}
+                onClick={() => setProductFilter(tag)}
+                style={{
+                  fontFamily: 'monospace', fontSize: '0.7rem', letterSpacing: '0.06em',
+                  padding: '4px 12px', borderRadius: '14px', cursor: 'pointer',
+                  border: `1px solid ${isActive ? '#c9a96e' : '#2a2a2a'}`,
+                  background: isActive ? 'rgba(201,169,110,0.1)' : '#0a0a0a',
+                  color: isActive ? '#c9a96e' : '#555',
+                }}
+              >
+                {tag === 'ALL' ? 'All' : tag === 'JSU' ? 'JSU / Memory' : 'JZK / Językozak'}
+                {count > 0 && <span style={{ marginLeft: '6px', opacity: 0.6 }}>{count}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* Data source debug bar — always visible */}
       <DataDebugBar debug={debug} />
@@ -314,19 +376,17 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
       </div>
 
       {/* Per-session table */}
-      {summary && summary.sessions.length > 0 && (
+      {summary && filteredSessions.length > 0 && (
         <div>
           <div style={{ fontSize: '0.65rem', color: '#555', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
-            JSU Webinar History
+            Webinar History {productFilter !== 'ALL' ? `· ${productFilter}` : ''}
           </div>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.73rem', fontFamily: 'monospace', minWidth: '620px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.73rem', fontFamily: 'monospace', minWidth: '640px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #2a2a2a', color: '#555' }}>
                   <th style={{ ...thStyle, textAlign: 'left' }}>Date</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>Del.</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>OR</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>CTR</th>
+                  <th style={{ ...thStyle, textAlign: 'left' }}>Product</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Reg.</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Live</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Show-up</th>
@@ -335,7 +395,7 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
                 </tr>
               </thead>
               <tbody>
-                {summary.sessions.map(s => (
+                {filteredSessions.map(s => (
                   <SessionRow
                     key={s.session_id}
                     s={s}
@@ -347,7 +407,7 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
             </table>
           </div>
           <div style={{ marginTop: '4px', fontSize: '0.62rem', color: '#333', fontFamily: 'monospace' }}>
-            n/p = not populated · n/m = not mapped yet
+            n/p = attendance not populated · n/m = purchases not mapped yet
           </div>
         </div>
       )}

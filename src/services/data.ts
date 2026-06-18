@@ -24,6 +24,11 @@ export interface MetaAdDaily {
   clicks: number
   link_clicks: number
   purchases: number
+  // May be present in DB via select('*'):
+  ctr?: number | null
+  cpc?: number | null
+  cpm?: number | null
+  meta_purchase_value?: number | null
 }
 
 export interface AutomationRun {
@@ -95,6 +100,25 @@ export async function fetchTopAds(date?: string): Promise<MetaAdDaily[]> {
     console.error('fetchTopAds error', error)
     return []
   }
+
+  // If today has no rows, fall back to latest available date
+  if ((data ?? []).length === 0 && !date) {
+    const { data: latestData, error: latestError } = await supabase
+      .from('meta_ads_daily')
+      .select('*')
+      .order('date', { ascending: false })
+      .order('spend', { ascending: false })
+      .limit(10)
+    if (latestError) {
+      console.error('fetchTopAds latest fallback error', latestError)
+      return []
+    }
+    if ((latestData ?? []).length > 0) {
+      console.log('fetchTopAds: no data for', targetDate, '— using', latestData![0].date)
+    }
+    return (latestData ?? []) as MetaAdDaily[]
+  }
+
   return (data ?? []) as MetaAdDaily[]
 }
 

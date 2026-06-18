@@ -53,7 +53,7 @@ type TimeRange =
   | 'this-week-vs-last-week'
 
 function detectTimeRange(q: string): TimeRange | null {
-  if (has(q, 'vs yesterday', 'vs wczoraj', 'today vs', 'dzisiaj vs', 'compare today', 'today against yesterday')) return 'today-vs-yesterday'
+  if (has(q, 'vs yesterday', 'vs wczoraj', 'today vs', 'dzisiaj vs', 'compare today', 'today against yesterday', 'porownaj dzisiaj', 'porownaj dzis', 'porownanie dzisiaj', 'compare dzisiaj')) return 'today-vs-yesterday'
   if (has(q, 'this week vs', 'week vs last', 'compare week', 'tydzien vs', 'week comparison', 'ten vs zeszly')) return 'this-week-vs-last-week'
   if (has(q, 'yesterday', 'wczoraj', 'jak bylo wczoraj', 'jak wczoraj', 'wyniki wczoraj', 'co bylo wczoraj', 'jakie revenue wczoraj', 'what happened yesterday', 'how was yesterday')) return 'yesterday'
   if (has(q, 'this week', 'week so far', 'ten tydzien', 'jak idzie tydzien', 'jak ten tydzien', 'jak tydzien', 'week to date', 'wtd')) return 'this-week'
@@ -136,7 +136,7 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
   }
 
   // ── Meta vs Wix / ad efficiency ───────────────────────────────────────────────
-  if (!result && has(q, 'meta vs', 'vs wix', 'compare meta', 'meta wasting', 'wasting money', 'ads working', 'are ads', 'roas', 'attribution', 'discrepancy', 'pixel', 'tracking',
+  if (!result && has(q, 'meta vs', 'vs wix', 'compare meta', 'meta wasting', 'ads working', 'are ads', 'roas', 'attribution', 'discrepancy', 'pixel', 'tracking',
     'meta dzis', 'meta dzisiaj', 'wix dzis', 'wix dzisiaj', 'porownaj meta', 'czy meta')) {
     detectedIntent = 'meta_vs_wix'
     result = w(buildMetaVsWix(perf, metaStats, ads), buildAdsDiagnosisSpoken(perf, metaStats, ads), buildCampaignChart(ads))
@@ -148,7 +148,9 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
     'dlaczego brak', 'co z adsami', 'adsy nie', 'adsy dzis', 'adsy dzisiaj', 'co z meta', 'gdzie wycieka',
     'which ad', 'best ad', 'top ad', 'top campaign', 'which campaign', 'underperform', 'underperforming',
     'worst campaign', 'worst ad', 'compare campaign', 'compare ads', 'adsy', 'reklamy', 'ktora reklama',
-    'jakie reklamy', 'przepala', 'slaba kampania', 'ktora kampania', 'najgorsza', 'jaka reklama')) {
+    'jakie reklamy', 'przepala', 'slaba kampania', 'ktora kampania', 'najgorsza', 'jaka reklama',
+    'wasting money', 'wasting budget', 'waste money', 'waste budget', 'what is wasting', "what's wasting",
+    'co przepala', 'przepala budzet', 'marnotrawi', 'co marnuje')) {
     detectedIntent = 'ads_campaign_diagnosis'
     result = w(buildAdsDiagnosis(perf, metaStats, ads), buildAdsDiagnosisSpoken(perf, metaStats, ads), buildCampaignChart(ads))
   }
@@ -293,7 +295,7 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
   }
 
   // eslint-disable-next-line no-console
-  console.log('GIENIU intent', { rawQuery, normalizedQuery: q, detectedIntent, detectedPeriod })
+  console.log('GIENIU intent route', { rawQuery, normalizedQuery: q, detectedIntent, detectedPeriod, builderUsed: detectedIntent })
 
   return result
 }

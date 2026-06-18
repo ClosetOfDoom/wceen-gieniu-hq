@@ -1,6 +1,7 @@
 import type { DailyPerformance, DataStatus, MetaAdDaily, MetaStatsToday } from '../services/data'
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import { pct } from '../services/webinarFunnel'
+import { normalizeProduct, productFromQuery, type ProductTag } from '../lib/webinarProduct'
 import {
   pickPhrase,
   OPENERS, GOOD_VERDICTS, HIGH_CPA_VERDICTS, SALES_WARNING_VERDICTS,
@@ -1414,23 +1415,41 @@ export function buildWeekToDateSpoken(trend: DailyPerformance[]): string {
   return parts.join(' ')
 }
 
-export function buildJsuWebinarSpoken(s: JsuFunnelSummary | null): string {
-  if (!s || s.bottleneck === 'NO_DATA') return 'No JSU webinar data available yet. Connect the ClickMeeting Make scenario.'
+export function buildJsuWebinarSpoken(s: JsuFunnelSummary | null, queryHint = ''): string {
+  if (!s || s.bottleneck === 'NO_DATA') return 'No webinar data available yet. Connect the ClickMeeting Make scenario.'
 
-  const partCount = s._debug?.participantsCount ?? 0
+  const partCount           = s._debug?.participantsCount ?? 0
+  const uniqueEmails        = s._debug?.uniqueEmails       ?? partCount
   const attendancePopulated = (s._debug?.attendanceStatus === 'populated') || s.totals.attendees > 0
   const purchasesMapped     = (s._debug?.purchaseMappingStatus === 'mapped') || s.totals.purchases > 0
 
+  // Detect product from sessions or query
+  const productFromSessions = detectProductFromSessions(s)
+  const productFromQ        = queryHint ? productFromQuery(queryHint) : 'ALL'
+  const product: ProductTag = (productFromQ !== 'ALL' ? productFromQ : productFromSessions) ?? 'JSU'
+  const productLabel = product === 'JZK' ? 'Językozak AI language webinar' : 'JSU memory webinar'
+  const sessionsLabel = s.sessions.length === 1 ? '1 session' : `${s.sessions.length} sessions`
+
+  if (partCount > 0 && !s.hasClickMeetingData) {
+    return `Lifidi, ClickMeeting data is available for the ${productLabel}. ` +
+      `I see ${sessionsLabel} and ${partCount} participant rows (${uniqueEmails} unique contacts) in the raw tables. ` +
+      'Attendance is not populated yet, so show-up rate cannot be calculated. ' +
+      'Purchases are not mapped yet.'
+  }
+
   if (s.bottleneck === 'NO_SOURCES') {
     if (partCount > 0) {
-      return `ClickMeeting data is available. I found ${partCount} participant row${partCount > 1 ? 's' : ''} with ${s._debug?.uniqueEmails ?? partCount} unique email${(s._debug?.uniqueEmails ?? partCount) > 1 ? 's' : ''}. Attendance data is not populated yet, so show-up rate cannot be calculated. Purchases are not mapped yet.`
+      return `Lifidi, ClickMeeting data is available for the ${productLabel}. ` +
+        `I found ${partCount} participant row${partCount > 1 ? 's' : ''} with ${uniqueEmails} unique contact${uniqueEmails > 1 ? 's' : ''}. ` +
+        'Attendance data is not populated yet, so show-up rate cannot be calculated. ' +
+        'Purchases are not mapped yet.'
     }
     return 'No email or ClickMeeting data yet. Connect the Make scenarios to enable full diagnosis.'
   }
 
-  const parts: string[] = []
+  const parts: string[] = [`Lifidi, here is the ${productLabel} report.`]
   if (s.hasClickMeetingData) {
-    parts.push(`Webinar data: ${s.totals.registered} registered.`)
+    parts.push(`${s.totals.registered} registered across ${sessionsLabel}.`)
     if (attendancePopulated) {
       parts.push(`${s.totals.attendees} attended.`)
       if (s.rates.attendance_rate != null) parts.push(`Show-up rate is ${pct(s.rates.attendance_rate)}.`)
@@ -1456,6 +1475,21 @@ export function buildJsuWebinarSpoken(s: JsuFunnelSummary | null): string {
   if (s.hasClickMeetingData) parts.push('Funnel chart is on screen.')
   return parts.join(' ')
 }
+
+/** Detect the dominant product tag from the loaded sessions. */
+function detectProductFromSessions(s: JsuFunnelSummary): ProductTag {
+  const counts: Record<ProductTag, number> = { JSU: 0, JZK: 0, OTHER: 0 }
+  for (const sess of s.sessions) {
+    const p = normalizeProduct({ product_tag: sess.product_tag, session_name: sess.session_name })
+    counts[p.canonicalTag]++
+  }
+  if (counts.JZK > counts.JSU) return 'JZK'
+  if (counts.JSU > 0) return 'JSU'
+  return 'OTHER'
+}
+
+// suppress unused import warning — productFromQuery used in buildJsuWebinarSpoken
+const _ensureProductFromQueryImport = productFromQuery
 
 // ── Chart spec builders ───────────────────────────────────────────────────────
 
