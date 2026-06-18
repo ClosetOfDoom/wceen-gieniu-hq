@@ -78,7 +78,20 @@ if (!existsSync(panelPath)) {
   }
 }
 
-// 3. App.tsx uses CampaignsPanel (not the old TopAds inline)
+// 3. responses.ts buildAdsDiagnosisSpoken does NOT say "No campaign data for today yet. Check the automation panel."
+const responsesPath = join(rootDir, 'src/brain/responses.ts')
+if (!existsSync(responsesPath)) {
+  fail('src/brain/responses.ts does not exist')
+} else {
+  const c = readFileSync(responsesPath, 'utf8')
+  if (c.includes('No campaign data for today yet. Check the automation panel.')) {
+    fail('responses.ts buildAdsDiagnosisSpoken still has the old "No campaign data for today yet." message — users told there is no data even when the panel has latest-date rows')
+  } else {
+    pass('responses.ts buildAdsDiagnosisSpoken has updated no-data message (not "No campaign data for today yet.")')
+  }
+}
+
+// 4. App.tsx uses CampaignsPanel (not the old TopAds inline)
 const appPath = join(rootDir, 'src/App.tsx')
 if (!existsSync(appPath)) {
   fail('src/App.tsx does not exist')

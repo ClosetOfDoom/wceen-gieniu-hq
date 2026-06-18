@@ -2,6 +2,7 @@ import type { DailyPerformance, DataStatus, MetaAdDaily, MetaStatsToday } from '
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import { pct } from '../services/webinarFunnel'
 import { normalizeProduct, productFromQuery, type ProductTag } from '../lib/webinarProduct'
+import { PRODUCT_CLASSIFICATION_REASON } from '../lib/productClassifier'
 import {
   pickPhrase,
   OPENERS, GOOD_VERDICTS, HIGH_CPA_VERDICTS, SALES_WARNING_VERDICTS,
@@ -236,6 +237,34 @@ export function buildRedFlags(perf: DailyPerformance | null): string {
   }
 
   return `${pickPhrase(OPENERS)}\n\n— RED FLAGS —\n\n${flags.map(f => `⚠ ${f}`).join('\n')}`
+}
+
+export function buildMemoryBundleAnswer(perf: DailyPerformance | null, _status: DataStatus): string {
+  const lines: string[] = ['— MEMORY BUNDLE ORDERS —', '']
+  if (perf) {
+    lines.push(`Today's Wix totals: ${perf.wix_orders ?? 0} orders | ${(perf.wix_revenue ?? 0).toFixed(2)} PLN revenue`)
+    lines.push('')
+  }
+  lines.push(
+    '⚠  Product classification is unavailable.',
+    '',
+    'The orders database stores aggregate totals only — no product names, SKUs, or line items.',
+    'GIENIU cannot determine how many of those orders were memory bundles.',
+    '',
+    'Fix: extend the Make → Wix → Supabase scenario to save order line items',
+    '     (product_name, SKU, quantity) to a wix_order_items table.',
+    'See: docs/wix_orders_product_mapping_fix.md',
+    '',
+    `Technical: ${PRODUCT_CLASSIFICATION_REASON}`,
+  )
+  return lines.join('\n')
+}
+
+export function buildMemoryBundleSpoken(perf: DailyPerformance | null): string {
+  const ordersClause = perf
+    ? `I can see ${perf.wix_orders ?? 0} Wix orders today totalling ${(perf.wix_revenue ?? 0).toFixed(0)} zloty, but`
+    : 'Lifidi,'
+  return `${ordersClause} I cannot classify them by product. The orders database stores only totals — no product names or line items. I genuinely do not know how many were memory bundles. Fix the Wix ingestion to save line items per order.`
 }
 
 export function buildCreativesReport(): string {
@@ -1242,7 +1271,7 @@ export function buildAdsDiagnosisSpoken(
   _metaStats: MetaStatsToday,
   ads: MetaAdDaily[]
 ): string {
-  if (ads.length === 0) return 'No campaign data for today yet. Check the automation panel.'
+  if (ads.length === 0) return 'No Meta campaign rows found for today yet. The Make scenario may not have synced campaigns. Check the Automation panel. The Campaigns page shows the latest available date.'
 
   const adsDate    = ads[0]?.date ?? ''
   const today      = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })

@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react'
 import type { DailyPerformance, MetaAdDaily, AutomationRun } from '../services/data'
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
+import { fetchDataContract, type DataContractReport } from '../lib/dataAudit'
 
 // Injected at build time by vite.config.ts
 declare const __BUILD_HASH__: string
@@ -24,6 +26,12 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
 }
 
 export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary }: Props) {
+  const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
+
+  useEffect(() => {
+    fetchDataContract().then(setDataContract).catch(() => {})
+  }, [])
+
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
   const latestMetaDate = ads[0]?.date ?? trend.find(r => r.meta_spend > 0)?.date ?? '—'
   const latestWixDate  = trend[0]?.date ?? '—'
@@ -98,6 +106,31 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary }: Props) 
           <Row label="TTS voice"      value="George (ElevenLabs)" ok />
           <Row label="PWA"            value={typeof window !== 'undefined' && 'serviceWorker' in navigator ? 'supported' : 'not supported'} />
           <Row label="Supabase"       value="connected" ok />
+        </div>
+
+        {/* Product Data Contract */}
+        <div className="card" style={{ padding: '18px 20px', gridColumn: '1 / -1' }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '12px' }}>
+            Product Data Contract
+          </div>
+          {dataContract === null ? (
+            <Row label="Status" value="checking…" />
+          ) : (
+            <>
+              <Row label="wix_orders table"        value={dataContract.wixOrdersTableExists ? 'exists' : 'not found'} ok={dataContract.wixOrdersTableExists} />
+              <Row label="product_name column"     value={dataContract.hasProductName ? 'present' : 'absent'} ok={dataContract.hasProductName} />
+              <Row label="item_name column"        value={dataContract.hasItemName ? 'present' : 'absent'} ok={dataContract.hasItemName} />
+              <Row label="line_items column"       value={dataContract.hasLineItems ? 'present' : 'absent'} ok={dataContract.hasLineItems} />
+              <Row label="Product classification" value={dataContract.classificationAvailable ? 'available' : 'UNAVAILABLE — orders unclassifiable'} ok={dataContract.classificationAvailable} />
+              {dataContract.error && <Row label="Query error" value={dataContract.error} ok={false} />}
+              {!dataContract.classificationAvailable && (
+                <div style={{ marginTop: '10px', fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)', lineHeight: 1.5 }}>
+                  GIENIU cannot answer "how many memory bundles" until line items are saved per order.<br />
+                  Fix: extend Make → Wix scenario → see docs/wix_orders_product_mapping_fix.md
+                </div>
+              )}
+            </>
+          )}
         </div>
 
       </div>

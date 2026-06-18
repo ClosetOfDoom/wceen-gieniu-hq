@@ -11,6 +11,7 @@ import {
   buildYesterdaySummary, buildWeekToDate, buildLastWeekSummary,
   buildLast7Days, buildPeriodComparison, buildAdsDiagnosis,
   buildWorkflowInstructions,
+  buildMemoryBundleAnswer, buildMemoryBundleSpoken,
   // spoken text builders
   buildYesterdaySpoken, buildOpsBriefingSpoken, buildAdsDiagnosisSpoken,
   buildPeriodComparisonSpoken, buildWeekToDateSpoken, buildJsuWebinarSpoken,
@@ -211,6 +212,20 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
     "what's wrong", 'whats wrong', 'problem with', 'issue', 'bad news')) {
     detectedIntent = 'red_flags'
     result = w(buildRedFlags(perf))
+  }
+
+  // ── Memory bundle / product-scope queries ──────────────────────────────────────
+  // NEVER route to ops_briefing for product-specific queries — there is no product data
+  if (!result && has(q,
+    'memory bundle', 'memory pack', 'memory kit', 'memory orders',
+    'pakiet pamieci', 'pakiet pamieciowy', 'ile pakietow pamieci', 'ile pakietow pamieciowych',
+    'ile sprzedalo pamieci', 'ile sprzedal pamieci', 'ile sprzedalismy pamieci', 'ile sprzedano pamieci',
+    'ile pakietow sprzedano', 'ile pakietow sprzedal', 'ile pakietow sprzedalismy',
+    'product scope', 'product breakdown', 'product split', 'po produkcie',
+    'ile memory', 'ile jzk', 'ile jsu', 'ile kursu', 'ile produktow'
+  )) {
+    detectedIntent = 'memory_product_scope'
+    result = w(buildMemoryBundleAnswer(perf, status), buildMemoryBundleSpoken(perf))
   }
 
   // ── Revenue / orders ─────────────────────────────────────────────────────────

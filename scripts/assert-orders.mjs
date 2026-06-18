@@ -69,6 +69,43 @@ if (!existsSync(responsesPath)) {
   } else {
     fail('responses.ts missing wix_orders or wix_revenue references')
   }
+  // Must have honest memory bundle answer (not fake product breakdown)
+  if (c.includes('buildMemoryBundleAnswer')) {
+    pass('responses.ts has buildMemoryBundleAnswer (honest: no product data available)')
+  } else {
+    fail('responses.ts missing buildMemoryBundleAnswer — memory queries may return fake all-orders metric')
+  }
+}
+
+// 4. productClassifier.ts exists and flags missing data correctly
+const classifierPath = join(rootDir, 'src/lib/productClassifier.ts')
+if (!existsSync(classifierPath)) {
+  fail('src/lib/productClassifier.ts does not exist — product classification unavailable')
+} else {
+  const c = readFileSync(classifierPath, 'utf8')
+  if (c.includes('UNKNOWN_UNCLASSIFIABLE')) {
+    pass('productClassifier.ts has UNKNOWN_UNCLASSIFIABLE for orders with no product data')
+  } else {
+    fail('productClassifier.ts missing UNKNOWN_UNCLASSIFIABLE — unclassifiable orders may be silently mislabelled')
+  }
+  if (c.includes('missingProductData')) {
+    pass('productClassifier.ts flags missingProductData when line items absent')
+  } else {
+    fail('productClassifier.ts does not flag missingProductData — no signal when product data is missing')
+  }
+}
+
+// 5. intent.ts does NOT let memory bundle queries fall to ops_briefing
+const intentPath = join(rootDir, 'src/brain/intent.ts')
+if (!existsSync(intentPath)) {
+  fail('src/brain/intent.ts does not exist')
+} else {
+  const c = readFileSync(intentPath, 'utf8')
+  if (c.includes('memory_product_scope')) {
+    pass('intent.ts has memory_product_scope — memory bundle queries intercepted before ops_briefing')
+  } else {
+    fail('intent.ts missing memory_product_scope — memory bundle queries fall to ops_briefing and return all-order count')
+  }
 }
 
 console.log()
