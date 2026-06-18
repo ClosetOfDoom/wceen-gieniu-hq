@@ -106,7 +106,9 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
       .limit(50),
     supabase
       .from('webinar_participants')
-      .select('id, session_id, email, registered_at, registration_date, attended, attend_duration_min, purchased_at, purchase_value, wix_order_id, created_at')
+      // registration_date is NOT a real column — it only exists inside JSON blobs
+      // stored in the email field. Extract it via normalizeParticipantFields() after fetch.
+      .select('id, session_id, email, registered_at, attended, attend_duration_min, purchased_at, purchase_value, wix_order_id, created_at')
       .order('created_at', { ascending: false })
       .limit(1000),
   ])
@@ -121,19 +123,22 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
   }
   type RawParticipant = {
     id?: string; session_id: string; email?: string | null
-    registered_at?: string | null; registration_date?: string | null
+    registered_at?: string | null
+    // registration_date NOT selected from DB — may appear dynamically from email JSON parsing
     attended?: boolean; attend_duration_min?: number | null
     purchased_at?: string | null; purchase_value?: number | null
     wix_order_id?: string | null; created_at?: string | null
   }
 
   const sessions    = (rawSessions    ?? []) as RawSession[]
-  const rawPartRows = (rawParticipants ?? []) as RawParticipant[]
+  // If participant query failed, treat as empty — but still surface error in debug
+  const rawPartRows = partErr ? [] : (rawParticipants ?? []) as RawParticipant[]
 
   const participantRows = rawPartRows.map(p => {
     const { email, registered_at } = normalizeParticipantFields({
       email: p.email, registered_at: p.registered_at,
-      registration_date: p.registration_date, created_at: p.created_at,
+      // registration_date not in DB; normalizeParticipantFields will parse it from email JSON if present
+      created_at: p.created_at,
     })
     return { ...p, email, registered_at }
   })
@@ -143,9 +148,14 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
   ).size
 
   if (sessions.length === 0 && participantRows.length === 0) {
+    // Only true empty if BOTH failed — a participant query error still lets sessions show
+    const errorMsg = sessErr?.message || partErr?.message
     console.log('GIENIU webinar: no raw data', { sessErr: sessErr?.message, partErr: partErr?.message })
-    const empty = buildEmptySummary(sessErr?.message || partErr?.message)
-    empty._debug = { sessionsCount: 0, participantsCount: 0, source: 'none', lastError: sessErr?.message || partErr?.message }
+    const empty = buildEmptySummary(partErr ? `Participant query error: ${partErr.message}` : errorMsg)
+    empty._debug = {
+      sessionsCount: 0, participantsCount: 0, source: 'none',
+      lastError: errorMsg,
+    }
     return empty
   }
 
@@ -210,6 +220,7 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
       latestSessionName: sessions[0]?.session_name,
       attendanceStatus:      attendees > 0 ? 'populated' : 'not_populated',
       purchaseMappingStatus: purchases > 0 ? 'mapped'    : 'not_mapped_yet',
+      lastError: partErr ? `participant query: ${partErr.message}` : sessErr ? `sessions query: ${sessErr.message}` : undefined,
     },
   }
 }
@@ -227,7 +238,7 @@ export async function loadJsuParticipantJourney(sessionId?: string): Promise<Jsu
     const rawEmail = String(r.email ?? '')
     const { email, registered_at } = normalizeParticipantFields({
       email: rawEmail, registered_at: r.registered_at as string | null,
-      registration_date: r.registration_date as string | null,
+      // registration_date not a real DB column — normalizeParticipantFields parses it from email JSON
       created_at: r.created_at as string | null,
     })
     return {

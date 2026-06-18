@@ -52,7 +52,8 @@ export async function fetchWebinarRawData(): Promise<WebinarRawData> {
       .limit(50),
     supabase
       .from('webinar_participants')
-      .select('id, session_id, email, registered_at, registration_date, attended, attend_duration_min, purchased_at, purchase_value, wix_order_id, created_at')
+      // registration_date is NOT a real column — it only exists inside JSON blobs in the email field
+      .select('id, session_id, email, registered_at, attended, attend_duration_min, purchased_at, purchase_value, wix_order_id, created_at')
       .order('created_at', { ascending: false })
       .limit(1000),
   ])
@@ -78,10 +79,10 @@ export async function fetchWebinarRawData(): Promise<WebinarRawData> {
   // Normalize participant rows
   const participants: RawParticipant[] = rawParts.map(r => {
     const { email, registered_at } = normalizeParticipantFields({
-      email:             r.email as string | null,
-      registered_at:     r.registered_at as string | null,
-      registration_date: r.registration_date as string | null,
-      created_at:        r.created_at as string | null,
+      email:         r.email as string | null,
+      registered_at: r.registered_at as string | null,
+      // registration_date not in DB — normalizeParticipantFields extracts it from email JSON if present
+      created_at:    r.created_at as string | null,
     })
 
     const id      = String(r.id ?? '')
