@@ -6,6 +6,7 @@ import { TopAds } from './components/TopAds'
 import { AutomationRuns } from './components/AutomationRuns'
 import { WebinarFunnelPanel } from './components/WebinarFunnelPanel'
 import { RevenueTrendChart } from './components/RevenueTrendChart'
+import { InsightChart } from './components/InsightChart'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday,
@@ -21,7 +22,10 @@ import {
   buildJsuWebinarReport, buildWhyCourseNotSelling, buildJsuFunnelReport,
   buildCompareJsuWebinars, buildDeliverabilityReport, buildMailingDiagnosis,
   buildAttendanceRateReport, buildWhoAttendedAndBought,
+  wrapResponse,
   type JsuCommandKey,
+  type GieniuResponse,
+  type InsightChartSpec,
 } from './brain/responses'
 import { resolveIntent } from './brain/intent'
 import { speak, stopAudio } from './voice/tts'
@@ -237,6 +241,7 @@ const CHIPS = [
 
 function RightPanel({
   response,
+  chart,
   onQuery,
   speaking,
   thinking,
@@ -251,6 +256,7 @@ function RightPanel({
   onStartBriefing,
 }: {
   response: string
+  chart?: InsightChartSpec
   onQuery: (query: string) => void
   speaking: boolean
   thinking: boolean
@@ -306,9 +312,11 @@ function RightPanel({
         {/* Response text */}
         {response ? (
           <>
-            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', lineHeight: 1.85, color: 'var(--text)', margin: 0, marginBottom: '14px' }}>
+            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', lineHeight: 1.85, color: 'var(--text)', margin: 0, marginBottom: chart ? '8px' : '14px' }}>
               {response}
             </pre>
+
+            {chart && <InsightChart spec={chart} />}
 
             {/* Speak again / stop */}
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -460,6 +468,8 @@ export default function App() {
 
   // Conversational state
   const [response, setResponse]           = useState('')
+  const [responseSpoken, setResponseSpoken] = useState('')
+  const [responseChart, setResponseChart]   = useState<InsightChartSpec | undefined>(undefined)
   const [speaking, setSpeaking]           = useState(false)
   const [thinking, setThinking]           = useState(false)
   const [muted, setMuted]                 = useState(false)
@@ -562,15 +572,17 @@ export default function App() {
 
   // ── Auto-speak every answer ──────────────────────────────────────────────────
 
-  async function speakAnswer(text: string) {
-    setResponse(text)
+  async function speakAnswer(gr: GieniuResponse) {
+    setResponse(gr.displayText)
+    setResponseSpoken(gr.spokenText)
+    setResponseChart(gr.chart)
     setTtsError('')
     // eslint-disable-next-line no-console
-    console.log('GIENIU answer generated', text.slice(0, 80) + (text.length > 80 ? '…' : ''))
-    if (muted || !text.trim()) return
+    console.log('GIENIU spokenText', gr.spokenText.slice(0, 100))
+    if (muted || !gr.spokenText.trim()) return
     stopAudio()
     setSpeaking(true)
-    const result = await speak(text)
+    const result = await speak(gr.spokenText)
     setSpeaking(false)
     if (!result.ok) {
       setTtsError(result.error ?? 'unknown error')
@@ -586,10 +598,11 @@ export default function App() {
       setSpeaking(false)
       return
     }
-    if (!response.trim()) return
+    const toSpeak = responseSpoken || response
+    if (!toSpeak.trim()) return
     setTtsError('')
     setSpeaking(true)
-    speak(response).then(res => {
+    speak(toSpeak).then(res => {
       setSpeaking(false)
       if (!res.ok) setTtsError(res.error ?? 'unknown error')
     })
@@ -613,7 +626,7 @@ export default function App() {
     setOpeningBlocked(false)
     setTtsError('')
     setSpeaking(true)
-    speak(response || OPENING_TEXT).then(res => {
+    speak(responseSpoken || response || OPENING_TEXT).then(res => {
       setSpeaking(false)
       if (!res.ok) setTtsError(res.error ?? 'unknown error')
     })
@@ -642,7 +655,7 @@ export default function App() {
       case 'attendance rate':              text = buildAttendanceRateReport(jsuSummary); break
       case 'kto był i kupił':              text = buildWhoAttendedAndBought(jsuSummary); break
     }
-    speakAnswer(text)
+    speakAnswer(wrapResponse(text))
   }
 
   // ── Voice input ───────────────────────────────────────────────────────────────
@@ -665,7 +678,7 @@ export default function App() {
     const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition
 
     if (!SR) {
-      speakAnswer('Voice input is not supported in this browser. Use Chrome or Edge.')
+      speakAnswer(wrapResponse('Voice input is not supported in this browser. Use Chrome or Edge.'))
       return
     }
 
@@ -795,6 +808,7 @@ export default function App() {
 
       <RightPanel
         response={response}
+        chart={responseChart}
         onQuery={handleIntentQuery}
         speaking={speaking}
         thinking={thinking}

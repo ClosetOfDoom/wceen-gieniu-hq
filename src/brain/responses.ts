@@ -35,6 +35,54 @@ function statusLabel(s: DataStatus): string {
   }
 }
 
+// ── Response types ────────────────────────────────────────────────────────────
+
+export interface InsightChartSpec {
+  type: 'bar' | 'line' | 'funnel'
+  title: string
+  xKey: string
+  data: Array<Record<string, string | number | null>>
+  series: Array<{ key: string; label: string; color?: string }>
+}
+
+export interface GieniuResponse {
+  displayText: string
+  spokenText: string
+  chart?: InsightChartSpec
+}
+
+export function wrapResponse(displayText: string, spokenText?: string, chart?: InsightChartSpec): GieniuResponse {
+  return { displayText, spokenText: spokenText ?? toSpokenText(displayText), chart }
+}
+
+export function toSpokenText(text: string): string {
+  return text
+    // Remove "— ALL CAPS HEADING —" lines
+    .replace(/^—[^—\n]+—\s*$/gm, '')
+    // Convert " | " pipe separators to ". "
+    .replace(/\s*\|\s*/g, '. ')
+    // Strip leading indentation markers
+    .replace(/^\s{2,}/gm, '')
+    // Expand abbreviations
+    .replace(/\bCPA\b/g, 'C P A')
+    .replace(/\bROAS\b/g, 'R O A S')
+    .replace(/\bJSU\b/g, 'Jak się uczyć')
+    .replace(/\bJZK\b/g, 'Językozak')
+    // "123.45 PLN" → "123 Polish zloty"
+    .replace(/(\d+\.?\d*)\s*PLN\b/g, (_, n) => `${parseFloat(n).toFixed(0)} Polish zloty`)
+    // "1.72x" → "1.72"
+    .replace(/(\d\.\d+)x\b/g, '$1')
+    // Standalone dashes
+    .replace(/\s—\s/g, ', ')
+    .replace(/^—\s*/gm, '')
+    // Collapse newlines to natural pauses
+    .replace(/\n{2,}/g, '. ')
+    .replace(/\n/g, ' ')
+    .replace(/\.\s*\.\s*/g, '. ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
 // ── JSU command type ──────────────────────────────────────────────────────────
 
 export type JsuCommandKey =
@@ -1057,4 +1105,298 @@ export function buildAdsDiagnosis(
   lines.push(pickPhrase(NEXT_MOVES))
 
   return lines.join('\n')
+}
+
+// ── Spoken text builders ──────────────────────────────────────────────────────
+
+export function buildYesterdaySpoken(trend: DailyPerformance[]): string {
+  const yDate = yesterdayWaw()
+  const row = trend.find(r => r.date === yDate) ?? trend[1] ?? null
+  if (!row) return 'No data for yesterday yet.'
+
+  const orders  = row.wix_orders  ?? 0
+  const revenue = row.wix_revenue ?? 0
+  const spend   = row.meta_spend  ?? 0
+  const cpa     = row.real_cpa
+  const roas    = row.real_roas
+
+  const parts: string[] = [
+    `Yesterday on ${row.date}: ${orders} Wix orders, ${revenue.toFixed(0)} Polish zloty revenue, ${spend.toFixed(0)} zloty Meta spend.`,
+  ]
+  if (cpa != null) parts.push(`Real C P A was ${cpa.toFixed(0)} zloty.`)
+  if (spend > 0 && orders === 0) {
+    parts.push('Money went out and nothing came back. Something broke in the funnel yesterday.')
+  } else if (cpa != null && cpa > 50) {
+    parts.push(`C P A above 50 zloty — costly day. Check which campaign drove the spend.`)
+  } else if (roas != null && roas >= 3) {
+    parts.push(`R O A S at ${roas.toFixed(2)} — that was a good day, Lifidi.`)
+  } else if (roas != null && roas < 2) {
+    parts.push(`R O A S below 2 — ads were not paying for themselves. Review creatives.`)
+  } else if (orders > 0) {
+    parts.push('Numbers came in. Not a record, not a disaster.')
+  }
+  return parts.join(' ')
+}
+
+export function buildOpsBriefingSpoken(
+  perf: DailyPerformance | null,
+  status: DataStatus,
+  metaStats?: MetaStatsToday,
+  ads?: MetaAdDaily[]
+): string {
+  if (status === 'NO_DATA' || !perf) {
+    return 'No data for today yet. Make scenarios may not have run, or the day is still early.'
+  }
+  const orders  = perf.wix_orders
+  const revenue = perf.wix_revenue
+  const spend   = perf.meta_spend
+  const cpa     = perf.real_cpa
+  const roas    = perf.real_roas
+
+  const parts: string[] = [
+    `Lifidi, today: ${orders} Wix orders, ${revenue.toFixed(0)} Polish zloty revenue, ${spend.toFixed(0)} zloty Meta spend.`,
+  ]
+  if (cpa != null) parts.push(`Real C P A is ${cpa.toFixed(0)} zloty.`)
+  if (status === 'SALES_WARNING') {
+    parts.push('Warning: ad spend is running but Wix shows zero orders. Check the landing page, checkout flow, and pixel.')
+  } else if (status === 'META_NOT_LIVE') {
+    parts.push('Meta shows no spend today. Campaigns may be paused or budget exhausted.')
+  } else if (cpa != null && cpa > 50) {
+    parts.push('C P A above 50 zloty — above the alert threshold. Review creatives and targeting.')
+  } else if (roas != null && roas >= 3) {
+    parts.push(`R O A S at ${roas.toFixed(2)} — ads are covering costs. Keep pushing.`)
+  } else if (roas != null && roas < 2) {
+    parts.push(`R O A S at ${roas.toFixed(2)} — margin is thin. Watch creatives.`)
+  }
+  if (ads && ads.length > 0) {
+    const top    = ads[0]
+    const total  = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
+    const topPct = total > 0 ? Math.round((top.spend / total) * 100) : 0
+    parts.push(`Top campaign is "${top.campaign_name ?? top.campaign_id}", taking ${topPct}% of budget.`)
+  }
+  if (metaStats?.isStale) {
+    parts.push('Note: Meta data looks stale. Wix numbers are reliable, ad data may be from an earlier day.')
+  }
+  return parts.join(' ')
+}
+
+export function buildAdsDiagnosisSpoken(
+  perf: DailyPerformance | null,
+  _metaStats: MetaStatsToday,
+  ads: MetaAdDaily[]
+): string {
+  if (ads.length === 0) return 'No campaign data for today yet. Check the automation panel.'
+
+  const totalSpend    = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
+  const zeroBurners   = ads.filter(a => (a.spend ?? 0) > 10 && (a.purchases ?? 0) === 0)
+  const withPurchases = ads.filter(a => (a.purchases ?? 0) > 0)
+  const parts: string[] = []
+
+  if (withPurchases.length > 0) {
+    const best    = withPurchases.reduce((a, b) => (a.spend / a.purchases!) < (b.spend / b.purchases!) ? a : b)
+    const bestCpa = best.spend / best.purchases!
+    parts.push(`Best performer: "${best.campaign_name ?? best.campaign_id}" — ${best.purchases} purchases at ${bestCpa.toFixed(0)} zloty C P A.`)
+    if (withPurchases.length > 1) {
+      const worst    = withPurchases.reduce((a, b) => (a.spend / a.purchases!) > (b.spend / b.purchases!) ? a : b)
+      const worstCpa = worst.spend / worst.purchases!
+      if (worst !== best) parts.push(`Worst C P A: "${worst.campaign_name ?? worst.campaign_id}" at ${worstCpa.toFixed(0)} zloty.`)
+    }
+  }
+  if (zeroBurners.length > 0) {
+    const names = zeroBurners.map(a => `"${a.campaign_name ?? a.campaign_id}" spending ${a.spend.toFixed(0)} zloty`).join(' and ')
+    parts.push(`${names} ${zeroBurners.length === 1 ? 'is' : 'are'} burning budget with zero Meta purchases. Consider pausing.`)
+  }
+  if (withPurchases.length === 0 && zeroBurners.length === 0) {
+    parts.push(`Total spend: ${totalSpend.toFixed(0)} zloty. No Meta purchases attributed yet — data may still be processing.`)
+  }
+  if (perf) {
+    const cpa = perf.real_cpa
+    if (cpa != null && cpa > 50) parts.push(`Real C P A from Wix is ${cpa.toFixed(0)} zloty — above the alert threshold.`)
+    else if (perf.real_roas != null && perf.real_roas >= 3) parts.push(`Real R O A S is ${perf.real_roas.toFixed(2)} — ads are profitable by Wix data.`)
+  }
+  parts.push('Campaign breakdown is on screen.')
+  return parts.join(' ')
+}
+
+export function buildPeriodComparisonSpoken(
+  trend: DailyPerformance[],
+  type: 'today-vs-yesterday' | 'this-week-vs-last-week'
+): string {
+  if (type === 'today-vs-yesterday') {
+    const sorted    = [...trend].sort((a, b) => a.date < b.date ? -1 : 1)
+    const today     = sorted[sorted.length - 1] ?? null
+    const yesterday = sorted[sorted.length - 2] ?? null
+    if (!today) return 'Not enough data for comparison.'
+    const parts: string[] = [
+      `Today: ${today.wix_orders} Wix orders, ${(today.wix_revenue ?? 0).toFixed(0)} Polish zloty revenue.`,
+    ]
+    if (yesterday) {
+      parts.push(`Yesterday had ${yesterday.wix_orders} orders and ${(yesterday.wix_revenue ?? 0).toFixed(0)} zloty.`)
+      const delta = (today.wix_revenue ?? 0) - (yesterday.wix_revenue ?? 0)
+      if (delta > 0)      parts.push(`Today is ${delta.toFixed(0)} zloty ahead. Keep going, Lifidi.`)
+      else if (delta < 0) parts.push(`Today is ${Math.abs(delta).toFixed(0)} zloty behind yesterday. Day is not over.`)
+      else                parts.push('Revenue identical to yesterday.')
+    }
+    parts.push('Comparison chart is on screen.')
+    return parts.join(' ')
+  }
+  const weekStart = thisWeekStartWaw()
+  const lastStart = lastWeekStartWaw()
+  const lastEnd   = lastWeekEndWaw()
+  const twRows    = trend.filter(r => r.date >= weekStart)
+  const lwRows    = trend.filter(r => r.date >= lastStart && r.date <= lastEnd)
+  const tw = { orders: twRows.reduce((s, r) => s + (r.wix_orders ?? 0), 0), revenue: twRows.reduce((s, r) => s + (r.wix_revenue ?? 0), 0) }
+  const lw = { orders: lwRows.reduce((s, r) => s + (r.wix_orders ?? 0), 0), revenue: lwRows.reduce((s, r) => s + (r.wix_revenue ?? 0), 0) }
+  const parts: string[] = [`This week so far: ${tw.orders} orders, ${tw.revenue.toFixed(0)} Polish zloty.`]
+  if (lwRows.length > 0) {
+    parts.push(`Comparable last week: ${lw.orders} orders, ${lw.revenue.toFixed(0)} zloty.`)
+    const delta = tw.revenue - lw.revenue
+    if (delta > 0)      parts.push(`This week is ${delta.toFixed(0)} zloty ahead. Good trajectory.`)
+    else if (delta < 0) parts.push(`This week is ${Math.abs(delta).toFixed(0)} zloty behind. Check what changed.`)
+  }
+  parts.push('Week comparison chart is on screen.')
+  return parts.join(' ')
+}
+
+export function buildWeekToDateSpoken(trend: DailyPerformance[]): string {
+  const weekStart = thisWeekStartWaw()
+  const rows      = trend.filter(r => r.date >= weekStart).sort((a, b) => a.date < b.date ? -1 : 1)
+  if (rows.length === 0) return 'No data for this week yet.'
+
+  const totalOrders  = rows.reduce((s, r) => s + (r.wix_orders  ?? 0), 0)
+  const totalRevenue = rows.reduce((s, r) => s + (r.wix_revenue ?? 0), 0)
+  const totalSpend   = rows.reduce((s, r) => s + (r.meta_spend  ?? 0), 0)
+  const wtdCPA  = totalSpend > 0 && totalOrders > 0 ? totalSpend / totalOrders : null
+  const wtdROAS = totalSpend > 0 ? totalRevenue / totalSpend : null
+  const best    = rows.reduce((a, b) => (b.wix_revenue ?? 0) > (a.wix_revenue ?? 0) ? b : a)
+
+  const parts: string[] = [
+    `This week so far, ${rows.length} day${rows.length > 1 ? 's' : ''}: ${totalOrders} orders, ${totalRevenue.toFixed(0)} Polish zloty revenue, ${totalSpend.toFixed(0)} zloty Meta spend.`,
+  ]
+  if (wtdCPA != null) parts.push(`Average C P A is ${wtdCPA.toFixed(0)} zloty.`)
+  parts.push(`Best day was ${best.date} with ${(best.wix_revenue ?? 0).toFixed(0)} zloty and ${best.wix_orders} orders.`)
+  if (wtdCPA != null && wtdCPA > 50)       parts.push('C P A running above 50 zloty for the week. Creatives need attention.')
+  else if (wtdROAS != null && wtdROAS >= 3) parts.push('R O A S above 3 — strong week. Keep the machine running.')
+  else if (wtdROAS != null && wtdROAS < 2)  parts.push('R O A S below 2 for the week. Margin is thin.')
+  parts.push('Revenue chart is on screen.')
+  return parts.join(' ')
+}
+
+export function buildJsuWebinarSpoken(s: JsuFunnelSummary | null): string {
+  if (!s || s.bottleneck === 'NO_DATA')    return 'No JSU webinar data available yet. Connect the ClickMeeting Make scenario.'
+  if (s.bottleneck === 'NO_SOURCES') return 'No email or ClickMeeting data yet. Connect the Make scenarios to enable full diagnosis.'
+
+  const parts: string[] = []
+  if (s.hasClickMeetingData) {
+    parts.push(`Webinar data: ${s.totals.registered} registered, ${s.totals.attendees} attended, ${s.totals.purchases} purchases.`)
+    if (s.rates.attendance_rate != null) parts.push(`Show-up rate is ${pct(s.rates.attendance_rate)}.`)
+    if (s.rates.purchase_rate   != null) parts.push(`Conversion to purchase is ${pct(s.rates.purchase_rate)}.`)
+  } else {
+    parts.push('ClickMeeting registration data is not populated yet.')
+  }
+  if (s.hasEmailData) {
+    parts.push(`Email: ${s.totals.email_sent} sent, ${pct(s.rates.delivery_rate)} delivered, ${pct(s.rates.open_rate)} open rate.`)
+  } else {
+    parts.push('No email campaign data connected yet.')
+  }
+  const diagFirst = s.diagnosis.split('.')[0]
+  if (diagFirst) parts.push(`${diagFirst}.`)
+  if (s.hasClickMeetingData) parts.push('Funnel chart is on screen.')
+  return parts.join(' ')
+}
+
+// ── Chart spec builders ───────────────────────────────────────────────────────
+
+export function buildTodayVsYesterdayChart(trend: DailyPerformance[]): InsightChartSpec | undefined {
+  const sorted = [...trend].sort((a, b) => a.date < b.date ? -1 : 1)
+  if (sorted.length < 2) return undefined
+  const today     = sorted[sorted.length - 1]
+  const yesterday = sorted[sorted.length - 2]
+  return {
+    type:   'bar',
+    title:  'Today vs Yesterday',
+    xKey:   'day',
+    data:   [
+      { day: 'Yesterday', revenue: Math.round(yesterday.wix_revenue ?? 0), spend: Math.round(yesterday.meta_spend ?? 0), orders: yesterday.wix_orders ?? 0 },
+      { day: 'Today',     revenue: Math.round(today.wix_revenue     ?? 0), spend: Math.round(today.meta_spend     ?? 0), orders: today.wix_orders     ?? 0 },
+    ],
+    series: [
+      { key: 'revenue', label: 'Revenue', color: 'var(--gold)' },
+      { key: 'spend',   label: 'Spend',   color: 'var(--teal)' },
+    ],
+  }
+}
+
+export function buildWeekChart(trend: DailyPerformance[]): InsightChartSpec | undefined {
+  const weekStart = thisWeekStartWaw()
+  const rows      = trend.filter(r => r.date >= weekStart).sort((a, b) => a.date < b.date ? -1 : 1)
+  if (rows.length === 0) return undefined
+  return {
+    type:   'line',
+    title:  'This Week',
+    xKey:   'date',
+    data:   rows.map(r => ({
+      date:    new Date(r.date + 'T12:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }),
+      revenue: Math.round(r.wix_revenue ?? 0),
+      spend:   Math.round(r.meta_spend  ?? 0),
+      orders:  r.wix_orders ?? 0,
+    })),
+    series: [
+      { key: 'revenue', label: 'Revenue', color: 'var(--gold)' },
+      { key: 'spend',   label: 'Spend',   color: 'var(--teal)' },
+    ],
+  }
+}
+
+export function buildLast7Chart(trend: DailyPerformance[]): InsightChartSpec | undefined {
+  if (trend.length === 0) return undefined
+  const sorted = [...trend].sort((a, b) => a.date < b.date ? -1 : 1)
+  return {
+    type:   'line',
+    title:  'Last 7 Days',
+    xKey:   'date',
+    data:   sorted.map(r => ({
+      date:    new Date(r.date + 'T12:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }),
+      revenue: Math.round(r.wix_revenue ?? 0),
+      spend:   Math.round(r.meta_spend  ?? 0),
+      orders:  r.wix_orders ?? 0,
+    })),
+    series: [
+      { key: 'revenue', label: 'Revenue', color: 'var(--gold)' },
+      { key: 'spend',   label: 'Spend',   color: 'var(--teal)' },
+    ],
+  }
+}
+
+export function buildCampaignChart(ads: MetaAdDaily[]): InsightChartSpec | undefined {
+  if (ads.length === 0) return undefined
+  return {
+    type:   'funnel',
+    title:  'Campaigns Today',
+    xKey:   'name',
+    data:   ads.map(a => ({
+      name:      (a.campaign_name ?? a.campaign_id ?? '?').slice(0, 22),
+      spend:     Math.round(a.spend ?? 0),
+      cpa:       a.purchases > 0 ? Math.round(a.spend / a.purchases) : null,
+      purchases: a.purchases ?? 0,
+    })),
+    series: [{ key: 'spend', label: 'Spend (PLN)', color: 'var(--teal)' }],
+  }
+}
+
+export function buildWebinarFunnelChart(s: JsuFunnelSummary | null): InsightChartSpec | undefined {
+  if (!s || !s.hasClickMeetingData) return undefined
+  const data = [
+    { stage: 'Registered', count: s.totals.registered },
+    { stage: 'Attended',   count: s.totals.attendees   },
+    { stage: 'Purchased',  count: s.totals.purchases   },
+  ].filter(d => d.count > 0)
+  if (data.length === 0) return undefined
+  return {
+    type:   'funnel',
+    title:  'Webinar Funnel — JSU',
+    xKey:   'stage',
+    data,
+    series: [{ key: 'count', label: 'Count', color: 'var(--gold)' }],
+  }
 }

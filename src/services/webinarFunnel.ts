@@ -78,18 +78,117 @@ export interface JsuFunnelSummary {
 // ── Loaders ──────────────────────────────────────────────────────────────────
 
 export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
-  const { data, error } = await supabase
+  // Primary: use the aggregated view
+  const { data: viewData, error: viewError } = await supabase
     .from('v_webinar_jsu_funnel_by_session')
     .select('*')
     .order('scheduled_at', { ascending: false })
     .limit(12)
 
-  if (error) {
-    console.warn('v_webinar_jsu_funnel_by_session unavailable:', error.message)
-    return buildEmptySummary('Supabase view unavailable — run webinar_funnel_schema.sql first.')
+  if (viewError) {
+    console.warn('v_webinar_jsu_funnel_by_session unavailable:', viewError.message)
   }
 
-  return buildSummary((data ?? []) as JsuFunnelRow[])
+  const viewRows = (viewData ?? []) as JsuFunnelRow[]
+
+  if (viewRows.length > 0) {
+    const s = buildSummary(viewRows)
+    console.log('GIENIU data sources', { webinarRows: viewRows.length, source: 'view', hasClickMeeting: s.hasClickMeetingData, hasEmail: s.hasEmailData })
+    return s
+  }
+
+  // Fallback: query raw webinar_sessions + webinar_participants tables directly
+  // This handles cases where the view exists but email joins return 0 rows.
+  const [{ data: rawSessions, error: sessErr }, { data: rawParticipants, error: partErr }] = await Promise.all([
+    supabase.from('webinar_sessions').select('*').order('scheduled_at', { ascending: false }).limit(12),
+    supabase.from('webinar_participants').select('session_id, attended, attend_duration_min, purchased_at, purchase_value, wix_order_id').limit(500),
+  ])
+
+  if (sessErr) console.warn('webinar_sessions error:', sessErr.message)
+  if (partErr) console.warn('webinar_participants error:', partErr.message)
+
+  type RawSession = {
+    id: string
+    session_name?: string
+    product_tag?: string
+    scheduled_at?: string
+    ended_at?: string
+    registered_count?: number
+    attendee_count?: number
+  }
+  type RawParticipant = {
+    session_id: string
+    attended?: boolean
+    attend_duration_min?: number | null
+    purchased_at?: string | null
+    purchase_value?: number | null
+    wix_order_id?: string | null
+  }
+
+  const sessions      = (rawSessions      ?? []) as RawSession[]
+  const participantRows = (rawParticipants ?? []) as RawParticipant[]
+
+  if (sessions.length === 0 && participantRows.length === 0) {
+    console.log('GIENIU data sources', { webinarRows: 0, source: 'none' })
+    return buildEmptySummary()
+  }
+
+  // Aggregate from raw tables
+  const registered = sessions.reduce((s, r) => s + (r.registered_count ?? 0), 0)
+  const attendees  = sessions.reduce((s, r) => s + (r.attendee_count  ?? 0), 0)
+  const purchases  = participantRows.filter(p => p.purchased_at || p.wix_order_id).length
+  const revenue    = participantRows.reduce((s, p) => s + (p.purchase_value ?? 0), 0)
+
+  const hasClickMeetingData = registered > 0 || attendees > 0 || sessions.length > 0
+  const attendanceRate  = registered > 0 ? attendees  / registered : null
+  const purchaseRate    = attendees   > 0 ? purchases  / attendees  : null
+
+  // Build synthetic JsuFunnelRows from raw sessions
+  const syntheticRows: JsuFunnelRow[] = sessions.map(s => {
+    const sessParticipants = participantRows.filter(p => p.session_id === s.id)
+    const sessPurchases    = sessParticipants.filter(p => p.purchased_at || p.wix_order_id)
+    const sessRevenue      = sessParticipants.reduce((acc, p) => acc + (p.purchase_value ?? 0), 0)
+    return {
+      session_id:          s.id,
+      session_name:        s.session_name ?? s.id,
+      session_date:        s.scheduled_at?.slice(0, 10) ?? '',
+      scheduled_at:        s.scheduled_at ?? '',
+      registered_count:    s.registered_count ?? 0,
+      attendee_count:      s.attendee_count   ?? 0,
+      attendance_rate_pct: s.registered_count ? Math.round((s.attendee_count ?? 0) / s.registered_count * 100) : null,
+      purchases:           sessPurchases.length,
+      revenue:             sessRevenue,
+      purchase_rate_pct:   s.attendee_count ? Math.round(sessPurchases.length / s.attendee_count * 100) : null,
+      email_sent:      0,
+      email_delivered: 0,
+      email_opens:     0,
+      email_clicks:    0,
+    }
+  })
+
+  const totals: FunnelTotals = {
+    email_sent: 0, email_delivered: 0, email_opens: 0, email_clicks: 0,
+    registered, attendees, purchases, revenue,
+  }
+  const rates: FunnelRates = {
+    delivery_rate: null, open_rate: null, click_rate: null, reg_rate: null,
+    attendance_rate: attendanceRate,
+    purchase_rate:   purchaseRate,
+  }
+
+  const { bottleneck, diagnosis } = diagnose(totals, rates, false, hasClickMeetingData)
+
+  console.log('GIENIU data sources', { rawSessions: sessions.length, participants: participantRows.length, registered, attendees, purchases, source: 'raw_tables' })
+
+  return {
+    sessions: syntheticRows,
+    hasEmailData: false,
+    hasClickMeetingData,
+    bottleneck,
+    diagnosis,
+    totals,
+    rates,
+  }
 }
 
 export async function loadJsuParticipantJourney(
