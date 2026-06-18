@@ -540,8 +540,16 @@ export function buildMetaVsWix(
   metaStats: MetaStatsToday,
   ads: MetaAdDaily[]
 ): string {
+  // If we have campaign-level ads data, use the detailed diagnosis
+  if (ads.length > 0) {
+    return buildAdsDiagnosis(perf, metaStats, ads)
+  }
+
   if (!perf) {
-    return `${pickPhrase(OPENERS)}\n\nNo data yet — cannot compare Meta and Wix.`
+    if (metaStats.isStale && metaStats.latestDate) {
+      return `${pickPhrase(OPENERS)}\n\nMeta data is stale — latest data is from ${metaStats.latestDate}, not today. Make may not have synced yet.`
+    }
+    return `${pickPhrase(OPENERS)}\n\nNo data yet — cannot compare Meta and Wix. Check the automation panel.`
   }
 
   const spend   = perf.meta_spend
@@ -576,21 +584,14 @@ export function buildMetaVsWix(
     } else {
       lines.push('Meta and Wix agree on purchase count. Tracking looks clean.')
     }
-  }
-
-  if (metaStats.isStale) {
-    lines.push('Meta data is stale — treat ad spend numbers with caution.')
+  } else if (spend > 0) {
+    lines.push('Meta purchases are zero — either the pixel is not firing or attributions have not been processed yet.')
   }
 
   if (roas != null) {
     if (roas >= 3)      lines.push('\nROAS above 3x. Ads appear profitable at current CPA.')
     else if (roas >= 2) lines.push('\nROAS between 2x and 3x. Marginal — monitor CPA closely.')
     else                lines.push('\nROAS below 2x. Ads may not be covering costs. Review creatives and targeting.')
-  }
-
-  if (ads.length > 0) {
-    const top = ads[0]
-    lines.push(`\nTop campaign: "${top.campaign_name ?? top.campaign_id}" — ${fmtPln(top.spend)} spend, ${top.link_clicks ?? 0} clicks.`)
   }
 
   return lines.join('\n')
@@ -857,65 +858,121 @@ export function buildAdsDiagnosis(
   metaStats: MetaStatsToday,
   ads: MetaAdDaily[]
 ): string {
-  if (!perf) {
-    return `${pickPhrase(OPENERS)}\n\nNo data today — ads diagnosis not possible. Check Make scenarios first.`
-  }
-
-  const issues: string[] = []
-  const spend  = perf.meta_spend ?? 0
-  const orders = perf.wix_orders ?? 0
-  const cpa    = perf.real_cpa
-  const roas   = perf.real_roas
-  const lc     = perf.link_clicks ?? 0
-  const metaPurchases = metaStats.meta_purchases
-
-  if (spend === 0) {
-    issues.push('No Meta spend today — campaigns may be paused or budget has run out.')
-  }
-  if (spend > 0 && orders === 0) {
-    issues.push('Spend is running but Wix shows zero orders. Funnel is broken — check landing page and checkout flow.')
-  }
-  if (lc > 50 && orders === 0) {
-    issues.push(`${lc} link clicks with zero purchases — traffic is arriving but dropping off before the buy.`)
-  }
-  if (cpa != null && cpa > 50) {
-    issues.push(`CPA at ${fmtPln(cpa)} — above the 50 PLN alert threshold. Creatives or targeting need work.`)
-  }
-  if (roas != null && roas < 2) {
-    issues.push(`ROAS at ${fmt(roas, 2, 'x')} — below 2x. Ads are not covering their cost.`)
-  }
-  if (metaPurchases > 0 && orders > metaPurchases) {
-    issues.push(`Meta undercounting: ${orders - metaPurchases} real Wix orders have no Meta attribution. Pixel may be misfiring.`)
-  }
-  if (metaPurchases > orders && orders >= 0) {
-    const overcount = metaPurchases - orders
-    if (overcount > 0) {
-      issues.push(`Meta overcounting: claims ${overcount} more purchases than Wix recorded. View-through or duplicate events.`)
-    }
-  }
-  if (metaStats.isStale) {
-    issues.push('Meta data is stale — ad spend figures may not reflect today accurately.')
-  }
-  if (ads.length > 0) {
-    const total = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
-    const top   = ads[0]
-    if (total > 0 && top.spend / total > 0.7) {
-      issues.push(`Concentration risk: "${top.campaign_name ?? top.campaign_id}" is consuming ${((top.spend / total) * 100).toFixed(0)}% of the budget.`)
-    }
-    const burning = ads.filter(a => (a.purchases ?? 0) === 0 && (a.spend ?? 0) > 10)
-    if (burning.length > 0) {
-      issues.push(`${burning.length} campaign${burning.length > 1 ? 's' : ''} spending over 10 PLN with zero attributed conversions.`)
-    }
-  }
-
   const opener = pickPhrase(OPENERS)
-  if (issues.length === 0) {
-    return `${opener}\n\nAds look healthy today, Lifidi. Spend is running, ROAS is above 2x, no tracking anomalies. Eyes on the CPA.`
+
+  // ── No campaign rows at all ────────────────────────────────────────────────
+  if (ads.length === 0) {
+    if (metaStats.isStale && metaStats.latestDate) {
+      return [
+        opener, '',
+        `Meta data is stale — latest campaign data is from ${metaStats.latestDate}, not today.`,
+        'Make may not have synced yet. Check the automation panel.',
+        '',
+        perf ? `Aggregated: Wix orders ${perf.wix_orders}, revenue ${fmtPln(perf.wix_revenue)}, Meta spend ${fmtPln(perf.meta_spend)}.` : '',
+      ].filter(l => l !== '').join('\n')
+    }
+    if (!perf || (perf.meta_spend === 0 && perf.wix_orders === 0)) {
+      return `${opener}\n\nNo Meta campaign data for today yet. Either Make has not synced or the day is still early. Check the automation panel.`
+    }
+    // perf has data but no campaign rows — aggregated only
+    return buildOpsBriefing(perf, 'OK', metaStats, ads)
   }
 
-  return [
-    opener, '',
-    '— ADS DIAGNOSIS —', '',
-    ...issues.map((iss, i) => `${i + 1}. ${iss}`),
-  ].join('\n')
+  // ── Campaign-level data available ─────────────────────────────────────────
+  const totalSpend     = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
+  const totalPurchases = ads.reduce((s, a) => s + (a.purchases ?? 0), 0)
+
+  const lines: string[] = [opener, '', '— ADS DIAGNOSIS TODAY —', '']
+
+  // Per-campaign breakdown
+  lines.push('Campaign breakdown:')
+  for (const ad of ads) {
+    const name = ad.campaign_name ?? ad.campaign_id ?? '?'
+    const spendPct = totalSpend > 0 ? ((ad.spend / totalSpend) * 100).toFixed(0) : '?'
+    const metaCpa  = ad.spend > 0 && ad.purchases > 0 ? ad.spend / ad.purchases : null
+    const purchStr = ad.purchases > 0
+      ? `${ad.purchases} Meta purchases  Meta CPA: ${fmtPln(metaCpa)}`
+      : '0 Meta purchases'
+    lines.push(`  "${name}"`)
+    lines.push(`    spend: ${fmtPln(ad.spend)} (${spendPct}%)  ${purchStr}  clicks: ${ad.link_clicks ?? 0}`)
+  }
+  lines.push(`  Total: ${fmtPln(totalSpend)} spend  ${totalPurchases} Meta purchases`)
+  lines.push('')
+
+  // ── Winner / Watch ────────────────────────────────────────────────────────
+  const withPurchases = ads.filter(a => (a.purchases ?? 0) > 0 && (a.spend ?? 0) > 0)
+  const zeroBurners   = ads.filter(a => (a.spend ?? 0) > 10 && (a.purchases ?? 0) === 0)
+
+  if (withPurchases.length > 0) {
+    const best = withPurchases.reduce((prev, curr) => {
+      return (curr.spend / curr.purchases) < (prev.spend / prev.purchases) ? curr : prev
+    })
+    const bestCpa = best.spend / best.purchases
+    lines.push(`Winner: "${best.campaign_name ?? best.campaign_id}" — Meta CPA ${fmtPln(bestCpa)}, ${best.purchases} purchases.`)
+  }
+
+  if (zeroBurners.length > 0) {
+    lines.push(`Burning budget: ${zeroBurners.map(a => `"${a.campaign_name ?? a.campaign_id}" (${fmtPln(a.spend)}, 0 Meta purchases)`).join(' | ')}.`)
+  }
+
+  // Worst (highest CPA)
+  if (withPurchases.length > 1) {
+    const worst = withPurchases.reduce((prev, curr) => {
+      return (curr.spend / curr.purchases) > (prev.spend / prev.purchases) ? curr : prev
+    })
+    const worstCpa = worst.spend / worst.purchases
+    lines.push(`Most expensive: "${worst.campaign_name ?? worst.campaign_id}" — Meta CPA ${fmtPln(worstCpa)}.`)
+  }
+
+  // Concentration
+  if (totalSpend > 0 && ads.length > 1) {
+    const top    = ads[0]
+    const topPct = (top.spend / totalSpend) * 100
+    if (topPct > 70) {
+      lines.push(`Concentration risk: "${top.campaign_name ?? top.campaign_id}" consuming ${topPct.toFixed(0)}% of total budget.`)
+    }
+  }
+
+  // Zero purchases note
+  if (totalPurchases === 0 && totalSpend > 0) {
+    lines.push('Meta spend exists, but Meta purchases are zero in the database. Attribution mapping or Meta API has not reported purchases yet.')
+  }
+
+  lines.push('')
+
+  // ── Real Wix context ──────────────────────────────────────────────────────
+  if (perf) {
+    const wixOrders  = perf.wix_orders ?? 0
+    const wixRevenue = perf.wix_revenue ?? 0
+    const realCpa    = perf.real_cpa
+    const realRoas   = perf.real_roas
+
+    lines.push('Real business context (Wix):')
+    lines.push(`  Wix orders: ${wixOrders}  |  Revenue: ${fmtPln(wixRevenue)}`)
+    if (realCpa  != null) lines.push(`  Real CPA: ${fmtPln(realCpa)}  |  Real ROAS: ${realRoas != null ? fmt(realRoas, 2, 'x') : '—'}`)
+
+    if (totalPurchases === 0 && wixOrders > 0) {
+      lines.push(`  Meta shows 0 purchases, Wix shows ${wixOrders} real orders. Pixel is not firing — diagnose the Meta pixel setup.`)
+    } else if (totalPurchases > 0 && wixOrders !== totalPurchases) {
+      const gap = wixOrders - totalPurchases
+      if (gap > 0) {
+        lines.push(`  Attribution gap: Meta reports ${totalPurchases} purchases, Wix shows ${wixOrders}. ${gap} orders are untracked. Judge profit by real CPA, not Meta CPA.`)
+      } else {
+        lines.push(`  Attribution overcount: Meta claims ${totalPurchases} purchases but Wix shows only ${wixOrders} orders. Possible view-through or duplicate events.`)
+      }
+    }
+
+    if (realCpa != null && realCpa > 50) {
+      lines.push('  Real CPA above 50 PLN alert threshold — review creatives and targeting.')
+    } else if (realRoas != null && realRoas >= 3) {
+      lines.push('  Real ROAS above 3x — ads are covering costs. Keep pushing.')
+    } else if (realRoas != null && realRoas < 2) {
+      lines.push('  Real ROAS below 2x — ads may not be covering costs. Check CPA ceiling.')
+    }
+  }
+
+  lines.push('')
+  lines.push(pickPhrase(NEXT_MOVES))
+
+  return lines.join('\n')
 }

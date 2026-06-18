@@ -1,4 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="32" fill="#0d0d0d"/>
-  <text x="96" y="130" text-anchor="middle" font-family="monospace" font-size="80" font-weight="bold" fill="#e8ff00">G</text>
+  <rect width="192" height="192" fill="#080e1c"/>
+  <path d="M96 14 L168 38 L168 104 Q168 152 96 174 Q24 152 24 104 L24 38 Z"
+        fill="#10192e" stroke="#c9a96e" stroke-width="4"/>
+  <line x1="42" y1="68" x2="150" y2="68" stroke="#7a6030" stroke-width="1.5"/>
+  <text x="96" y="140" text-anchor="middle"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="82" font-weight="700" fill="#c9a96e">G</text>
 </svg>

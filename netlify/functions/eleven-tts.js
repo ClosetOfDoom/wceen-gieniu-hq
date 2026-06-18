@@ -1,5 +1,8 @@
 // Netlify Function: eleven-tts
 // Proxies TTS requests to ElevenLabs keeping the API key server-side.
+// Voice is ALWAYS George (JBFqnCBsd6RMkjVDRZzb) — env ELEVENLABS_VOICE_ID is intentionally ignored.
+
+const GEORGE_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'
 
 export const handler = async (event) => {
   const headers = {
@@ -14,15 +17,14 @@ export const handler = async (event) => {
 
   if (event.httpMethod === 'GET') {
     const apiKey = process.env.ELEVENLABS_API_KEY
-    const voiceId = process.env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb'
     const modelId = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2'
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         hasApiKey: !!apiKey,
-        hasVoiceId: !!voiceId,
-        voiceId,
+        voiceId: GEORGE_VOICE_ID,
+        voiceName: 'George',
         modelId,
       }),
     }
@@ -48,14 +50,17 @@ export const handler = async (event) => {
     return { statusCode: 400, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Invalid JSON' }) }
   }
 
-  const voiceId = body.voiceId || process.env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb'
-  const modelId = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2'
+  // Always use George — ignore body.voiceId and env ELEVENLABS_VOICE_ID
+  const voiceId     = GEORGE_VOICE_ID
+  const modelId     = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2'
   const outputFormat = process.env.ELEVENLABS_OUTPUT_FORMAT || 'mp3_44100_128'
-  const text = (body.text || '').slice(0, 2500)
+  const text        = (body.text || '').slice(0, 2500)
 
   if (!text) {
     return { statusCode: 400, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'text required' }) }
   }
+
+  console.log(`GIENIU TTS voice used: George ${GEORGE_VOICE_ID}`)
 
   try {
     const res = await fetch(

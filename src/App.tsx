@@ -69,11 +69,12 @@ const NAV_ITEMS: { key: NavSection; icon: string; label: string; live?: boolean 
 ]
 
 function Sidebar({
-  active, onNavigate, jsuAlert,
+  active, onNavigate, jsuAlert, onInstall,
 }: {
   active: NavSection
   onNavigate: (s: NavSection) => void
   jsuAlert: boolean
+  onInstall?: () => void
 }) {
   return (
     <aside className="hud-sidebar">
@@ -127,6 +128,18 @@ function Sidebar({
           </button>
         ))}
       </nav>
+
+      {onInstall && (
+        <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)' }}>
+          <button
+            className="btn-sm"
+            onClick={onInstall}
+            style={{ width: '100%', fontSize: '0.72rem', color: 'var(--gold)', borderColor: 'var(--border-gold)' }}
+          >
+            ⬇ Install GIENIU
+          </button>
+        </div>
+      )}
 
       <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '10px' }}>
         <GieniuAvatar size={52} />
@@ -438,6 +451,16 @@ export default function App() {
   const recognitionRef = useRef<any>(null)
   const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // PWA install
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [installPrompt, setInstallPrompt] = useState<any>(null)
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handler = (e: any) => { e.preventDefault(); setInstallPrompt(e) }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
   // ── Loaders ─────────────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
@@ -538,6 +561,15 @@ export default function App() {
     speakAnswer(result)
   }
 
+  // ── PWA install ───────────────────────────────────────────────────────────────
+
+  async function handleInstall() {
+    if (!installPrompt) return
+    installPrompt.prompt()
+    const { outcome } = await installPrompt.userChoice
+    if (outcome === 'accepted') setInstallPrompt(null)
+  }
+
   // ── JSU command handler ───────────────────────────────────────────────────────
 
   function handleJsuCommand(key: JsuCommandKey) {
@@ -619,7 +651,7 @@ export default function App() {
   return (
     <div className="hud-layout">
 
-      <Sidebar active={section} onNavigate={setSection} jsuAlert={jsuAlert} />
+      <Sidebar active={section} onNavigate={setSection} jsuAlert={jsuAlert} onInstall={installPrompt ? handleInstall : undefined} />
 
       <div className="hud-main">
         <TopBar

@@ -20,20 +20,21 @@ export default defineConfig({
       manifest: {
         name: 'GIENIU HQ',
         short_name: 'GIENIU',
-        description: 'WCEEN operacyjny asystent — dashboard, dane, głos.',
-        theme_color: '#0d0d0d',
-        background_color: '#0d0d0d',
+        description: 'Revenue and operations command center for WCEEN / Językozak',
+        theme_color: '#080e1c',
+        background_color: '#080e1c',
         display: 'standalone',
         orientation: 'portrait-primary',
         scope: '/',
         start_url: '/',
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' }
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ]
       },
       workbox: {
-        cacheId: 'gieniu-hq-v6',
+        cacheId: 'gieniu-hq-v7',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         skipWaiting: true,
         clientsClaim: true,
@@ -41,7 +42,7 @@ export default defineConfig({
           {
             urlPattern: /^https:\/\/phwhsteaqwrijoivqnif\.supabase\.co/,
             handler: 'NetworkFirst',
-            options: { cacheName: 'supabase-v4', networkTimeoutSeconds: 10 }
+            options: { cacheName: 'supabase-v5', networkTimeoutSeconds: 10 }
           }
         ]
       }

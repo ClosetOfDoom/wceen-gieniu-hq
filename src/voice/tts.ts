@@ -27,6 +27,8 @@ export async function speak(text: string): Promise<TTSResult> {
   const cleaned = cleanForTTS(text)
 
   // eslint-disable-next-line no-console
+  console.log(`GIENIU frontend requested voice: George ${DEFAULT_VOICE_ID}`)
+  // eslint-disable-next-line no-console
   console.log('GIENIU TTS request started')
 
   try {

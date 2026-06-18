@@ -52,34 +52,7 @@ function detectTimeRange(q: string): TimeRange | null {
   return null
 }
 
-function buildCampaignSummary(ads: MetaAdDaily[]): string {
-  if (ads.length === 0) return 'No campaign data for today. Make scenarios may not have synced yet.'
-  const top   = ads[0]
-  const total = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
-  const topPct = total > 0 ? ((top.spend / total) * 100).toFixed(0) : '?'
-  const concentrated = total > 0 && top.spend / total > 0.7
 
-  const lines = [
-    `Top campaign today: "${top.campaign_name ?? top.campaign_id ?? '?'}"`,
-    `Spend: ${top.spend.toFixed(2)} PLN (${topPct}% of total budget).`,
-    `Clicks: ${top.link_clicks ?? '—'}. Meta-attributed purchases: ${top.purchases ?? 0}.`,
-  ]
-  if (concentrated) {
-    lines.push('\nWarning: this campaign is consuming over 70% of the budget. Concentration risk — no backup if it underperforms.')
-  }
-  if (ads.length > 1) {
-    lines.push('\nOther active campaigns:')
-    ads.slice(1, 4).forEach(a => {
-      lines.push(`  "${a.campaign_name ?? a.campaign_id}" — ${a.spend.toFixed(2)} PLN`)
-    })
-  }
-  return lines.join('\n')
-}
-
-function fmtPlnLocal(n: number | null | undefined): string {
-  if (n == null) return '—'
-  return n.toFixed(2) + ' PLN'
-}
 
 export function resolveIntent(query: string, ctx: IntentContext): string {
   const q = normalizePl(query.toLowerCase().trim())
@@ -97,6 +70,10 @@ export function resolveIntent(query: string, ctx: IntentContext): string {
     'sytuacja', 'dzisiaj', 'dzis', 'hajs', 'zamowien', 'przychod', 'kasa'
   )
   if (status === 'NO_DATA' && trend.length > 0 && isOperationalQuery) {
+    // If we have campaign-level ads data for today, we can still give a partial briefing
+    if (ads.length > 0) {
+      return buildAdsDiagnosis(perf, metaStats, ads)
+    }
     const latest = trend[0]
     const lDate  = latest.date
     const orders  = latest.wix_orders ?? 0
@@ -106,13 +83,13 @@ export function resolveIntent(query: string, ctx: IntentContext): string {
     const roas    = latest.real_roas
 
     const lines = [
-      'No data for today yet — Make may not have synced yet, or the day is still early.', '',
-      `Most recent data point: ${lDate}`,
-      `  Orders: ${orders}  |  Revenue: ${fmtPlnLocal(revenue)}  |  Ad spend: ${fmtPlnLocal(spend)}`,
+      'Wix data is missing for today — Make may not have synced yet, or the day is still early.', '',
+      `Latest available data: ${lDate}`,
+      `  Orders: ${orders}  |  Revenue: ${revenue.toFixed(2)} PLN  |  Ad spend: ${spend.toFixed(2)} PLN`,
     ]
-    if (cpa != null)  lines.push(`  Real CPA: ${fmtPlnLocal(cpa)}`)
+    if (cpa != null)  lines.push(`  Real CPA: ${cpa.toFixed(2)} PLN`)
     if (roas != null) lines.push(`  Real ROAS: ${roas.toFixed(2)}x`)
-    lines.push('', 'Try: "how was yesterday?" or "last 7 days" for a full picture.')
+    lines.push('', 'Ask: "how was yesterday?" or "last 7 days" for a full picture.')
     return lines.join('\n')
   }
 
@@ -152,10 +129,14 @@ export function resolveIntent(query: string, ctx: IntentContext): string {
     if (timeRange === 'last-7-days')           return buildLast7Days(trend)
   }
 
-  // Top campaigns
-  if (has(q, 'campaign', 'which ad', 'best ad', 'top ad', 'top campaign', 'which campaign', 'wasting budget', 'concentration',
-    'adsy', 'reklamy', 'ktora reklama', 'jakie reklamy')) {
-    return buildCampaignSummary(ads)
+  // Campaign/ads detail — underperforming, best, worst, compare
+  if (has(q,
+    'campaign', 'which ad', 'best ad', 'top ad', 'top campaign', 'which campaign',
+    'wasting budget', 'concentration', 'underperform', 'underperforming',
+    'worst campaign', 'worst ad', 'compare campaign', 'compare ads',
+    'adsy', 'reklamy', 'ktora reklama', 'jakie reklamy', 'przepala', 'slaba kampania',
+    'ktora kampania', 'najgorsza', 'jaka reklama')) {
+    return buildAdsDiagnosis(perf, metaStats, ads)
   }
 
   // Creatives
