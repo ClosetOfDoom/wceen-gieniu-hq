@@ -12,8 +12,9 @@ export function GieniuResponse({ text, compact }: Props) {
   async function handleSpeak() {
     if (speaking) { stopAudio(); setSpeaking(false); return }
     setSpeaking(true)
-    await speak(text)
+    const res = await speak(text)
     setSpeaking(false)
+    if (!res.ok && !res.aborted) console.warn('GieniuResponse TTS failed:', res.error)
   }
 
   if (!text) return null

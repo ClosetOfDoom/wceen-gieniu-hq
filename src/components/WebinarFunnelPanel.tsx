@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from 'react'
-import type { JsuFunnelSummary, JsuFunnelRow, JsuParticipantRow, FunnelBottleneck } from '../services/webinarFunnel'
+import type { JsuFunnelSummary, JsuFunnelRow, JsuParticipantRow, FunnelBottleneck, JsuFunnelDebug } from '../services/webinarFunnel'
 import { pct, fmtPlnFunnel } from '../services/webinarFunnel'
 import { ParticipantJourneyTable } from './ParticipantJourneyTable'
 import type { JsuCommandKey } from '../brain/responses'
@@ -85,6 +85,54 @@ function FunnelStep({
           {missing ? '—' : (rate != null ? pct(rate) : '—')} {rateLabel ?? ''}
         </div>
       )}
+    </div>
+  )
+}
+
+function ClickMeetingStatus({ debug }: { debug?: JsuFunnelDebug }) {
+  if (debug && (debug.sessionsCount > 0 || debug.participantsCount > 0)) {
+    // We have rows — give specific status instead of generic "no data" message
+    return (
+      <div style={{ background: '#0a0a0a', border: '1px dashed #555', borderRadius: '8px', padding: '12px 16px', fontSize: '0.78rem', color: '#888', fontFamily: 'monospace', lineHeight: 1.7 }}>
+        <div style={{ color: '#e8ff00', fontWeight: 700, marginBottom: '4px' }}>ClickMeeting sessions found</div>
+        {debug.sessionsCount > 0 && <div>✓ Sessions in DB: <span style={{ color: '#e0e0e0' }}>{debug.sessionsCount}</span></div>}
+        {debug.participantsCount > 0 && <div>✓ Participants in DB: <span style={{ color: '#e0e0e0' }}>{debug.participantsCount}</span></div>}
+        {debug.sessionsCount > 0 && debug.participantsCount === 0 && <div style={{ color: '#ff6b00' }}>⚠ No participant rows yet — Make may still be syncing</div>}
+        <div style={{ marginTop: '4px', color: '#555', fontSize: '0.7rem' }}>Email/ESP data missing — deliverability not assessable.</div>
+      </div>
+    )
+  }
+  return (
+    <div style={{ background: '#0a0a0a', border: '1px dashed #333', borderRadius: '8px', padding: '12px 16px', fontSize: '0.78rem', color: '#888', fontFamily: 'monospace', lineHeight: 1.6 }}>
+      No ClickMeeting data yet — registrations and attendance cannot be assessed.
+      <br />
+      Connect Make → ClickMeeting API → Supabase (webinar_sessions, webinar_participants).
+    </div>
+  )
+}
+
+function DataDebugBar({ debug }: { debug?: JsuFunnelDebug }) {
+  if (!debug) return null
+  return (
+    <div style={{
+      marginTop: '6px',
+      padding: '5px 10px',
+      background: '#060606',
+      border: '1px solid #1a1a1a',
+      borderRadius: '4px',
+      fontFamily: 'monospace',
+      fontSize: '0.64rem',
+      color: '#444',
+      display: 'flex',
+      gap: '16px',
+      flexWrap: 'wrap',
+    }}>
+      <span>data debug:</span>
+      <span>sessions: <span style={{ color: debug.sessionsCount > 0 ? '#00ff88' : '#555' }}>{debug.sessionsCount}</span></span>
+      <span>participants: <span style={{ color: debug.participantsCount > 0 ? '#00ff88' : '#555' }}>{debug.participantsCount}</span></span>
+      <span>source: <span style={{ color: '#666' }}>{debug.source}</span></span>
+      {debug.latestSessionDate && <span>latest: <span style={{ color: '#666' }}>{debug.latestSessionDate}{debug.latestSessionName ? ` / ${debug.latestSessionName.slice(0, 30)}` : ''}</span></span>}
+      {debug.lastError && <span style={{ color: '#ff6b00' }}>error: {debug.lastError.slice(0, 60)}</span>}
     </div>
   )
 }
@@ -188,6 +236,9 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
         <FunnelStep label="Revenue 7d" value={fmtPlnFunnel(summary?.totals.revenue)} missing={!summary?.hasClickMeetingData} />
       </div>
 
+      {/* Data source debug bar — always visible */}
+      <DataDebugBar debug={summary?._debug} />
+
       {/* Missing data notices */}
       {!summary?.hasEmailData && (
         <div
@@ -208,22 +259,7 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
         </div>
       )}
       {!summary?.hasClickMeetingData && (
-        <div
-          style={{
-            background: '#0a0a0a',
-            border: '1px dashed #333',
-            borderRadius: '8px',
-            padding: '12px 16px',
-            fontSize: '0.78rem',
-            color: '#888',
-            fontFamily: 'monospace',
-            lineHeight: 1.6,
-          }}
-        >
-          No ClickMeeting data yet — registrations and attendance cannot be assessed.
-          <br />
-          Connect Make → ClickMeeting API → Supabase (webinar_sessions, webinar_participants).
-        </div>
+        <ClickMeetingStatus debug={summary?._debug} />
       )}
 
       {/* Diagnosis box */}

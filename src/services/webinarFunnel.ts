@@ -65,6 +65,15 @@ export interface FunnelRates {
   purchase_rate: number | null    // purchases / attendees
 }
 
+export interface JsuFunnelDebug {
+  sessionsCount: number
+  participantsCount: number
+  source: 'view' | 'raw_tables' | 'none'
+  latestSessionDate?: string
+  latestSessionName?: string
+  lastError?: string
+}
+
 export interface JsuFunnelSummary {
   sessions: JsuFunnelRow[]
   hasEmailData: boolean
@@ -73,6 +82,7 @@ export interface JsuFunnelSummary {
   diagnosis: string
   totals: FunnelTotals
   rates: FunnelRates
+  _debug?: JsuFunnelDebug
 }
 
 // ── Loaders ──────────────────────────────────────────────────────────────────
@@ -93,7 +103,19 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
 
   if (viewRows.length > 0) {
     const s = buildSummary(viewRows)
-    console.log('GIENIU data sources', { webinarRows: viewRows.length, source: 'view', hasClickMeeting: s.hasClickMeetingData, hasEmail: s.hasEmailData })
+    // Get raw participant count for debug (lightweight, count-only)
+    const { count: partCount } = await supabase
+      .from('webinar_participants')
+      .select('*', { count: 'exact', head: true })
+    const debug: JsuFunnelDebug = {
+      sessionsCount: viewRows.length,
+      participantsCount: partCount ?? 0,
+      source: 'view',
+      latestSessionDate: viewRows[0]?.session_date,
+      latestSessionName: viewRows[0]?.session_name,
+    }
+    s._debug = debug
+    console.log('GIENIU data sources', { webinarRows: viewRows.length, participants: partCount, source: 'view', hasClickMeeting: s.hasClickMeetingData, hasEmail: s.hasEmailData })
     return s
   }
 
@@ -129,8 +151,10 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
   const participantRows = (rawParticipants ?? []) as RawParticipant[]
 
   if (sessions.length === 0 && participantRows.length === 0) {
-    console.log('GIENIU data sources', { webinarRows: 0, source: 'none' })
-    return buildEmptySummary()
+    console.log('GIENIU data sources', { webinarRows: 0, source: 'none', sessErr: sessErr?.message, partErr: partErr?.message })
+    const empty = buildEmptySummary(sessErr?.message || partErr?.message)
+    empty._debug = { sessionsCount: 0, participantsCount: 0, source: 'none', lastError: sessErr?.message || partErr?.message }
+    return empty
   }
 
   // Aggregate from raw tables
@@ -188,6 +212,13 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
     diagnosis,
     totals,
     rates,
+    _debug: {
+      sessionsCount: sessions.length,
+      participantsCount: participantRows.length,
+      source: 'raw_tables',
+      latestSessionDate: sessions[0]?.scheduled_at?.slice(0, 10),
+      latestSessionName: sessions[0]?.session_name,
+    },
   }
 }
 
@@ -243,7 +274,8 @@ function buildSummary(sessions: JsuFunnelRow[]): JsuFunnelSummary {
   }
 
   const hasEmailData = totals.email_sent > 0
-  const hasClickMeetingData = totals.registered > 0 || totals.attendees > 0
+  // sessions.length > 0 means the ClickMeeting Make scenario has run and pushed data
+  const hasClickMeetingData = sessions.length > 0 || totals.registered > 0 || totals.attendees > 0
 
   const rates: FunnelRates = {
     delivery_rate:  hasEmailData && totals.email_sent > 0

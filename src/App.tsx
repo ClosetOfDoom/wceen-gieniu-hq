@@ -480,6 +480,8 @@ export default function App() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
   const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Guards against stale async speak() resolving after a new session started
+  const ttsSessionRef  = useRef(0)
 
   // PWA install
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -559,7 +561,7 @@ export default function App() {
       if (result.ok) {
         // eslint-disable-next-line no-console
         console.log('GIENIU opening line spoken')
-      } else {
+      } else if (!result.aborted) {
         // eslint-disable-next-line no-console
         console.log('GIENIU opening line blocked by autoplay')
         setOpeningBlocked(true)
@@ -570,9 +572,18 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // mount-only: intentionally no deps
 
+  // ── Stop speaking immediately (audio + in-flight fetch) ────────────────────────
+
+  function stopSpeaking() {
+    stopAudio()       // aborts fetch + pauses audio element
+    setSpeaking(false)
+  }
+
   // ── Auto-speak every answer ──────────────────────────────────────────────────
 
   async function speakAnswer(gr: GieniuResponse) {
+    const session = ++ttsSessionRef.current
+    stopSpeaking()    // stop any previous audio first
     setResponse(gr.displayText)
     setResponseSpoken(gr.spokenText)
     setResponseChart(gr.chart)
@@ -580,11 +591,11 @@ export default function App() {
     // eslint-disable-next-line no-console
     console.log('GIENIU spokenText', gr.spokenText.slice(0, 100))
     if (muted || !gr.spokenText.trim()) return
-    stopAudio()
     setSpeaking(true)
     const result = await speak(gr.spokenText)
+    if (ttsSessionRef.current !== session) return  // newer session took over
     setSpeaking(false)
-    if (!result.ok) {
+    if (!result.ok && !result.aborted) {
       setTtsError(result.error ?? 'unknown error')
       // eslint-disable-next-line no-console
       console.warn('GIENIU TTS failed:', result.error)
@@ -594,28 +605,25 @@ export default function App() {
   // Speak again / stop current audio
   function handleSpeakAgain() {
     if (speaking) {
-      stopAudio()
-      setSpeaking(false)
+      stopSpeaking()
       return
     }
     const toSpeak = responseSpoken || response
     if (!toSpeak.trim()) return
+    const session = ++ttsSessionRef.current
     setTtsError('')
     setSpeaking(true)
     speak(toSpeak).then(res => {
+      if (ttsSessionRef.current !== session) return
       setSpeaking(false)
-      if (!res.ok) setTtsError(res.error ?? 'unknown error')
+      if (!res.ok && !res.aborted) setTtsError(res.error ?? 'unknown error')
     })
   }
 
   // ── Intent handler ────────────────────────────────────────────────────────────
 
   function handleIntentQuery(query: string) {
-    // Stop any current audio before processing new query
-    if (speaking) {
-      stopAudio()
-      setSpeaking(false)
-    }
+    stopSpeaking()
     const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend })
     speakAnswer(result)
   }
@@ -625,10 +633,12 @@ export default function App() {
   function handleStartBriefing() {
     setOpeningBlocked(false)
     setTtsError('')
+    const session = ++ttsSessionRef.current
     setSpeaking(true)
     speak(responseSpoken || response || OPENING_TEXT).then(res => {
+      if (ttsSessionRef.current !== session) return
       setSpeaking(false)
-      if (!res.ok) setTtsError(res.error ?? 'unknown error')
+      if (!res.ok && !res.aborted) setTtsError(res.error ?? 'unknown error')
     })
   }
 
@@ -658,14 +668,29 @@ export default function App() {
     speakAnswer(wrapResponse(text))
   }
 
+  // ── Speech helpers ────────────────────────────────────────────────────────────
+
+  function normalizeSpeech(raw: string): string {
+    return raw
+      .toLowerCase()
+      .replace(/ą/g, 'a').replace(/ć/g, 'c').replace(/ę/g, 'e')
+      .replace(/ł/g, 'l').replace(/ń/g, 'n').replace(/ó/g, 'o')
+      .replace(/ś/g, 's').replace(/ź/g, 'z').replace(/ż/g, 'z')
+      .replace(/[.,!?;:]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  function isStopCommand(normalized: string): boolean {
+    const stops = ['stop', 'stop speaking', 'przestan mowic', 'stop audio', 'quiet',
+      'cisza', 'milcz', 'stop talking', 'zatrzymaj', 'stop george']
+    return stops.some(s => normalized === s || normalized.startsWith(s + ' ') || normalized.endsWith(' ' + s))
+  }
+
   // ── Voice input ───────────────────────────────────────────────────────────────
 
   function handleMic() {
-    // If speaking, interrupt: stop audio and start listening
-    if (speaking) {
-      stopAudio()
-      setSpeaking(false)
-    }
+    if (speaking) stopSpeaking()  // interrupt George, then fall through to start listening
 
     if (listening) {
       recognitionRef.current?.stop()
@@ -684,21 +709,44 @@ export default function App() {
 
     const rec = new SR()
     rec.lang = 'pl-PL'
-    rec.interimResults = false
+    rec.interimResults = true
     rec.maxAlternatives = 1
     recognitionRef.current = rec
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rec.onresult = (event: any) => {
-      const heard = event.results[0][0].transcript.trim()
-      setListening(false)
-      setTranscript(heard)
-      setThinking(true)
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => {
-        setThinking(false)
-        handleIntentQuery(heard)
-      }, 750)
+      let interim = ''
+      let final   = ''
+      for (let i = 0; i < event.results.length; i++) {
+        if (event.results[i].isFinal) final   += event.results[i][0].transcript
+        else                          interim += event.results[i][0].transcript
+      }
+      // Always show something visual
+      setTranscript(final || interim)
+
+      if (final) {
+        const normalized = normalizeSpeech(final)
+        // eslint-disable-next-line no-console
+        console.log('GIENIU speech final transcript', final)
+        // eslint-disable-next-line no-console
+        console.log('GIENIU normalized query', normalized)
+
+        setListening(false)
+
+        if (isStopCommand(normalized)) {
+          stopSpeaking()
+          // eslint-disable-next-line no-console
+          console.log('GIENIU stop command received')
+          return
+        }
+
+        setThinking(true)
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+        debounceRef.current = setTimeout(() => {
+          setThinking(false)
+          handleIntentQuery(final)
+        }, 750)
+      }
     }
 
     rec.onerror = () => { setListening(false); setThinking(false) }
