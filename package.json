@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "assert:voice": "node scripts/assert-gieniu-voice.mjs",
     "assert:tts": "node scripts/assert-tts.mjs",
-    "assert:webinar": "node scripts/assert-webinar.mjs"
+    "assert:webinar": "node scripts/assert-webinar.mjs",
+    "assert:orders": "node scripts/assert-orders.mjs",
+    "assert:campaigns": "node scripts/assert-campaigns.mjs",
+    "assert:nav": "node scripts/assert-nav.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.4",

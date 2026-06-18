@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { KPICard } from './components/KPICard'
 import { StatusBadge } from './components/StatusBadge'
 import { GieniuAvatar } from './components/GieniuAvatar'
-import { TopAds } from './components/TopAds'
 import { AutomationRuns } from './components/AutomationRuns'
 import { WebinarFunnelPanel } from './components/WebinarFunnelPanel'
 import { RevenueTrendChart } from './components/RevenueTrendChart'
 import { InsightChart } from './components/InsightChart'
+import { CampaignsPanel } from './components/CampaignsPanel'
+import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday,
@@ -39,14 +40,10 @@ const OPENING_TEXT = "Lifidi, GIENIU HQ is awake. I'm watching revenue, Meta, Wi
 
 type NavSection =
   | 'command-center'
+  | 'campaigns'
   | 'webinars'
   | 'automation'
-  | 'campaigns'
-  | 'overview'
-  | 'customers'
-  | 'analytics'
-  | 'reports'
-  | 'settings'
+  | 'diagnostics'
 
 // ── Format helpers ────────────────────────────────────────────────────────────
 
@@ -65,16 +62,12 @@ function fmtRoas(n: number | null | undefined): string {
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
-const NAV_ITEMS: { key: NavSection; icon: string; label: string; live?: boolean }[] = [
-  { key: 'command-center', icon: '⚔', label: 'Command Center', live: true },
-  { key: 'campaigns',      icon: '📜', label: 'Campaigns',      live: true },
-  { key: 'webinars',       icon: '🎙', label: 'Webinars',        live: true },
-  { key: 'automation',     icon: '⚙',  label: 'Automation',      live: true },
-  { key: 'overview',       icon: '👁',  label: 'Overview' },
-  { key: 'customers',      icon: '👤', label: 'Customers' },
-  { key: 'analytics',      icon: '📊', label: 'Analytics' },
-  { key: 'reports',        icon: '📋', label: 'Reports' },
-  { key: 'settings',       icon: '⚒',  label: 'Settings' },
+const NAV_ITEMS: { key: NavSection; icon: string; label: string }[] = [
+  { key: 'command-center', icon: '⚔',  label: 'Command Center' },
+  { key: 'campaigns',      icon: '📜', label: 'Campaigns'       },
+  { key: 'webinars',       icon: '🎙', label: 'Webinars'        },
+  { key: 'automation',     icon: '⚙',  label: 'Sync / Automation' },
+  { key: 'diagnostics',    icon: '🔬', label: 'Diagnostics'     },
 ]
 
 function Sidebar({
@@ -108,7 +101,7 @@ function Sidebar({
 
       <nav style={{ flex: 1, paddingTop: '8px' }}>
         <div className="nav-group-label">Operations</div>
-        {NAV_ITEMS.slice(0, 4).map(item => (
+        {NAV_ITEMS.map(item => (
           <button
             key={item.key}
             className={`nav-item${active === item.key ? ' active' : ''}`}
@@ -119,21 +112,6 @@ function Sidebar({
             {item.key === 'webinars' && jsuAlert && (
               <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', background: 'var(--orange)', flexShrink: 0, display: 'inline-block' }} />
             )}
-          </button>
-        ))}
-
-        <div className="nav-group-label" style={{ marginTop: '8px' }}>Intelligence</div>
-        {NAV_ITEMS.slice(4).map(item => (
-          <button
-            key={item.key}
-            className={`nav-item${active === item.key ? ' active' : ''}`}
-            onClick={() => onNavigate(item.key)}
-            style={{ opacity: 0.5 }}
-            disabled
-          >
-            <span className="nav-icon">{item.icon}</span>
-            {item.label}
-            <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: 'var(--muted2)' }}>Soon</span>
           </button>
         ))}
       </nav>
@@ -159,6 +137,42 @@ function Sidebar({
         </div>
       </div>
     </aside>
+  )
+}
+
+// ── Mobile bottom nav ─────────────────────────────────────────────────────────
+
+const MOBILE_NAV_ITEMS: { key: NavSection; icon: string; label: string }[] = [
+  { key: 'command-center', icon: '⚔',  label: 'Home'       },
+  { key: 'campaigns',      icon: '📜', label: 'Campaigns'  },
+  { key: 'webinars',       icon: '🎙', label: 'Webinars'   },
+  { key: 'automation',     icon: '⚙',  label: 'Sync'       },
+  { key: 'diagnostics',    icon: '🔬', label: 'Status'     },
+]
+
+function MobileNav({ active, onNavigate, jsuAlert }: {
+  active: NavSection
+  onNavigate: (s: NavSection) => void
+  jsuAlert: boolean
+}) {
+  return (
+    <nav className="mobile-nav">
+      {MOBILE_NAV_ITEMS.map(item => (
+        <button
+          key={item.key}
+          className={`mobile-nav-item${active === item.key ? ' active' : ''}`}
+          onClick={() => onNavigate(item.key)}
+        >
+          <span className="mobile-nav-icon">
+            {item.icon}
+            {item.key === 'webinars' && jsuAlert && (
+              <span style={{ position: 'absolute', top: -2, right: -4, width: 6, height: 6, borderRadius: '50%', background: 'var(--orange)', display: 'inline-block' }} />
+            )}
+          </span>
+          <span className="mobile-nav-label">{item.label}</span>
+        </button>
+      ))}
+    </nav>
   )
 }
 
@@ -465,22 +479,6 @@ function RightPanel({
   )
 }
 
-// ── Coming soon placeholder ───────────────────────────────────────────────────
-
-function ComingSoon({ section }: { section: NavSection }) {
-  return (
-    <div style={{ padding: '60px 32px', textAlign: 'center' }}>
-      <div style={{ fontSize: '2rem', opacity: 0.3, marginBottom: '16px' }}>🏰</div>
-      <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1rem', color: 'var(--muted)', letterSpacing: '0.1em', marginBottom: '8px' }}>
-        {section.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-      </div>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)' }}>
-        This section is being constructed.
-      </div>
-    </div>
-  )
-}
-
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -519,7 +517,6 @@ export default function App() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
   const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Guards against stale async speak() resolving after a new session started
   const ttsSessionRef  = useRef(0)
 
   // PWA install
@@ -585,13 +582,12 @@ export default function App() {
     return () => clearInterval(interval)
   }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants])
 
-  // ── Opening greeting — always shown, TTS only if voice already unlocked ────────
+  // ── Opening greeting ─────────────────────────────────────────────────────────
 
   useEffect(() => {
-    // Always show greeting text on fresh load
     setResponse(OPENING_TEXT)
     setResponseSpoken(OPENING_TEXT)
-    if (sessionStorage.getItem(VOICE_UNLOCK_KEY) !== '1') return  // wait for "Start George voice" click
+    if (sessionStorage.getItem(VOICE_UNLOCK_KEY) !== '1') return
     const t = setTimeout(async () => {
       setSpeaking(true)
       const result = await speak(OPENING_TEXT)
@@ -607,12 +603,12 @@ export default function App() {
     }, 900)
     return () => clearTimeout(t)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // mount-only: intentionally no deps
+  }, [])
 
-  // ── Stop speaking immediately (audio + in-flight fetch) ────────────────────────
+  // ── Stop speaking ────────────────────────────────────────────────────────────
 
   function stopSpeaking() {
-    stopAudio()       // aborts fetch + pauses audio element
+    stopAudio()
     setSpeaking(false)
   }
 
@@ -620,7 +616,7 @@ export default function App() {
 
   async function speakAnswer(gr: GieniuResponse) {
     const session = ++ttsSessionRef.current
-    stopSpeaking()    // stop any previous audio first
+    stopSpeaking()
     setResponse(gr.displayText)
     setResponseSpoken(gr.spokenText)
     setResponseChart(gr.chart)
@@ -630,7 +626,7 @@ export default function App() {
     if (muted || !voiceUnlocked || !gr.spokenText.trim()) return
     setSpeaking(true)
     const result = await speak(gr.spokenText)
-    if (ttsSessionRef.current !== session) return  // newer session took over
+    if (ttsSessionRef.current !== session) return
     setSpeaking(false)
     if (!result.ok && !result.aborted) {
       setTtsError(result.error ?? 'unknown error')
@@ -639,13 +635,12 @@ export default function App() {
     }
   }
 
-  // Speak again / stop current audio
   function handleSpeakAgain() {
     if (speaking) {
       stopSpeaking()
       return
     }
-    prewarmAudio() // unlock audio during user gesture before async speak
+    prewarmAudio()
     const toSpeak = responseSpoken || response
     if (!toSpeak.trim()) return
     const session = ++ttsSessionRef.current
@@ -676,10 +671,10 @@ export default function App() {
     speakAnswer(result)
   }
 
-  // ── Start George voice (voice unlock + speak) ─────────────────────────────────
+  // ── Start George voice ────────────────────────────────────────────────────────
 
   async function handleStartGeorgeVoice() {
-    prewarmAudio() // unlock browser audio NOW — synchronous, during user gesture, before any await
+    prewarmAudio()
     setTtsError('')
     // eslint-disable-next-line no-console
     console.log('GIENIU Start voice — endpoint: /.netlify/functions/gieniu-tts')
@@ -748,7 +743,7 @@ export default function App() {
   // ── Voice input ───────────────────────────────────────────────────────────────
 
   function handleMic() {
-    if (speaking) stopSpeaking()  // interrupt George, then fall through to start listening
+    if (speaking) stopSpeaking()
 
     if (listening) {
       recognitionRef.current?.stop()
@@ -779,7 +774,6 @@ export default function App() {
         if (event.results[i].isFinal) final   += event.results[i][0].transcript
         else                          interim += event.results[i][0].transcript
       }
-      // Always show something visual
       setTranscript(final || interim)
 
       if (final) {
@@ -817,7 +811,6 @@ export default function App() {
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
-  // Use most recent trend row when today has no data, so KPI cards are never blank if history exists
   const displayPerf = perf ?? (trend.length > 0 ? trend[0] : null)
   const perfIsStale  = !perf && trend.length > 0
   const cpaHigh      = displayPerf?.real_cpa != null && displayPerf.real_cpa > 50
@@ -878,8 +871,7 @@ export default function App() {
           {/* ── CAMPAIGNS ─────────────────────────────────────────── */}
           {section === 'campaigns' && (
             <div className="card">
-              <div className="section-title section-title-gold">Top Campaigns — Today</div>
-              <TopAds ads={ads} loading={adsLoading} />
+              <CampaignsPanel />
             </div>
           )}
 
@@ -905,8 +897,15 @@ export default function App() {
             </div>
           )}
 
-          {!['command-center', 'campaigns', 'webinars', 'automation'].includes(section) && (
-            <ComingSoon section={section} />
+          {/* ── DIAGNOSTICS ───────────────────────────────────────── */}
+          {section === 'diagnostics' && (
+            <DiagnosticsPanel
+              perf={perf}
+              trend={trend}
+              ads={ads}
+              runs={runs}
+              jsuSummary={jsuSummary}
+            />
           )}
 
         </div>
@@ -929,6 +928,9 @@ export default function App() {
         transcript={transcript}
         ttsError={ttsError}
       />
+
+      {/* Mobile bottom nav */}
+      <MobileNav active={section} onNavigate={setSection} jsuAlert={jsuAlert} />
 
       {/* Build stamp — always visible, bottom-right */}
       <div className="build-stamp">

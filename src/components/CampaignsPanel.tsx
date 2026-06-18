@@ -1,0 +1,333 @@
+import { useState, useEffect, useMemo } from 'react'
+import {
+  fetchCampaignRows, buildCampaignDiagnosis,
+  type CampaignDiagnosis, type CampaignScope, type CampaignEntry,
+} from '../lib/campaignDiagnosis'
+import type { MetaAdDaily } from '../services/data'
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmtPln(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return n.toFixed(2) + ' PLN'
+}
+function fmtPct(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return (n * 100).toFixed(1) + '%'
+}
+
+// ── Status badge ──────────────────────────────────────────────────────────────
+
+const STATUS_COLORS: Record<string, string> = {
+  'efficient':       'var(--teal)',
+  'expensive':       'var(--orange)',
+  'zero-attribution':'var(--amber)',
+  'needs-watch':     'var(--red)',
+  'unclassified':    'var(--muted2)',
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span style={{
+      fontFamily: 'var(--font-mono)', fontSize: '0.65rem',
+      color: STATUS_COLORS[status] ?? 'var(--muted2)',
+      border: `1px solid ${STATUS_COLORS[status] ?? 'var(--border)'}`,
+      borderRadius: '3px', padding: '2px 6px', whiteSpace: 'nowrap',
+      opacity: 0.9,
+    }}>
+      {status}
+    </span>
+  )
+}
+
+// ── Scope chip row ────────────────────────────────────────────────────────────
+
+const SCOPE_LABELS: { key: CampaignScope; label: string }[] = [
+  { key: 'JSU', label: 'Memory / JSU' },
+  { key: 'JZK', label: 'Językozak AI' },
+  { key: 'ALL', label: 'All campaigns' },
+]
+
+function ScopeChips({ scope, onChange }: { scope: CampaignScope; onChange: (s: CampaignScope) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '18px' }}>
+      {SCOPE_LABELS.map(({ key, label }) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          className={scope === key ? 'scope-chip active' : 'scope-chip'}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Summary cards ─────────────────────────────────────────────────────────────
+
+function SummaryCards({ d }: { d: CampaignDiagnosis }) {
+  const { totals, bestCampaign, worstCampaign, usedDate, isStale } = d
+  const items = [
+    { label: 'Total Spend',  value: fmtPln(totals.spend), accent: false },
+    { label: 'Meta Purchases', value: String(totals.purchases), accent: true },
+    { label: 'Meta CPA',     value: fmtPln(totals.metaCpa), accent: false },
+    { label: 'Best Campaign',
+      value: bestCampaign
+        ? `${bestCampaign.campaign_name.slice(0, 20)}${bestCampaign.campaign_name.length > 20 ? '…' : ''}`
+        : '—',
+      sub: bestCampaign ? `CPA ${(bestCampaign.metaCpa ?? 0).toFixed(0)} PLN` : '',
+      accent: false,
+    },
+    { label: 'Weakest Campaign',
+      value: worstCampaign && worstCampaign !== bestCampaign
+        ? `${worstCampaign.campaign_name.slice(0, 20)}${worstCampaign.campaign_name.length > 20 ? '…' : ''}`
+        : bestCampaign ? 'same as best' : '—',
+      sub: worstCampaign && worstCampaign !== bestCampaign ? `CPA ${(worstCampaign.metaCpa ?? 0).toFixed(0)} PLN` : '',
+      accent: false,
+    },
+    { label: 'Data Date', value: usedDate || '—', sub: isStale ? 'stale' : 'live', accent: false },
+  ]
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '20px' }}>
+      {items.map(item => (
+        <div key={item.label} style={{
+          flex: '1 1 140px', minWidth: 130, background: 'var(--surface2)',
+          border: '1px solid var(--border)', borderRadius: '5px',
+          padding: '14px 16px',
+        }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '6px' }}>
+            {item.label}
+          </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: item.accent ? 'var(--teal)' : 'var(--text)', fontWeight: 600 }}>
+            {item.value}
+          </div>
+          {item.sub && (
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--muted)', marginTop: '3px' }}>
+              {item.sub}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Bar chart (inline) ────────────────────────────────────────────────────────
+
+function SpendBarChart({ campaigns }: { campaigns: CampaignEntry[] }) {
+  if (campaigns.length === 0) return null
+  const maxSpend = Math.max(...campaigns.map(c => c.spend), 1)
+  const hasPurchases = campaigns.some(c => c.purchases > 0)
+
+  return (
+    <div style={{ marginBottom: '22px' }}>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '10px' }}>
+        Spend Distribution
+      </div>
+      {campaigns.map(c => (
+        <div key={c.campaign_id + c.campaign_name} style={{ marginBottom: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text2)',
+              maxWidth: '55%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {c.campaign_name}
+            </span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted)' }}>
+              {c.spend.toFixed(0)} PLN
+              {hasPurchases && c.purchases > 0 && (
+                <span style={{ marginLeft: '8px', color: 'var(--teal)' }}>
+                  ×{c.purchases} @ {(c.metaCpa ?? 0).toFixed(0)}
+                </span>
+              )}
+            </span>
+          </div>
+          <div style={{ height: '5px', background: 'var(--surface3)', borderRadius: '2px', overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', borderRadius: '2px',
+              width: `${(c.spend / maxSpend) * 100}%`,
+              background: c.status === 'zero-attribution' ? 'var(--amber)' :
+                          c.status === 'efficient'        ? 'var(--teal)' :
+                          c.status === 'expensive'        ? 'var(--orange)' :
+                          'var(--border-gold)',
+              transition: 'width 0.4s ease',
+            }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Campaign table ────────────────────────────────────────────────────────────
+
+function CampaignTable({ campaigns }: { campaigns: CampaignEntry[] }) {
+  if (campaigns.length === 0) return null
+  return (
+    <div className="data-table-wrap" style={{ marginBottom: '22px' }}>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th style={{ textAlign: 'left' }}>Campaign</th>
+            <th style={{ textAlign: 'right' }}>Spend PLN</th>
+            <th style={{ textAlign: 'right' }}>Purch.</th>
+            <th style={{ textAlign: 'right' }}>CPA</th>
+            <th style={{ textAlign: 'right' }}>CTR</th>
+            <th style={{ textAlign: 'right' }}>CPC</th>
+            <th style={{ textAlign: 'right' }}>Clicks</th>
+            <th style={{ textAlign: 'left' }}>Diagnosis</th>
+          </tr>
+        </thead>
+        <tbody>
+          {campaigns.map((c, i) => (
+            <tr key={c.campaign_id + i}>
+              <td style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)' }}>
+                {c.campaign_name}
+              </td>
+              <td style={{ textAlign: 'right', color: c.spendShare > 0.5 ? 'var(--orange)' : 'var(--text2)' }}>
+                {c.spend.toFixed(2)}
+              </td>
+              <td style={{ textAlign: 'right', color: c.purchases > 0 ? 'var(--teal)' : 'var(--muted2)' }}>
+                {c.purchases}
+              </td>
+              <td style={{ textAlign: 'right', color: c.metaCpa == null ? 'var(--muted2)' : c.metaCpa < 50 ? 'var(--teal)' : 'var(--orange)' }}>
+                {c.metaCpa != null ? c.metaCpa.toFixed(0) : '—'}
+              </td>
+              <td style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                {c.ctr != null ? fmtPct(c.ctr / 100) : '—'}
+              </td>
+              <td style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                {c.cpc != null ? c.cpc.toFixed(2) : '—'}
+              </td>
+              <td style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                {c.linkClicks}
+              </td>
+              <td>
+                <StatusBadge status={c.status} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── Diagnosis card ────────────────────────────────────────────────────────────
+
+function DiagnosisCard({ text, scope }: { text: string; scope: CampaignScope }) {
+  if (!text) return null
+  const scopeLabel = scope === 'JSU' ? 'Memory / JSU campaigns' : scope === 'JZK' ? 'Językozak AI campaigns' : 'all campaigns'
+  return (
+    <div style={{
+      background: 'var(--surface2)', border: '1px solid var(--border-gold)',
+      borderRadius: '5px', padding: '16px 18px',
+    }}>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '8px' }}>
+        GIENIU Diagnosis — {scopeLabel}
+      </div>
+      <pre style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text2)', whiteSpace: 'pre-wrap', lineHeight: 1.7, margin: 0 }}>
+        {text}
+      </pre>
+    </div>
+  )
+}
+
+// ── Main panel ────────────────────────────────────────────────────────────────
+
+export function CampaignsPanel() {
+  const [allRows, setAllRows] = useState<MetaAdDaily[]>([])
+  const [usedDate, setUsedDate] = useState('')
+  const [requestedDate, setRequestedDate] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [scope, setScope] = useState<CampaignScope>('JSU')
+
+  useEffect(() => {
+    setLoading(true)
+    fetchCampaignRows().then(({ rows, usedDate: ud, requestedDate: rd }) => {
+      setAllRows(rows)
+      setUsedDate(ud)
+      setRequestedDate(rd)
+      setLoading(false)
+    })
+  }, [])
+
+  const diagnosis: CampaignDiagnosis = useMemo(
+    () => buildCampaignDiagnosis(allRows, scope, requestedDate, usedDate),
+    [allRows, scope, requestedDate, usedDate],
+  )
+
+  const isStale  = diagnosis.isStale
+  const hasRows  = diagnosis.rowCount > 0
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+        <div className="section-title section-title-gold" style={{ margin: 0 }}>
+          Campaigns
+        </div>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted)' }}>
+          {loading ? 'Loading…' : hasRows
+            ? (isStale ? `Stale — showing ${usedDate}` : `Live — ${usedDate}`)
+            : 'No campaign rows in meta_ads_daily'}
+        </span>
+      </div>
+
+      {/* Stale notice */}
+      {isStale && hasRows && (
+        <div style={{
+          fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--amber)',
+          padding: '8px 14px', background: 'rgba(251,191,36,0.06)',
+          border: '1px solid rgba(251,191,36,0.2)', borderRadius: '3px', marginBottom: '14px',
+        }}>
+          ⚠ Today's Meta campaign rows are not in yet. Showing latest available data from {usedDate}.
+        </div>
+      )}
+
+      {/* No data at all */}
+      {!loading && !hasRows && (
+        <div style={{
+          padding: '32px', textAlign: 'center',
+          fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--muted)',
+          background: 'var(--surface2)', border: '1px dashed var(--border)', borderRadius: '5px',
+          marginBottom: '14px',
+        }}>
+          <div style={{ marginBottom: '10px', opacity: 0.4, fontSize: '2rem' }}>📊</div>
+          No Meta campaign rows found in meta_ads_daily.
+          <div style={{ marginTop: '8px', fontSize: '0.72rem', color: 'var(--muted2)' }}>
+            latestMetaDate: none  ·  rowCount: 0
+          </div>
+        </div>
+      )}
+
+      {/* Scope chips */}
+      {!loading && <ScopeChips scope={scope} onChange={setScope} />}
+
+      {/* Scope label */}
+      {!loading && hasRows && (
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', marginBottom: '16px' }}>
+          Scope: {scope === 'JSU' ? 'Memory / JSU campaigns' : scope === 'JZK' ? 'Językozak AI campaigns' : 'All campaigns'}
+          {' '}— {diagnosis.rowCount} campaign{diagnosis.rowCount !== 1 ? 's' : ''}
+          {diagnosis.allRowCount !== diagnosis.rowCount ? ` (${diagnosis.allRowCount} total)` : ''}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--muted)', padding: '12px 0' }}>
+          Loading campaign data…
+        </div>
+      )}
+
+      {/* Content */}
+      {!loading && hasRows && (
+        <>
+          <SummaryCards d={diagnosis} />
+          <SpendBarChart campaigns={diagnosis.campaigns} />
+          <CampaignTable campaigns={diagnosis.campaigns} />
+          <DiagnosisCard text={diagnosis.diagnosisText} scope={scope} />
+        </>
+      )}
+    </div>
+  )
+}
