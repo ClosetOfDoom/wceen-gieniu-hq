@@ -37,24 +37,91 @@ function isJzkSession(session) {
 
 // ── Order product classifier ──────────────────────────────────────────────────
 
-const JSU_ORDER_PATTERNS    = ['jak sie uczyc', 'kurs jak sie uczyc', 'jsu', '549']
-const MEMORY_PACK_PATTERNS  = ['pakiet pamieciowy', 'pamieciowy', 'memory pack', 'memory bundle', 'pakiet mix']
-const JZK_ORDER_PATTERNS    = ['jezykozak', 'pakiet jezykowy', 'nauka jezykow', 'jzk', 'jezykowy']
+const JSU_NAME_PATTERNS    = ['jak sie uczyc', 'kurs jak sie', 'jsu']
+const MEMORY_NAME_119      = ['pamiec', 'trening interaktywny', 'pakiet pamieciowy', 'memory']
+const JZK_NAME_PATTERNS    = ['jezykozak', 'jezykowy', 'nauka jezykow', 'jzk', 'jezyk']
+const MEMORY_PACK_PATTERNS = ['pakiet pamieciowy', 'pamieciowy', 'memory pack', 'memory bundle', 'pakiet mix']
 
 function classifyText(text) {
   const n = normalizeText(text)
   if (n.length === 0) return null
-  if (JSU_ORDER_PATTERNS.some(p => n.includes(p)))   return 'JSU_COURSE'
+  if (JSU_NAME_PATTERNS.some(p => n.includes(p)))    return 'JSU_COURSE'
   if (MEMORY_PACK_PATTERNS.some(p => n.includes(p))) return 'MEMORY_PACK'
-  if (JZK_ORDER_PATTERNS.some(p => n.includes(p)))   return 'JZK_LANGUAGE'
+  if (JZK_NAME_PATTERNS.some(p => n.includes(p)))    return 'JZK_LANGUAGE'
   return null
 }
 
+function extractAmount(row) {
+  const candidates = [row.amount, row.total, row.price, row.revenue, row.order_total, row.price_total, row.total_price]
+  for (const c of candidates) {
+    const n = Number(c)
+    if (!isNaN(n) && n > 0) return n
+  }
+  return 0
+}
+
+function maskEmail(email) {
+  if (!email || !String(email).includes('@')) return '***@***'
+  const [local, domain] = String(email).split('@')
+  const visible = local.slice(0, Math.min(2, local.length))
+  return `${visible}***@${domain}`
+}
+
+function extractProductNameRaw(row) {
+  return row.product_name_raw ?? row.product_name ?? row.item_name ?? row.product_title ?? row.name ?? null
+}
+
+/**
+ * Price-first classification.
+ * 1. amount=549 → JSU_COURSE (overrides any misleading product name)
+ * 2. name contains JSU keywords → JSU_COURSE
+ * 3. amount=119 + memory keywords → MEMORY_PACK
+ * 4. amount=347 + language keywords → JZK_LANGUAGE
+ * 5. amount=347 without language keywords → UNKNOWN_PRICE_347 (warn, do not guess)
+ * 6. Text fallback for everything else
+ */
 function classifyOrder(row) {
-  const candidates = [
-    row.product_name, row.item_name, row.product_title, row.description, row.sku,
-  ]
-  // Serialise nested fields
+  const amount  = extractAmount(row)
+  const rawName = extractProductNameRaw(row) ?? ''
+  const norm    = normalizeText(rawName)
+
+  // Rule 1: 549 PLN = JSU course unconditionally
+  if (amount === 549) {
+    const nameConfirms = JSU_NAME_PATTERNS.some(p => norm.includes(p))
+    return {
+      classification: 'JSU_COURSE',
+      productLabel:   'Kurs Jak się uczyć',
+      reason:         'price rule: 549 PLN',
+      warning: nameConfirms ? null
+        : `Product name from Wix may be wrong/misaligned ("${rawName.slice(0, 50)}"). Classification used price fallback.`,
+    }
+  }
+
+  // Rule 2: name explicitly says JSU
+  if (JSU_NAME_PATTERNS.some(p => norm.includes(p))) {
+    return { classification: 'JSU_COURSE', productLabel: 'Kurs Jak się uczyć', reason: 'product name matches JSU pattern', warning: null }
+  }
+
+  // Rule 3: 119 PLN + memory keywords
+  if (amount === 119 && MEMORY_NAME_119.some(p => norm.includes(p))) {
+    return { classification: 'MEMORY_PACK', productLabel: 'Pakiet pamięciowy', reason: 'price rule: 119 PLN + memory keywords', warning: null }
+  }
+
+  // Rule 4/5: 347 PLN
+  if (amount === 347) {
+    if (JZK_NAME_PATTERNS.some(p => norm.includes(p))) {
+      return { classification: 'JZK_LANGUAGE', productLabel: 'Językozak AI', reason: 'price rule: 347 PLN + language keywords', warning: null }
+    }
+    return {
+      classification: 'UNKNOWN_PRICE_347',
+      productLabel:   'Nieznany (347 PLN)',
+      reason:         'price 347 PLN but product name has no language keywords — not classified as JZK',
+      warning:        `Product name "${rawName.slice(0, 50)}" at 347 PLN does not confirm JZK offer. Manual review needed.`,
+    }
+  }
+
+  // Rule 6: text fallback for other amounts
+  const candidates = [rawName, row.description, row.sku]
   for (const key of ['line_items', 'items', 'raw', 'raw_payload']) {
     const v = row[key]
     if (v && typeof v === 'object') candidates.push(JSON.stringify(v))
@@ -63,9 +130,9 @@ function classifyOrder(row) {
   for (const c of candidates) {
     if (!c) continue
     const r = classifyText(String(c))
-    if (r) return r
+    if (r) return { classification: r, productLabel: r, reason: `text match in product data (amount: ${amount})`, warning: null }
   }
-  return 'UNKNOWN'
+  return { classification: 'UNKNOWN', productLabel: 'Nieznany', reason: `no price rule or text match (amount: ${amount} PLN)`, warning: null }
 }
 
 function extractOrderEmail(row) {
@@ -274,32 +341,40 @@ export const handler = async (event) => {
   const yesterdayAllOrders  = yesterdayPerf?.wix_orders  ?? 0
   const yesterdayAllRevenue = yesterdayPerf?.wix_revenue ?? 0
 
-  // ── Try raw wix_orders for product classification ────────────────────────────
+  // ── Try raw orders for product classification ─────────────────────────────────
+  // Try 'orders' first (actual Supabase table name), fall back to 'wix_orders' for legacy
 
   let rawOrders = []
   let wixOrdersError = null
-  try {
-    const rawOrderData = await supabaseGet(supabaseUrl, serviceKey, 'wix_orders', {
-      select: '*',
-      limit:  200,
-    })
-    rawOrders = rawOrderData
-    debug.wixOrdersTableExists = true
-    const sample = rawOrders[0] ?? {}
-    const productFields = ['product_name', 'item_name', 'product_title', 'line_items', 'items', 'raw', 'raw_payload', 'sku', 'description']
-    debug.wixOrdersHasProductData = productFields.some(f => f in sample && sample[f] != null)
-    const emailFields = ['buyer_email', 'email', 'customer_email', 'contact_email', 'billing_email']
-    debug.wixOrdersHasEmailData = emailFields.some(f => f in sample) ||
-      (sample.raw_payload && typeof sample.raw_payload === 'object' && 'buyerInfo' in sample.raw_payload)
-
-    // Filter for this week client-side (try common date columns)
-    rawOrders = rawOrders.filter(r => {
-      const d = (r.order_date ?? r.created_at ?? r.date ?? r.ordered_at ?? '').slice(0, 10)
-      return !d || d >= weekStart
-    })
-  } catch (e) {
-    wixOrdersError = String(e?.message ?? e)
-    debug.wixOrdersError = wixOrdersError
+  let ordersTable = 'none'
+  const orderTableCandidates = ['orders', 'wix_orders']
+  for (const tableName of orderTableCandidates) {
+    try {
+      const rawOrderData = await supabaseGet(supabaseUrl, serviceKey, tableName, {
+        select: 'id,external_order_id,product_name_raw,product_name,item_name,amount,total,price,buyer_email,email,customer_email,order_date,created_at,sku,line_items',
+        order:  'created_at.desc',
+        limit:  200,
+      })
+      rawOrders = rawOrderData
+      ordersTable = tableName
+      debug.wixOrdersTableExists = true
+      const sample = rawOrders[0] ?? {}
+      const productFields = ['product_name_raw', 'product_name', 'item_name', 'product_title', 'line_items', 'sku']
+      debug.wixOrdersHasProductData = productFields.some(f => f in sample && sample[f] != null)
+      const emailFields = ['buyer_email', 'email', 'customer_email', 'contact_email']
+      debug.wixOrdersHasEmailData = emailFields.some(f => f in sample && sample[f] != null)
+      // Filter for this week client-side
+      rawOrders = rawOrders.filter(r => {
+        const d = (r.order_date ?? r.created_at ?? r.date ?? '').slice(0, 10)
+        return !d || d >= weekStart
+      })
+      wixOrdersError = null
+      debug.wixOrdersError = null
+      break
+    } catch (e) {
+      wixOrdersError = String(e?.message ?? e)
+      debug.wixOrdersError = wixOrdersError
+    }
   }
 
   // ── Classify raw orders ───────────────────────────────────────────────────────
@@ -308,30 +383,47 @@ export const handler = async (event) => {
   let memoryPackOrders = 0, memoryPackRevenue = 0
   let jzkOrders = 0
   let unclassifiedOrders = 0
+  let priceWarningsCount = 0
   let jsuYesterdayOrders = 0, jsuYesterdayRevenue = 0
   let yesterdayAllRawOrders = 0
 
   const classifiedRawOrders = []
+  const orderDiagnostics = []
 
   if (debug.wixOrdersTableExists && rawOrders.length > 0) {
     for (const row of rawOrders) {
-      const classification = classifyOrder(row)
+      const result    = classifyOrder(row)
       const orderDate = (row.order_date ?? row.created_at ?? row.date ?? '').slice(0, 10)
       const isYesterday = orderDate === yesterday
-      const revenue = Number(row.total ?? row.price ?? row.amount ?? row.revenue ?? 0)
-      const email   = extractOrderEmail(row)
+      const amount    = extractAmount(row)
+      const email     = extractOrderEmail(row)
+      const rawName   = extractProductNameRaw(row)
+      const extId     = row.external_order_id ?? row.id ?? null
 
-      classifiedRawOrders.push({ ...row, _classification: classification, _date: orderDate, _email: email })
+      classifiedRawOrders.push({ ...row, _classification: result.classification, _date: orderDate, _email: email })
+
+      if (result.warning) priceWarningsCount++
+
+      orderDiagnostics.push({
+        external_order_id:       extId,
+        email_masked:            email ? maskEmail(email) : '(no email)',
+        product_name_raw:        rawName,
+        amount,
+        classified_product:      result.classification,
+        product_label:           result.productLabel,
+        classification_reason:   result.reason,
+        classification_warning:  result.warning ?? null,
+      })
 
       if (isYesterday) yesterdayAllRawOrders++
 
-      switch (classification) {
+      switch (result.classification) {
         case 'JSU_COURSE':
-          jsuCourseOrders++; jsuCourseRevenue += revenue
-          if (isYesterday) { jsuYesterdayOrders++; jsuYesterdayRevenue += revenue }
+          jsuCourseOrders++; jsuCourseRevenue += amount
+          if (isYesterday) { jsuYesterdayOrders++; jsuYesterdayRevenue += amount }
           break
         case 'MEMORY_PACK':
-          memoryPackOrders++; memoryPackRevenue += revenue
+          memoryPackOrders++; memoryPackRevenue += amount
           break
         case 'JZK_LANGUAGE':
           jzkOrders++; break
@@ -476,6 +568,8 @@ export const handler = async (event) => {
           unclassified_orders:     finalUnclassifiedOrders,
           data_source:             orderClassificationSource,
           product_classification:  productClassificationAvailable ? 'available' : 'unavailable',
+          price_warnings_count:    priceWarningsCount,
+          order_diagnostics:       orderDiagnostics,
         },
         yesterday: {
           all_orders:         yesterdayAllOrders,
@@ -507,6 +601,8 @@ export const handler = async (event) => {
       debug: {
         source:                   'ops-week-report-service-role',
         scheduleRule:             'Thu 18:00 Warsaw=JSU, Tue 18:00 Warsaw=JZK',
+        ordersTable,
+        priceRulesApplied:        true,
         wixOrdersTableExists:     debug.wixOrdersTableExists,
         wixOrdersHasProductData:  debug.wixOrdersHasProductData,
         wixOrdersHasEmailData:    debug.wixOrdersHasEmailData,

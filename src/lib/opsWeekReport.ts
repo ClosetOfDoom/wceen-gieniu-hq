@@ -47,6 +47,17 @@ export interface OpsWeekWebinars {
   }
 }
 
+export interface OrderDiagnosticRow {
+  external_order_id: string | null
+  email_masked: string
+  product_name_raw: string | null
+  amount: number
+  classified_product: string
+  product_label: string
+  classification_reason: string
+  classification_warning?: string | null
+}
+
 export interface OpsWeekOrders {
   this_week: {
     all_orders: number
@@ -59,6 +70,8 @@ export interface OpsWeekOrders {
     unclassified_orders: number
     data_source: string
     product_classification: 'available' | 'unavailable'
+    price_warnings_count?: number
+    order_diagnostics?: OrderDiagnosticRow[]
   }
   yesterday: {
     all_orders: number
@@ -89,6 +102,8 @@ export interface OpsWeekSummary {
 export interface OpsWeekDebug {
   source: string
   scheduleRule?: string
+  ordersTable?: string
+  priceRulesApplied?: boolean
   wixOrdersTableExists: boolean
   wixOrdersHasProductData: boolean
   wixOrdersHasEmailData: boolean

@@ -1563,10 +1563,13 @@ export function buildJsuWeekReport(r: OpsWeekReport | null): string {
     lines.push(`JSU course orders: cannot determine (data source: ${debug.orderClassificationSource})`)
   } else {
     lines.push(`All Wix orders this week: ${o.all_orders}`)
-    lines.push(`JSU course orders: ${o.jsu_course_orders}  |  ${o.jsu_course_revenue.toFixed(2)} PLN`)
-    lines.push(`Memory pack orders: ${o.memory_pack_orders}  |  ${o.memory_pack_revenue.toFixed(2)} PLN`)
-    lines.push(`Językozak AI orders: ${o.jzk_orders}`)
+    lines.push(`JSU course sold (Kurs Jak się uczyć, 549 PLN): ${o.jsu_course_orders}  |  ${o.jsu_course_revenue.toFixed(2)} PLN`)
+    lines.push(`Memory pack orders (Pakiet pamięciowy, 119 PLN): ${o.memory_pack_orders}  |  ${o.memory_pack_revenue.toFixed(2)} PLN`)
+    lines.push(`Językozak AI orders (347 PLN): ${o.jzk_orders}`)
     lines.push(`Unclassified orders: ${o.unclassified_orders}`)
+    if ((o.price_warnings_count ?? 0) > 0) {
+      lines.push(`⚠ Price fallback used on ${o.price_warnings_count} order(s) — Wix product_name_raw was misleading; amount ruled.`)
+    }
   }
 
   lines.push(`Yesterday: ${oy.all_orders} Wix orders`)
@@ -1640,10 +1643,13 @@ export function buildJsuSalesAnswer(r: OpsWeekReport | null): string {
   lines.push(`Week ${range.week_start} → ${range.week_end}:`)
 
   if (o.product_classification === 'available') {
-    lines.push(`  JSU course orders: ${o.jsu_course_orders}  (${o.jsu_course_revenue.toFixed(2)} PLN)`)
-    lines.push(`  Yesterday: ${oy.jsu_course_orders} JSU orders`)
+    lines.push(`  JSU course sold (Kurs Jak się uczyć, 549 PLN): ${o.jsu_course_orders}  (${o.jsu_course_revenue.toFixed(2)} PLN)`)
+    lines.push(`  Yesterday: ${oy.jsu_course_orders} JSU course order${oy.jsu_course_orders !== 1 ? 's' : ''}`)
     lines.push('')
     lines.push(`I am NOT counting the ${o.all_orders} total Wix orders. Only orders classified as JSU_COURSE.`)
+    if ((o.price_warnings_count ?? 0) > 0) {
+      lines.push(`⚠ Price fallback used on ${o.price_warnings_count} order(s) — Wix product_name_raw was misleading. Amount 549 PLN ruled as JSU.`)
+    }
   } else {
     lines.push(`  All Wix orders this week: ${o.all_orders}  (${o.all_revenue.toFixed(2)} PLN)`)
     lines.push(`  Yesterday: ${oy.all_orders} Wix orders`)
@@ -1662,7 +1668,10 @@ export function buildJsuSalesSpoken(r: OpsWeekReport | null): string {
   const o = orders.this_week
   if (o.product_classification === 'available') {
     const y = orders.yesterday.jsu_course_orders
-    return `JSU course sales this week: ${o.jsu_course_orders}. Yesterday: ${y}. I am not counting all ${o.all_orders} Wix orders here.`
+    const warning = (o.price_warnings_count ?? 0) > 0
+      ? ` Note: ${o.price_warnings_count} order(s) were classified by price rule (549 PLN) because the Wix product name was misleading.`
+      : ''
+    return `JSU course sales this week: ${o.jsu_course_orders}. Yesterday: ${y}. I am not counting all ${o.all_orders} Wix orders here.${warning}`
   }
   return `I cannot isolate JSU orders from the ${o.all_orders} total Wix orders this week — product names are not stored per line item. Total Wix revenue: ${o.all_revenue.toFixed(0)} zloty.`
 }

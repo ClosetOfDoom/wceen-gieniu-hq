@@ -186,11 +186,54 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
                 ok={opsWeekReport.attribution.attributed_sales > 0 ? true : null} />
               <Row label="Order source"
                 value={opsWeekReport.debug.orderClassificationSource} />
+              <Row label="Orders table"
+                value={opsWeekReport.debug.ordersTable ?? '—'}
+                ok={opsWeekReport.debug.ordersTable !== 'none' && opsWeekReport.debug.ordersTable != null ? true : null} />
+              <Row label="Price rules applied"
+                value={opsWeekReport.debug.priceRulesApplied ? 'yes' : 'no'}
+                ok={opsWeekReport.debug.priceRulesApplied ?? null} />
+              {(opsWeekReport.orders.this_week.price_warnings_count ?? 0) > 0 && (
+                <Row label="Price fallback warnings"
+                  value={`${opsWeekReport.orders.this_week.price_warnings_count} order(s) classified by price (Wix name was misleading)`}
+                  ok={false} />
+              )}
               {opsWeekReport.debug.webinarSessionsError && (
                 <Row label="Sessions error" value={opsWeekReport.debug.webinarSessionsError.slice(0, 60)} ok={false} />
               )}
               {opsWeekReport.debug.wixOrdersError && (
                 <Row label="Orders error" value={opsWeekReport.debug.wixOrdersError.slice(0, 60)} ok={false} />
+              )}
+
+              {/* Order diagnostics table */}
+              {(opsWeekReport.orders.this_week.order_diagnostics?.length ?? 0) > 0 && (
+                <div style={{ marginTop: '16px' }}>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--muted2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
+                    Order Classification Details (this week)
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                          {['Order ID', 'Email', 'Product name (Wix)', 'Amount', 'Classified', 'Reason'].map(h => (
+                            <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--muted2)', fontWeight: 400 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {opsWeekReport.orders.this_week.order_diagnostics!.map((row, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: row.classification_warning ? '#1a0d00' : 'transparent' }}>
+                            <td style={{ padding: '4px 8px', color: 'var(--muted)' }}>{row.external_order_id ?? '—'}</td>
+                            <td style={{ padding: '4px 8px', color: 'var(--muted)' }}>{row.email_masked}</td>
+                            <td style={{ padding: '4px 8px', color: row.classification_warning ? 'var(--orange)' : 'var(--text2)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.product_name_raw ?? ''}>{row.product_name_raw ?? '—'}</td>
+                            <td style={{ padding: '4px 8px', color: 'var(--teal)', textAlign: 'right' }}>{row.amount > 0 ? `${row.amount} PLN` : '—'}</td>
+                            <td style={{ padding: '4px 8px', color: row.classified_product === 'JSU_COURSE' ? '#c9a96e' : row.classified_product === 'JZK_LANGUAGE' ? '#2dd4bf' : row.classified_product === 'MEMORY_PACK' ? '#7dd3fc' : 'var(--muted)' }}>{row.classified_product}</td>
+                            <td style={{ padding: '4px 8px', color: 'var(--muted2)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.classification_warning ?? row.classification_reason}>{row.classification_warning ?? row.classification_reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
             </>
           )}
