@@ -14,6 +14,7 @@ import {
   buildWorkflowInstructions,
   buildMemoryBundleAnswer, buildMemoryBundleSpoken,
   buildJsuWeekReport, buildJsuWeekReportSpoken, buildJsuSalesAnswer, buildJsuSalesSpoken,
+  buildJzkWeekReport, buildJzkWeekReportSpoken,
   // spoken text builders
   buildYesterdaySpoken, buildOpsBriefingSpoken, buildAdsDiagnosisSpoken,
   buildPeriodComparisonSpoken, buildWeekToDateSpoken, buildJsuWebinarSpoken,
@@ -141,6 +142,18 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
   )) {
     detectedIntent = 'jsu_sales_query'
     result = w(buildJsuSalesAnswer(opsWeekReport), buildJsuSalesSpoken(opsWeekReport))
+  }
+
+  // ── JZK (Językozak AI) weekly report ─────────────────────────────────────────
+  // Must be BEFORE webinar_funnel — 'jzk'/'jezyk'/'jezykozak' otherwise hit it
+  if (!result && has(q,
+    'jezykozak', 'jzk raport', 'jzk tydzien', 'jzk week', 'jak poszedl jezykozak',
+    'jak poszedl jzk', 'ile bylo na jezykozaku', 'ile bylo na jzk',
+    'wyniki jezykozaka', 'wyniki jzk', 'jezykozak tydzien',
+    'language webinar', 'tuesday webinar', 'wtorek webinar',
+  )) {
+    detectedIntent = 'jzk_week_report'
+    result = w(buildJzkWeekReport(opsWeekReport), buildJzkWeekReportSpoken(opsWeekReport))
   }
 
   // ── JSU / webinar funnel ──────────────────────────────────────────────────────

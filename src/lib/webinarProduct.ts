@@ -1,3 +1,5 @@
+import { classifyWebinarBySchedule } from './webinarSchedule'
+
 export type ProductTag = 'JSU' | 'JZK' | 'OTHER'
 
 export interface ProductClassification {
@@ -26,7 +28,14 @@ const JSU_PATTERNS = [
 export function normalizeProduct(session: {
   product_tag?: string | null
   session_name?: string | null
+  scheduled_at?: string | null
 }): ProductClassification {
+  // Schedule rule is PRIMARY when scheduled_at is available
+  if (session.scheduled_at) {
+    const classified = classifyWebinarBySchedule(session)
+    return { canonicalTag: classified.product_tag, productName: classified.product_name, reason: classified.reason }
+  }
+
   const nameNorm = norm(session.session_name ?? '')
   const tagNorm  = norm(session.product_tag  ?? '')
 

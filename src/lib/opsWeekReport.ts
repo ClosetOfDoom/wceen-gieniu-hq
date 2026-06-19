@@ -14,8 +14,13 @@ export interface OpsWeekSession {
   session_name: string
   scheduled_at: string
   date: string
-  product_tag: string | null
+  product_tag: 'JSU' | 'JZK' | 'OTHER'
+  product_name: string
+  schedule_reason: string
+  warsaw_weekday: string
+  warsaw_time: string
   is_jsu: boolean
+  is_jzk: boolean
   participants: number
 }
 
@@ -24,14 +29,21 @@ export interface OpsWeekWebinars {
     all_sessions: number
     jsu_sessions: number
     jsu_participants: number
+    jzk_sessions: number
+    jzk_participants: number
     all_participants: number
     sessions: OpsWeekSession[]
+    jsu_sessions_list: OpsWeekSession[]
+    jzk_sessions_list: OpsWeekSession[]
   }
   yesterday: {
     all_sessions: number
     jsu_sessions: number
     jsu_participants: number
-    sessions: OpsWeekSession[]
+    jzk_sessions: number
+    jzk_participants: number
+    jsu_sessions_list: OpsWeekSession[]
+    jzk_sessions_list: OpsWeekSession[]
   }
 }
 
@@ -65,15 +77,18 @@ export interface OpsWeekAttribution {
 
 export interface OpsWeekSummary {
   jsu_webinar_ran_yesterday: boolean
+  jzk_webinar_ran_yesterday: boolean
   jsu_sales_this_week: number
   jsu_sales_yesterday: number
   memory_pack_sales_this_week: number
   total_participants_this_week: number
   jsu_participants_this_week: number
+  jzk_participants_this_week: number
 }
 
 export interface OpsWeekDebug {
   source: string
+  scheduleRule?: string
   wixOrdersTableExists: boolean
   wixOrdersHasProductData: boolean
   wixOrdersHasEmailData: boolean

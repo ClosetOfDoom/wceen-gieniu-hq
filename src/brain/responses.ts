@@ -1528,22 +1528,31 @@ export function buildJsuWeekReport(r: OpsWeekReport | null): string {
     '── WEBINARS ──',
   ]
 
-  if (w.jsu_sessions === 0 && w.all_participants === 0) {
-    lines.push('No JSU/memory webinar sessions found this week.')
+  const jsuList = w.jsu_sessions_list ?? w.sessions?.filter(s => s.is_jsu) ?? []
+  if (w.jsu_sessions === 0) {
+    lines.push('No JSU/memory webinar sessions found this week (Thursday 18:00 Warsaw).')
   } else {
-    lines.push(`JSU sessions this week: ${w.jsu_sessions}`)
+    lines.push(`JSU sessions this week: ${w.jsu_sessions}  (Thu 18:00 Warsaw = JSU)`)
     lines.push(`JSU participants this week: ${w.jsu_participants}`)
-    for (const s of w.sessions) {
+    for (const s of jsuList) {
       const dateStr = s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' }) : s.date
       lines.push(`  ${dateStr}  —  "${s.session_name}"  —  ${s.participants} participants`)
     }
+  }
+
+  // Also note JZK this week
+  if (w.jzk_sessions > 0) {
+    lines.push(`JZK (Językozak) sessions this week: ${w.jzk_sessions}, ${w.jzk_participants} participants (Tue 18:00).`)
   }
 
   lines.push('')
   if (summary.jsu_webinar_ran_yesterday) {
     lines.push(`Yesterday (${range.yesterday}): JSU webinar ran — ${wy.jsu_participants} participant${wy.jsu_participants !== 1 ? 's' : ''}.`)
   } else {
-    lines.push(`Yesterday (${range.yesterday}): no JSU webinar.`)
+    lines.push(`Yesterday (${range.yesterday}): no JSU webinar (Thursday).`)
+  }
+  if (summary.jzk_webinar_ran_yesterday) {
+    lines.push(`Yesterday: JZK webinar also ran — ${wy.jzk_participants} participant${wy.jzk_participants !== 1 ? 's' : ''}.`)
   }
 
   lines.push('', '── ORDERS ──')
@@ -1656,6 +1665,88 @@ export function buildJsuSalesSpoken(r: OpsWeekReport | null): string {
     return `JSU course sales this week: ${o.jsu_course_orders}. Yesterday: ${y}. I am not counting all ${o.all_orders} Wix orders here.`
   }
   return `I cannot isolate JSU orders from the ${o.all_orders} total Wix orders this week — product names are not stored per line item. Total Wix revenue: ${o.all_revenue.toFixed(0)} zloty.`
+}
+
+// ── JZK (Językozak) Weekly Report builders ───────────────────────────────────
+
+export function buildJzkWeekReport(r: OpsWeekReport | null): string {
+  if (!r) {
+    return `— JZK / JĘZYKOZAK WEEK REPORT —\n\nWeekly data not loaded yet. Try asking again in a moment.`
+  }
+  if (!r.ok) {
+    return `— JZK / JĘZYKOZAK WEEK REPORT —\n\nBackend error: ${r.error ?? 'unknown'}`
+  }
+
+  const { webinars, range, summary } = r
+  const w  = webinars.this_week
+  const wy = webinars.yesterday
+  const jzkList = w.jzk_sessions_list ?? w.sessions?.filter(s => s.is_jzk) ?? []
+
+  const lines: string[] = [
+    `— JZK / JĘZYKOZAK AI WEEK REPORT — ${range.week_start} to ${range.week_end} —`,
+    `Schedule rule: Tuesday 18:00 Warsaw = Językozak AI`,
+    '',
+    '── WEBINARS ──',
+  ]
+
+  if (w.jzk_sessions === 0) {
+    lines.push('No Językozak AI sessions found this week (Tuesday 18:00 Warsaw).')
+  } else {
+    lines.push(`JZK sessions this week: ${w.jzk_sessions}`)
+    lines.push(`JZK participants this week: ${w.jzk_participants}`)
+    for (const s of jzkList) {
+      const dateStr = s.scheduled_at
+        ? new Date(s.scheduled_at).toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })
+        : s.date
+      lines.push(`  ${dateStr}  —  "${s.session_name}"  —  ${s.participants} participants`)
+    }
+  }
+
+  lines.push('')
+  if (summary.jzk_webinar_ran_yesterday) {
+    lines.push(`Yesterday (${range.yesterday}): JZK webinar ran — ${wy.jzk_participants} participant${wy.jzk_participants !== 1 ? 's' : ''}.`)
+  } else {
+    lines.push(`Yesterday (${range.yesterday}): no JZK webinar (Tuesday).`)
+  }
+
+  // Contrast with JSU
+  lines.push('')
+  lines.push('── JSU THIS WEEK (Thursday) ──')
+  if (w.jsu_sessions > 0) {
+    lines.push(`JSU sessions: ${w.jsu_sessions}, participants: ${w.jsu_participants}`)
+  } else {
+    lines.push('No JSU session this week.')
+  }
+
+  return lines.join('\n')
+}
+
+export function buildJzkWeekReportSpoken(r: OpsWeekReport | null): string {
+  if (!r || !r.ok) {
+    return r?.error
+      ? `Lifidi, the weekly report backend returned an error: ${r.error.slice(0, 100)}.`
+      : 'Weekly report is not loaded yet. Try asking again in a moment.'
+  }
+
+  const { webinars, summary } = r
+  const w = webinars.this_week
+  const parts: string[] = ['Lifidi, here is the Językozak AI weekly summary. Tuesday 18:00 Warsaw is the JZK slot.']
+
+  if (w.jzk_sessions > 0) {
+    parts.push(`This week: ${w.jzk_sessions} Językozak session${w.jzk_sessions > 1 ? 's' : ''}, ${w.jzk_participants} participant${w.jzk_participants !== 1 ? 's' : ''}.`)
+    if (summary.jzk_webinar_ran_yesterday) {
+      parts.push(`Yesterday's Językozak webinar had ${webinars.yesterday.jzk_participants} participant${webinars.yesterday.jzk_participants !== 1 ? 's' : ''}.`)
+    }
+  } else {
+    parts.push('No Językozak webinar sessions found this week.')
+  }
+
+  // Contrast JSU
+  if (w.jsu_sessions > 0) {
+    parts.push(`JSU memory webinar this week: ${w.jsu_sessions} session${w.jsu_sessions > 1 ? 's' : ''}, ${w.jsu_participants} participants.`)
+  }
+
+  return parts.join(' ')
 }
 
 /** Detect the dominant product tag from the loaded sessions. */

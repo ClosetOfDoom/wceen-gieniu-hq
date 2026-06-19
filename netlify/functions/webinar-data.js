@@ -2,6 +2,10 @@
 // Fetches webinar_sessions and webinar_participants using the Supabase service role key.
 // The service role bypasses Row Level Security — the anon key cannot read these tables.
 // Emails are masked server-side; raw emails never reach the frontend.
+// Sessions are classified by the fixed WCEEN weekly schedule:
+//   Thursday 18:00 Warsaw = JSU | Tuesday 18:00 Warsaw = JZK
+
+import { classifyBySchedule } from './scheduleUtils.js'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -143,8 +147,26 @@ export const handler = async (event) => {
     }
   })
 
+  // Classify each session by the fixed weekly schedule
+  const classifiedSessions = sessions.map(s => {
+    const c = classifyBySchedule({ scheduled_at: s.scheduled_at, session_name: s.session_name, product_tag: s.product_tag })
+    return {
+      ...s,
+      product_tag_schedule: c.product_tag,
+      product_name_schedule: c.product_name,
+      schedule_reason: c.reason,
+      warsaw_weekday: c.warsaw_weekday,
+      warsaw_time: c.warsaw_time,
+    }
+  })
+
+  const jsuSessions = classifiedSessions.filter(s => s.product_tag_schedule === 'JSU')
+  const jzkSessions = classifiedSessions.filter(s => s.product_tag_schedule === 'JZK')
+
   console.log('webinar-data:', {
     sessions: sessions.length,
+    jsuSessions: jsuSessions.length,
+    jzkSessions: jzkSessions.length,
     participants: participants.length,
     uniqueEmails: uniqueEmails.size,
     sessionsError,
@@ -159,12 +181,15 @@ export const handler = async (event) => {
       sessionsCount:      sessions.length,
       participantsCount:  participants.length,
       uniqueEmailsCount:  uniqueEmails.size,
-      sessions,
+      jsuSessionsCount:   jsuSessions.length,
+      jzkSessionsCount:   jzkSessions.length,
+      sessions:           classifiedSessions,
       participants,
       debug: {
         source:            'netlify-function-service-role',
         sessionsError,
         participantsError,
+        scheduleRule:      'Thu 18:00 Warsaw=JSU, Tue 18:00 Warsaw=JZK',
       },
     }),
   }

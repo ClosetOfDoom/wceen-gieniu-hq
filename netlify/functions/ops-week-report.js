@@ -1,7 +1,11 @@
 // Netlify Function: ops-week-report
 // Full weekly operational report using service role (bypasses RLS).
-// Reports JSU webinar sessions, participants, Wix order classification,
+// Reports JSU/JZK webinar sessions, participants, Wix order classification,
 // and email attribution of webinar participants to JSU sales.
+// Classification uses the WCEEN fixed weekly schedule:
+//   Thursday 18:00 Warsaw = JSU | Tuesday 18:00 Warsaw = JZK
+
+import { classifyBySchedule } from './scheduleUtils.js'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -21,18 +25,14 @@ function normalizeText(s) {
     .trim()
 }
 
-// ── JSU session classifier ────────────────────────────────────────────────────
-
-const JSU_SESSION_PATTERNS = [
-  'pamiec', 'test pamieci', 'jak sie uczyc', 'jsu',
-  'pamiec czwartek', 'pamietaj', 'webinar pamieci', 'memory',
-]
+// ── Session classification (uses fixed schedule — Thu 18:00=JSU, Tue 18:00=JZK) ──
 
 function isJsuSession(session) {
-  const tag = normalizeText(session.product_tag ?? '')
-  if (tag === 'jsu') return true
-  const name = normalizeText(session.session_name ?? '')
-  return JSU_SESSION_PATTERNS.some(p => name.includes(p))
+  return classifyBySchedule(session).product_tag === 'JSU'
+}
+
+function isJzkSession(session) {
+  return classifyBySchedule(session).product_tag === 'JZK'
 }
 
 // ── Order product classifier ──────────────────────────────────────────────────
@@ -215,11 +215,13 @@ export const handler = async (event) => {
     }
   }
 
-  // ── Classify sessions ────────────────────────────────────────────────────────
+  // ── Classify sessions (schedule rule: Thu 18:00=JSU, Tue 18:00=JZK) ──────────
 
-  const allJsuSessions  = sessions.filter(isJsuSession)
-  const yesterdaySess   = sessions.filter(s => (s.scheduled_at ?? '').slice(0, 10) === yesterday)
+  const allJsuSessions   = sessions.filter(isJsuSession)
+  const allJzkSessions   = sessions.filter(isJzkSession)
+  const yesterdaySess    = sessions.filter(s => (s.scheduled_at ?? '').slice(0, 10) === yesterday)
   const yesterdayJsuSess = yesterdaySess.filter(isJsuSession)
+  const yesterdayJzkSess = yesterdaySess.filter(isJzkSession)
 
   // ── Fetch webinar participants for this week's sessions ──────────────────────
 
@@ -242,9 +244,12 @@ export const handler = async (event) => {
     participants = allParticipants
   }
 
-  const jsuParticipants      = participants.filter(p => allJsuSessions.some(s => s.id === p.session_id))
-  const yesterdayJsuSessIds  = new Set(yesterdayJsuSess.map(s => s.id))
-  const yesterdayJsuPartic   = participants.filter(p => yesterdayJsuSessIds.has(p.session_id))
+  const jsuParticipants     = participants.filter(p => allJsuSessions.some(s => s.id === p.session_id))
+  const jzkParticipants     = participants.filter(p => allJzkSessions.some(s => s.id === p.session_id))
+  const yesterdayJsuSessIds = new Set(yesterdayJsuSess.map(s => s.id))
+  const yesterdayJzkSessIds = new Set(yesterdayJzkSess.map(s => s.id))
+  const yesterdayJsuPartic  = participants.filter(p => yesterdayJsuSessIds.has(p.session_id))
+  const yesterdayJzkPartic  = participants.filter(p => yesterdayJzkSessIds.has(p.session_id))
 
   // ── Fetch Wix performance (aggregate, by date range) ─────────────────────────
 
@@ -385,30 +390,40 @@ export const handler = async (event) => {
     }
   }
 
-  // ── Build response sessions with participant counts ───────────────────────────
+  // ── Build response sessions with participant counts and schedule classification ─
 
   const sessionReport = sessions.map(s => {
+    const classified = classifyBySchedule(s)
     const pCount = participants.filter(p => p.session_id === s.id).length
     return {
-      session_id:    s.id,
-      session_name:  s.session_name ?? s.id,
-      scheduled_at:  s.scheduled_at,
-      date:          (s.scheduled_at ?? '').slice(0, 10),
-      product_tag:   s.product_tag ?? null,
-      is_jsu:        isJsuSession(s),
-      participants:  pCount,
+      session_id:      s.id,
+      session_name:    s.session_name ?? s.id,
+      scheduled_at:    s.scheduled_at,
+      date:            (s.scheduled_at ?? '').slice(0, 10),
+      product_tag:     classified.product_tag,
+      product_name:    classified.product_name,
+      schedule_reason: classified.reason,
+      warsaw_weekday:  classified.warsaw_weekday,
+      warsaw_time:     classified.warsaw_time,
+      is_jsu:          classified.product_tag === 'JSU',
+      is_jzk:          classified.product_tag === 'JZK',
+      participants:    pCount,
     }
   })
 
-  const jsuSessionReport      = sessionReport.filter(s => s.is_jsu)
+  const jsuSessionReport       = sessionReport.filter(s => s.is_jsu)
+  const jzkSessionReport       = sessionReport.filter(s => s.is_jzk)
   const yesterdaySessionReport = sessionReport.filter(s => s.date === yesterday)
   const yesterdayJsuReport     = yesterdaySessionReport.filter(s => s.is_jsu)
+  const yesterdayJzkReport     = yesterdaySessionReport.filter(s => s.is_jzk)
 
   console.log('ops-week-report:', {
     weekStart, today, yesterday,
-    sessions: sessions.length, jsuSessions: allJsuSessions.length,
-    participants: participants.length, jsuParticipants: jsuParticipants.length,
-    yesterdayJsuSessions: yesterdayJsuSess.length, yesterdayJsuParticipants: yesterdayJsuPartic.length,
+    sessions: sessions.length,
+    jsuSessions: allJsuSessions.length, jzkSessions: allJzkSessions.length,
+    participants: participants.length,
+    jsuParticipants: jsuParticipants.length, jzkParticipants: jzkParticipants.length,
+    yesterdayJsuSessions: yesterdayJsuSess.length, yesterdayJzkSessions: yesterdayJzkSess.length,
     weekAllOrders, jsuCourseOrders, memoryPackOrders, unclassifiedOrders: finalUnclassifiedOrders,
     attributedSales, attributionReason,
   })
@@ -432,14 +447,21 @@ export const handler = async (event) => {
           all_sessions:     sessions.length,
           jsu_sessions:     allJsuSessions.length,
           jsu_participants: jsuParticipants.length,
+          jzk_sessions:     allJzkSessions.length,
+          jzk_participants: jzkParticipants.length,
           all_participants: participants.length,
-          sessions:         jsuSessionReport,
+          sessions:         sessionReport,
+          jsu_sessions_list: jsuSessionReport,
+          jzk_sessions_list: jzkSessionReport,
         },
         yesterday: {
           all_sessions:     yesterdaySess.length,
           jsu_sessions:     yesterdayJsuSess.length,
           jsu_participants: yesterdayJsuPartic.length,
-          sessions:         yesterdayJsuReport,
+          jzk_sessions:     yesterdayJzkSess.length,
+          jzk_participants: yesterdayJzkPartic.length,
+          jsu_sessions_list: yesterdayJsuReport,
+          jzk_sessions_list: yesterdayJzkReport,
         },
       },
       orders: {
@@ -474,14 +496,17 @@ export const handler = async (event) => {
       },
       summary: {
         jsu_webinar_ran_yesterday:     yesterdayJsuSess.length > 0,
+        jzk_webinar_ran_yesterday:     yesterdayJzkSess.length > 0,
         jsu_sales_this_week:           jsuCourseOrders,
         jsu_sales_yesterday:           jsuYesterdayOrders,
         memory_pack_sales_this_week:   memoryPackOrders,
         total_participants_this_week:  participants.length,
         jsu_participants_this_week:    jsuParticipants.length,
+        jzk_participants_this_week:    jzkParticipants.length,
       },
       debug: {
         source:                   'ops-week-report-service-role',
+        scheduleRule:             'Thu 18:00 Warsaw=JSU, Tue 18:00 Warsaw=JZK',
         wixOrdersTableExists:     debug.wixOrdersTableExists,
         wixOrdersHasProductData:  debug.wixOrdersHasProductData,
         wixOrdersHasEmailData:    debug.wixOrdersHasEmailData,

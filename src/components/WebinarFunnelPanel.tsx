@@ -4,6 +4,7 @@ import { pct, fmtPlnFunnel } from '../services/webinarFunnel'
 import { ParticipantJourneyTable } from './ParticipantJourneyTable'
 import type { JsuCommandKey } from '../brain/responses'
 import { normalizeProduct, type ProductTag } from '../lib/webinarProduct'
+import { classifyWebinarBySchedule } from '../lib/webinarSchedule'
 
 interface Props {
   summary: JsuFunnelSummary | null
@@ -145,6 +146,7 @@ function DataDebugBar({ debug }: { debug?: JsuFunnelDebug }) {
       {debug.purchaseMappingStatus === 'not_mapped_yet' && <span style={{ color: '#555' }}>purchases: not mapped</span>}
       {debug.latestSessionDate && <span>latest: <span style={{ color: '#666' }}>{debug.latestSessionDate}{debug.latestSessionName ? ` / ${debug.latestSessionName.slice(0, 30)}` : ''}</span></span>}
       {debug.lastError && <span style={{ color: '#ff6b00' }}>error: {debug.lastError.slice(0, 60)}</span>}
+      <span style={{ color: '#2a2a2a', marginLeft: 'auto' }}>schedule: Tue 18:00=JZK · Thu 18:00=JSU</span>
     </div>
   )
 }
@@ -161,7 +163,7 @@ function SessionRow({ s, attendancePopulated, purchasesMapped }: {
     return '#555'
   })()
 
-  const product = normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name })
+  const product = normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name, scheduled_at: s.scheduled_at })
   const productColor = product.canonicalTag === 'JZK' ? '#2dd4bf' : product.canonicalTag === 'JSU' ? '#c9a96e' : '#555'
 
   return (
@@ -203,8 +205,8 @@ function SessionRow({ s, attendancePopulated, purchasesMapped }: {
 function detectProduct(sessions: JsuFunnelRow[]): ProductTag {
   const counts: Record<ProductTag, number> = { JSU: 0, JZK: 0, OTHER: 0 }
   for (const s of sessions) {
-    const p = normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name })
-    counts[p.canonicalTag]++
+    const p = classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name })
+    counts[p.product_tag]++
   }
   if (counts.JZK > counts.JSU) return 'JZK'
   if (counts.JSU > 0) return 'JSU'
@@ -231,21 +233,37 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
   const attendancePopulated = debug?.attendanceStatus === 'populated' || (summary?.totals.attendees ?? 0) > 0
   const purchasesMapped     = debug?.purchaseMappingStatus === 'mapped' || (summary?.totals.purchases ?? 0) > 0
 
-  // Filtered sessions for table view
+  // Filtered sessions for table view — schedule is primary classifier
   const filteredSessions = summary?.sessions.filter(s => {
     if (productFilter === 'ALL') return true
-    const p = normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name })
-    return p.canonicalTag === productFilter
+    const p = classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name })
+    return p.product_tag === productFilter
   }) ?? []
 
-  // Detect dominant product from all sessions
+  // Detect dominant product from all sessions using schedule
   const dominantProduct = summary?.sessions.length ? detectProduct(summary.sessions) : 'JSU'
   const productLabel = dominantProduct === 'JZK' ? 'Językozak AI' : 'Jak się uczyć'
   const productSubtitle = dominantProduct === 'JZK' ? 'Language webinar · Tuesday 18:00' : 'Memory webinar · Thursday 18:00'
 
-  // Count products for tab badges
-  const jsuCount = summary?.sessions.filter(s => normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name }).canonicalTag === 'JSU').length ?? 0
-  const jzkCount = summary?.sessions.filter(s => normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name }).canonicalTag === 'JZK').length ?? 0
+  // Count products for tab badges — using schedule classification
+  const jsuCount = summary?.sessions.filter(s => classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name }).product_tag === 'JSU').length ?? 0
+  const jzkCount = summary?.sessions.filter(s => classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name }).product_tag === 'JZK').length ?? 0
+
+  // This-week sessions split by schedule
+  const thisWeekSessions = (() => {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+    const [y, m, d] = today.split('-').map(Number)
+    const dow = new Date(y, m - 1, d).getDay()
+    const daysToMon = dow === 0 ? 6 : dow - 1
+    const weekStart = new Date(y, m - 1, d - daysToMon).toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+    return summary?.sessions.filter(s => {
+      if (!s.scheduled_at) return false
+      const sd = new Date(s.scheduled_at).toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+      return sd >= weekStart && sd <= today
+    }) ?? []
+  })()
+  const thisWeekJsu = thisWeekSessions.filter(s => classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name }).product_tag === 'JSU')
+  const thisWeekJzk = thisWeekSessions.filter(s => classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name }).product_tag === 'JZK')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -288,6 +306,67 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
           missing={!summary?.hasClickMeetingData}
           notMapped={summary?.hasClickMeetingData && !purchasesMapped} />
       </div>
+
+      {/* This-week JSU / JZK cards — separate by fixed schedule */}
+      {thisWeekSessions.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+          {/* JSU card (Thursday 18:00) */}
+          <div style={{ background: '#0d0d0d', border: `1px solid ${thisWeekJsu.length > 0 ? '#c9a96e44' : '#1a1a1a'}`, borderRadius: '8px', padding: '14px 16px' }}>
+            <div style={{ fontFamily: 'monospace', fontSize: '0.62rem', color: thisWeekJsu.length > 0 ? '#c9a96e' : '#444', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
+              JSU / Memory — Thu 18:00
+            </div>
+            {thisWeekJsu.length === 0 ? (
+              <div style={{ fontSize: '0.72rem', color: '#333', fontFamily: 'monospace' }}>No session this week</div>
+            ) : thisWeekJsu.map(s => {
+              const sp = summary!.sessions.find(r => r.session_id === s.session_id)!
+              const dateStr = s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' }) : s.session_date
+              return (
+                <div key={s.session_id} style={{ fontSize: '0.73rem', fontFamily: 'monospace', lineHeight: 1.7 }}>
+                  <div style={{ color: '#ccc' }}>{dateStr} · {s.session_name?.slice(0, 30)}</div>
+                  <div style={{ color: sp?.registered_count > 0 ? '#e0e0e0' : '#444' }}>
+                    Registrations: {sp?.registered_count > 0 ? sp.registered_count : <span style={{ color: '#444' }}>—</span>}
+                  </div>
+                  <div style={{ color: '#666' }}>
+                    Attendance: {attendancePopulated && sp?.attendee_count > 0 ? sp.attendee_count : <span style={{ fontStyle: 'italic' }}>not populated</span>}
+                  </div>
+                  <div style={{ color: purchasesMapped && sp?.purchases > 0 ? '#00ff88' : '#444' }}>
+                    Sales: {purchasesMapped ? sp?.purchases : <span style={{ fontStyle: 'italic' }}>not mapped</span>}
+                    {purchasesMapped && sp?.revenue > 0 ? ` · ${sp.revenue.toFixed(0)} PLN` : ''}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* JZK card (Tuesday 18:00) */}
+          <div style={{ background: '#0d0d0d', border: `1px solid ${thisWeekJzk.length > 0 ? '#2dd4bf44' : '#1a1a1a'}`, borderRadius: '8px', padding: '14px 16px' }}>
+            <div style={{ fontFamily: 'monospace', fontSize: '0.62rem', color: thisWeekJzk.length > 0 ? '#2dd4bf' : '#444', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
+              JZK / Językozak AI — Tue 18:00
+            </div>
+            {thisWeekJzk.length === 0 ? (
+              <div style={{ fontSize: '0.72rem', color: '#333', fontFamily: 'monospace' }}>No session this week</div>
+            ) : thisWeekJzk.map(s => {
+              const sp = summary!.sessions.find(r => r.session_id === s.session_id)!
+              const dateStr = s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' }) : s.session_date
+              return (
+                <div key={s.session_id} style={{ fontSize: '0.73rem', fontFamily: 'monospace', lineHeight: 1.7 }}>
+                  <div style={{ color: '#ccc' }}>{dateStr} · {s.session_name?.slice(0, 30)}</div>
+                  <div style={{ color: sp?.registered_count > 0 ? '#e0e0e0' : '#444' }}>
+                    Registrations: {sp?.registered_count > 0 ? sp.registered_count : <span style={{ color: '#444' }}>—</span>}
+                  </div>
+                  <div style={{ color: '#666' }}>
+                    Attendance: {attendancePopulated && sp?.attendee_count > 0 ? sp.attendee_count : <span style={{ fontStyle: 'italic' }}>not populated</span>}
+                  </div>
+                  <div style={{ color: purchasesMapped && sp?.purchases > 0 ? '#00ff88' : '#444' }}>
+                    Sales: {purchasesMapped ? sp?.purchases : <span style={{ fontStyle: 'italic' }}>not mapped</span>}
+                    {purchasesMapped && sp?.revenue > 0 ? ` · ${sp.revenue.toFixed(0)} PLN` : ''}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Product filter tabs */}
       {(jsuCount > 0 || jzkCount > 0) && (

@@ -14,7 +14,8 @@
     "assert:campaigns": "node scripts/assert-campaigns.mjs",
     "assert:nav": "node scripts/assert-nav.mjs",
     "assert:data-contract": "node scripts/assert-data-contract.mjs",
-    "assert:ops-week-report": "node scripts/assert-ops-week-report.mjs"
+    "assert:ops-week-report": "node scripts/assert-ops-week-report.mjs",
+    "assert:webinar-schedule": "node scripts/assert-webinar-schedule.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.4",
