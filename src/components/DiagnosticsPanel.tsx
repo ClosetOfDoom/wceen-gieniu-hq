@@ -3,6 +3,7 @@ import type { DailyPerformance, MetaAdDaily, AutomationRun } from '../services/d
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import { fetchDataContract, type DataContractReport } from '../lib/dataAudit'
 import type { OpsWeekReport } from '../lib/opsWeekReport'
+import { fetchDataHealth, type DataHealthReport } from '../lib/dataHealth'
 
 // Injected at build time by vite.config.ts
 declare const __BUILD_HASH__: string
@@ -30,9 +31,12 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
 
 export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading }: Props) {
   const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
+  const [dataHealth, setDataHealth] = useState<DataHealthReport | null>(null)
+  const [healthLoading, setHealthLoading] = useState(true)
 
   useEffect(() => {
     fetchDataContract().then(setDataContract).catch(() => {})
+    fetchDataHealth().then(h => { setDataHealth(h); setHealthLoading(false) }).catch(() => setHealthLoading(false))
   }, [])
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
@@ -233,6 +237,117 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
                       </tbody>
                     </table>
                   </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Data Health — backend service role check */}
+        <div className="card" style={{ padding: '18px 20px', gridColumn: '1 / -1' }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '12px' }}>
+            Data Health (Service Role)
+          </div>
+          {healthLoading ? (
+            <Row label="Status" value="checking…" />
+          ) : dataHealth === null ? (
+            <Row label="Status" value="data-health endpoint unreachable" ok={false} />
+          ) : !dataHealth.ok ? (
+            <Row label="Error" value={dataHealth.error ?? 'unknown'} ok={false} />
+          ) : (
+            <>
+              {/* Orders */}
+              <Row label="orders table count"
+                value={dataHealth.orders.count != null ? String(dataHealth.orders.count) : (dataHealth.orders.count_error ?? '—')}
+                ok={dataHealth.orders.count != null && dataHealth.orders.count > 0} />
+              <Row label="latest order date"
+                value={dataHealth.orders.latest_order_date ?? '—'}
+                ok={dataHealth.orders.latest_order_date != null} />
+              <Row label="today orders (Warsaw)"
+                value={`${dataHealth.orders.today_count} · ${dataHealth.orders.today_revenue.toFixed(2)} PLN`}
+                ok={dataHealth.orders.today_count > 0 ? true : null} />
+              <Row label="this week orders"
+                value={`${dataHealth.orders.week_count} · ${dataHealth.orders.week_revenue.toFixed(2)} PLN`}
+                ok={dataHealth.orders.week_count > 0 ? true : null} />
+
+              {/* Webinars */}
+              <Row label="webinar_sessions count"
+                value={dataHealth.webinars.sessions_count != null ? String(dataHealth.webinars.sessions_count) : '—'}
+                ok={dataHealth.webinars.sessions_count != null && dataHealth.webinars.sessions_count > 0} />
+              <Row label="webinar_participants count"
+                value={dataHealth.webinars.participants_count != null ? String(dataHealth.webinars.participants_count) : '—'}
+                ok={dataHealth.webinars.participants_count != null && dataHealth.webinars.participants_count > 0} />
+
+              {/* Meta sources */}
+              <Row label="Command Center source"
+                value={dataHealth.meta.command_center_source.table}
+                ok />
+              <Row label="Command Center latest date"
+                value={dataHealth.meta.command_center_source.latest_date ?? '—'}
+                ok={dataHealth.meta.command_center_source.latest_date != null} />
+              <Row label="Command Center has spend"
+                value={dataHealth.meta.command_center_source.has_meta_spend
+                  ? `yes — ${dataHealth.meta.command_center_source.total_spend_7d.toFixed(2)} PLN (7d)`
+                  : 'no'}
+                ok={dataHealth.meta.command_center_source.has_meta_spend} />
+              <Row label="Campaigns source"
+                value={dataHealth.meta.campaigns_source.table}
+                ok={!dataHealth.meta.source_mismatch} />
+              <Row label="meta_ads_daily count"
+                value={dataHealth.meta.meta_ads_daily.count != null ? String(dataHealth.meta.meta_ads_daily.count) : '—'}
+                ok={dataHealth.meta.meta_ads_daily.count != null && dataHealth.meta.meta_ads_daily.count > 0 ? true
+                  : dataHealth.meta.meta_ads_daily.count === 0 ? false : null} />
+              <Row label="meta_ads_daily latest date"
+                value={dataHealth.meta.meta_ads_daily.latest_date ?? '—'}
+                ok={dataHealth.meta.meta_ads_daily.latest_date != null ? true : null} />
+
+              {/* Source mismatch warning */}
+              {dataHealth.meta.source_mismatch && (
+                <>
+                  <Row label="⚠ Campaigns source mismatch"
+                    value="MISMATCH DETECTED"
+                    ok={false} />
+                  <div style={{ marginTop: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)', lineHeight: 1.5, paddingBottom: '8px', borderBottom: '1px solid var(--border)' }}>
+                    {dataHealth.meta.source_mismatch_explanation}
+                  </div>
+                </>
+              )}
+
+              {/* Latest 5 orders */}
+              {dataHealth.orders.latest_5.length > 0 && (
+                <div style={{ marginTop: '16px' }}>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--muted2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
+                    Latest 5 Orders (service role)
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                          {['Order ID', 'Email', 'Product (Wix)', 'Amount', 'Date'].map(h => (
+                            <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--muted2)', fontWeight: 400 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dataHealth.orders.latest_5.map((row, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '4px 8px', color: 'var(--muted)' }}>{row.external_order_id}</td>
+                            <td style={{ padding: '4px 8px', color: 'var(--muted)' }}>{row.email_masked}</td>
+                            <td style={{ padding: '4px 8px', color: 'var(--text2)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.product_name_raw}</td>
+                            <td style={{ padding: '4px 8px', color: 'var(--teal)', textAlign: 'right' }}>{row.amount > 0 ? `${row.amount} PLN` : '—'}</td>
+                            <td style={{ padding: '4px 8px', color: 'var(--muted)' }}>{row.order_date}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Meta campaign names (if available) */}
+              {dataHealth.meta.meta_ads_daily.campaign_names.length > 0 && (
+                <div style={{ marginTop: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)' }}>
+                  Latest campaign names: {dataHealth.meta.meta_ads_daily.campaign_names.join(', ')}
                 </div>
               )}
             </>

@@ -1,0 +1,288 @@
+// Netlify Function: orders-data
+// Canonical orders backend using service role (bypasses RLS).
+// Provides classified order counts for today, this week, and all time.
+// All UI and GIENIU answers for order queries must use this source.
+
+const CORS = {
+  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function supabaseGet(supabaseUrl, serviceKey, table, filters = {}) {
+  const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
+  for (const [k, v] of Object.entries(filters)) {
+    if (Array.isArray(v)) {
+      for (const item of v) url.searchParams.append(k, item)
+    } else {
+      url.searchParams.set(k, String(v))
+    }
+  }
+  const res = await fetch(url.toString(), {
+    headers: {
+      'Authorization': `Bearer ${serviceKey}`,
+      'apikey':        serviceKey,
+      'Content-Type':  'application/json',
+      'Accept':        'application/json',
+    },
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`HTTP ${res.status} on ${table}: ${body.slice(0, 200)}`)
+  }
+  return res.json()
+}
+
+function warsawToday() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+}
+
+function warsawWeekStart() {
+  const today = warsawToday()
+  const d = new Date(today + 'T12:00:00Z')
+  const dow = d.getUTCDay()
+  const diff = (dow + 6) % 7
+  const monday = new Date(d)
+  monday.setUTCDate(d.getUTCDate() - diff)
+  return monday.toISOString().slice(0, 10)
+}
+
+function extractOrderDate(row) {
+  return (
+    row.order_created_at ?? row.order_date ?? row.created_at ??
+    row.date ?? row.created ?? ''
+  ).slice(0, 10)
+}
+
+function extractAmount(row) {
+  const candidates = [row.amount, row.total, row.price, row.revenue, row.order_total, row.price_total, row.total_price]
+  for (const c of candidates) {
+    const n = Number(c)
+    if (!isNaN(n) && n > 0) return n
+  }
+  return 0
+}
+
+function extractEmail(row) {
+  return row.buyer_email ?? row.email ?? row.customer_email ?? row.contact_email ?? ''
+}
+
+function extractProductNameRaw(row) {
+  return row.product_name_raw ?? row.product_name ?? row.item_name ?? row.product_title ?? null
+}
+
+function maskEmail(email) {
+  if (!email || !email.includes('@')) return '***@***'
+  const [local, domain] = email.split('@')
+  const visible = local.slice(0, Math.min(2, local.length))
+  return `${visible}***@${domain}`
+}
+
+// ── Absolute price classification (business rules, no keyword checks) ─────────
+// 549 PLN = JSU_COURSE | 347 PLN = JZK_LANGUAGE | 119 PLN = MEMORY_PACK
+
+function normalizeText(s) {
+  return String(s ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const JSU_NAME_PATTERNS    = ['jak sie uczyc', 'kurs jak sie', 'jsu']
+const JZK_NAME_PATTERNS    = ['jezykozak', 'jezykowy', 'nauka jezykow', 'jzk', 'jezyk']
+const MEMORY_NAME_119      = ['pamiec', 'trening interaktywny', 'pakiet pamieciowy', 'memory']
+
+function classifyOrder(row) {
+  const amount  = extractAmount(row)
+  const rawName = extractProductNameRaw(row) ?? ''
+  const norm    = normalizeText(rawName)
+
+  if (amount === 549) {
+    const nameContradicts = rawName.length > 0 && !JSU_NAME_PATTERNS.some(p => norm.includes(p))
+    return {
+      classification: 'JSU_COURSE',
+      productLabel:   'Kurs Jak się uczyć',
+      reason:         'absolute price rule: 549 PLN = JSU',
+      warning:        nameContradicts ? `Wix product_name_raw is misleading ("${rawName.slice(0, 50)}"). Price rule used.` : null,
+    }
+  }
+  if (amount === 347) {
+    const nameContradicts = rawName.length > 0 && !JZK_NAME_PATTERNS.some(p => norm.includes(p))
+    return {
+      classification: 'JZK_LANGUAGE',
+      productLabel:   'Językozak AI',
+      reason:         'absolute price rule: 347 PLN = Językozak AI',
+      warning:        nameContradicts ? `Wix product_name_raw is misleading ("${rawName.slice(0, 50)}"). Price rule used.` : null,
+    }
+  }
+  if (amount === 119) {
+    const nameContradicts = rawName.length > 0 && !MEMORY_NAME_119.some(p => norm.includes(p))
+    return {
+      classification: 'MEMORY_PACK',
+      productLabel:   'Pakiet pamięciowy',
+      reason:         'absolute price rule: 119 PLN = memory pack',
+      warning:        nameContradicts ? `Wix product_name_raw is misleading ("${rawName.slice(0, 50)}"). Price rule used.` : null,
+    }
+  }
+  return {
+    classification: 'UNKNOWN',
+    productLabel:   'Nieznany',
+    reason:         `no price rule matches (amount: ${amount} PLN)`,
+    warning:        null,
+  }
+}
+
+// ── Handler ───────────────────────────────────────────────────────────────────
+
+export const handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: CORS, body: '' }
+  }
+  if (event.httpMethod !== 'GET') {
+    return {
+      statusCode: 405,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ok: false, error: 'Method not allowed' }),
+    }
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL
+  const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !serviceKey) {
+    const missing = [!supabaseUrl && 'SUPABASE_URL', !serviceKey && 'SUPABASE_SERVICE_ROLE_KEY']
+      .filter(Boolean).join(', ')
+    return {
+      statusCode: 500,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ok: false, error: `Server env missing: ${missing}` }),
+    }
+  }
+
+  const today     = warsawToday()
+  const weekStart = warsawWeekStart()
+
+  // ── Try orders table, fall back to wix_orders ─────────────────────────────
+
+  let allOrders = []
+  let usedTable = 'none'
+  let fetchError = null
+
+  for (const tableName of ['orders', 'wix_orders']) {
+    try {
+      const data = await supabaseGet(supabaseUrl, serviceKey, tableName, {
+        select: '*',
+        limit:  '500',
+      })
+      allOrders = data
+      usedTable = tableName
+      break
+    } catch (e) {
+      fetchError = String(e?.message ?? e)
+    }
+  }
+
+  if (usedTable === 'none') {
+    return {
+      statusCode: 200,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ok:    false,
+        error: `Could not access orders table: ${fetchError}`,
+        today_warsaw: today,
+        week_start:   weekStart,
+      }),
+    }
+  }
+
+  // ── Classify and aggregate ────────────────────────────────────────────────
+
+  let totalCount = allOrders.length
+  let latestOrderDate = null
+
+  let todayCount   = 0, todayRevenue   = 0
+  let weekCount    = 0, weekRevenue    = 0
+  let jsuCount     = 0, jsuRevenue     = 0
+  let jzkCount     = 0, jzkRevenue     = 0
+  let memoryCount  = 0, memoryRevenue  = 0
+  let unknownCount = 0
+  let priceWarnings = 0
+
+  const latest20 = []
+
+  // Sort descending by date
+  allOrders.sort((a, b) => {
+    const da = extractOrderDate(a), db = extractOrderDate(b)
+    return db.localeCompare(da)
+  })
+
+  for (const row of allOrders) {
+    const d   = extractOrderDate(row)
+    const amt = extractAmount(row)
+    const cls = classifyOrder(row)
+
+    if (!latestOrderDate && d) latestOrderDate = d
+
+    if (d === today) {
+      todayCount++
+      todayRevenue += amt
+    }
+    if (d >= weekStart) {
+      weekCount++
+      weekRevenue += amt
+    }
+
+    if (cls.warning) priceWarnings++
+    if (cls.classification === 'JSU_COURSE')    { jsuCount++;    jsuRevenue    += amt }
+    else if (cls.classification === 'JZK_LANGUAGE')  { jzkCount++;    jzkRevenue    += amt }
+    else if (cls.classification === 'MEMORY_PACK')   { memoryCount++; memoryRevenue += amt }
+    else                                              { unknownCount++ }
+
+    if (latest20.length < 20) {
+      latest20.push({
+        external_order_id:    row.external_order_id ?? row.id ?? '—',
+        email_masked:         maskEmail(extractEmail(row)),
+        product_name_raw:     extractProductNameRaw(row) ?? '—',
+        amount:               amt,
+        order_date:           d,
+        classified_product:   cls.classification,
+        product_label:        cls.productLabel,
+        classification_reason: cls.reason,
+        classification_warning: cls.warning,
+      })
+    }
+  }
+
+  return {
+    statusCode: 200,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ok:           true,
+      timestamp:    new Date().toISOString(),
+      today_warsaw: today,
+      week_start:   weekStart,
+      source_table: usedTable,
+      totals: {
+        all_orders:     totalCount,
+        latest_order_date: latestOrderDate,
+        today_orders:   todayCount,
+        today_revenue:  todayRevenue,
+        week_orders:    weekCount,
+        week_revenue:   weekRevenue,
+      },
+      classified: {
+        jsu_course:   { count: jsuCount,    revenue: jsuRevenue    },
+        jzk_language: { count: jzkCount,    revenue: jzkRevenue    },
+        memory_pack:  { count: memoryCount, revenue: memoryRevenue },
+        unknown:      { count: unknownCount },
+        price_warnings: priceWarnings,
+      },
+      latest_20_orders: latest20,
+    }),
+  }
+}

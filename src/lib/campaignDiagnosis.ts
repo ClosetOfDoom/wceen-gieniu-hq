@@ -1,4 +1,3 @@
-import { supabase } from '../services/supabase'
 import type { MetaAdDaily } from '../services/data'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -203,46 +202,64 @@ export function buildCampaignDiagnosis(
   }
 }
 
-// ── Async fetcher ─────────────────────────────────────────────────────────────
+// ── Async fetcher (backend, service role) ─────────────────────────────────────
+// Uses /.netlify/functions/campaign-data so the anon key RLS restriction on
+// meta_ads_daily does not affect Campaigns page.
 
-export async function fetchCampaignRows(): Promise<{
+export interface CampaignFetchResult {
   rows: MetaAdDaily[]
   usedDate: string
   requestedDate: string
-}> {
+  aggregateMetaSpendExists: boolean
+  aggregateLatestDate: string | null
+  aggregateSpendTotal: number
+  sourceMismatch: boolean
+  sourceMismatchExplanation: string | null
+}
+
+export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-
-  const { data: todayData, error: todayErr } = await supabase
-    .from('meta_ads_daily')
-    .select('date, campaign_id, campaign_name, adset_id, ad_id, spend, impressions, clicks, link_clicks, purchases, ctr, cpc, cpm, meta_purchase_value')
-    .eq('date', today)
-    .order('spend', { ascending: false })
-
-  if (todayErr) console.warn('fetchCampaignRows today error:', todayErr.message)
-
-  if ((todayData ?? []).length > 0) {
-    return { rows: todayData as MetaAdDaily[], usedDate: today, requestedDate: today }
+  const empty: CampaignFetchResult = {
+    rows: [], usedDate: '', requestedDate: today,
+    aggregateMetaSpendExists: false, aggregateLatestDate: null,
+    aggregateSpendTotal: 0, sourceMismatch: false, sourceMismatchExplanation: null,
   }
 
-  // Fallback: find latest date then fetch its rows
-  const { data: latestRow, error: latestErr } = await supabase
-    .from('meta_ads_daily')
-    .select('date')
-    .order('date', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (latestErr) console.warn('fetchCampaignRows latest date error:', latestErr.message)
-  if (!latestRow) return { rows: [], usedDate: '', requestedDate: today }
-
-  const { data: latestRows, error: latestRowsErr } = await supabase
-    .from('meta_ads_daily')
-    .select('date, campaign_id, campaign_name, adset_id, ad_id, spend, impressions, clicks, link_clicks, purchases, ctr, cpc, cpm, meta_purchase_value')
-    .eq('date', latestRow.date)
-    .order('spend', { ascending: false })
-
-  if (latestRowsErr) console.warn('fetchCampaignRows latest rows error:', latestRowsErr.message)
-
-  console.log('fetchCampaignRows: no data for', today, '— using', latestRow.date)
-  return { rows: (latestRows ?? []) as MetaAdDaily[], usedDate: latestRow.date, requestedDate: today }
+  try {
+    const res = await fetch('/.netlify/functions/campaign-data', {
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) {
+      console.warn('campaign-data HTTP error:', res.status)
+      return empty
+    }
+    const json = await res.json() as {
+      ok: boolean
+      rows: MetaAdDaily[]
+      usedDate: string
+      requestedDate: string
+      aggregateMetaSpendExists: boolean
+      aggregateLatestDate: string | null
+      aggregateSpendTotal: number
+      sourceMismatch: boolean
+      sourceMismatchExplanation: string | null
+    }
+    if (!json.ok) {
+      console.warn('campaign-data returned ok=false')
+      return empty
+    }
+    return {
+      rows:                      json.rows ?? [],
+      usedDate:                  json.usedDate ?? '',
+      requestedDate:             json.requestedDate ?? today,
+      aggregateMetaSpendExists:  json.aggregateMetaSpendExists ?? false,
+      aggregateLatestDate:       json.aggregateLatestDate ?? null,
+      aggregateSpendTotal:       json.aggregateSpendTotal ?? 0,
+      sourceMismatch:            json.sourceMismatch ?? false,
+      sourceMismatchExplanation: json.sourceMismatchExplanation ?? null,
+    }
+  } catch (e) {
+    console.warn('fetchCampaignRows backend error:', e)
+    return empty
+  }
 }

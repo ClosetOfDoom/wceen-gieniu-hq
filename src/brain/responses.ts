@@ -4,6 +4,7 @@ import { pct } from '../services/webinarFunnel'
 import { normalizeProduct, productFromQuery, type ProductTag } from '../lib/webinarProduct'
 import { PRODUCT_CLASSIFICATION_REASON } from '../lib/productClassifier'
 import type { OpsWeekReport } from '../lib/opsWeekReport'
+import type { OrdersData } from '../lib/ordersData'
 import {
   pickPhrase,
   OPENERS, GOOD_VERDICTS, HIGH_CPA_VERDICTS, SALES_WARNING_VERDICTS,
@@ -1797,6 +1798,48 @@ export function buildJzkSalesSpoken(r: OpsWeekReport | null): string {
     return `Językozak AI sales this week: ${o.jzk_orders} order${o.jzk_orders !== 1 ? 's' : ''} at 347 PLN each. I am not counting all ${o.all_orders} Wix orders here.${warning}`
   }
   return `I cannot isolate Językozak orders from the ${o.all_orders} total Wix orders this week — product names are not stored per line item.`
+}
+
+// ── Today's orders answer ─────────────────────────────────────────────────────
+
+export function buildTodayOrdersAnswer(d: OrdersData | null): string {
+  if (!d || !d.ok) {
+    return `— TODAY'S ORDERS —\n\nCould not load orders data: ${d?.error ?? 'backend unavailable'}.`
+  }
+  const { totals, classified } = d
+  const lines = ['— TODAY\'S ORDERS (Warsaw) —', '']
+  lines.push(`Today (${d.today_warsaw}):`)
+  lines.push(`  Orders: ${totals.today_orders}`)
+  lines.push(`  Revenue: ${totals.today_revenue.toFixed(2)} PLN`)
+  lines.push('')
+  lines.push('Product breakdown (absolute price rules):')
+  lines.push(`  JSU course (549 PLN):  ${classified.jsu_course.count} order${classified.jsu_course.count !== 1 ? 's' : ''} — ${classified.jsu_course.revenue.toFixed(2)} PLN`)
+  lines.push(`  Językozak AI (347 PLN): ${classified.jzk_language.count} order${classified.jzk_language.count !== 1 ? 's' : ''} — ${classified.jzk_language.revenue.toFixed(2)} PLN`)
+  lines.push(`  Memory pack (119 PLN): ${classified.memory_pack.count} order${classified.memory_pack.count !== 1 ? 's' : ''} — ${classified.memory_pack.revenue.toFixed(2)} PLN`)
+  if (classified.unknown.count > 0) {
+    lines.push(`  Unknown price: ${classified.unknown.count} order${classified.unknown.count !== 1 ? 's' : ''}`)
+  }
+  lines.push('')
+  lines.push(`All orders in database: ${totals.all_orders} (source: ${d.source_table}, service role)`)
+  lines.push(`Latest order date: ${totals.latest_order_date ?? '—'}`)
+  if (classified.price_warnings > 0) {
+    lines.push(`⚠ ${classified.price_warnings} order(s) had misleading Wix product names — price rule applied.`)
+  }
+  return lines.join('\n')
+}
+
+export function buildTodayOrdersSpoken(d: OrdersData | null): string {
+  if (!d || !d.ok) return 'Today\'s orders data is not available — backend error.'
+  const { totals, classified } = d
+  if (totals.today_orders === 0) {
+    return `No orders today in Warsaw so far. Total in database: ${totals.all_orders} orders. Latest order date: ${totals.latest_order_date ?? 'unknown'}.`
+  }
+  const parts: string[] = []
+  if (classified.jsu_course.count > 0) parts.push(`${classified.jsu_course.count} JSU course`)
+  if (classified.jzk_language.count > 0) parts.push(`${classified.jzk_language.count} Językozak AI`)
+  if (classified.memory_pack.count > 0) parts.push(`${classified.memory_pack.count} memory pack`)
+  const breakdown = parts.length > 0 ? ` — ${parts.join(', ')}` : ''
+  return `Today: ${totals.today_orders} order${totals.today_orders !== 1 ? 's' : ''}, ${totals.today_revenue.toFixed(0)} PLN${breakdown}.`
 }
 
 /** Detect the dominant product tag from the loaded sessions. */

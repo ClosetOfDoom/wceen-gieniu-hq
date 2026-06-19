@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import {
   fetchCampaignRows, buildCampaignDiagnosis,
   type CampaignDiagnosis, type CampaignScope, type CampaignEntry,
+  type CampaignFetchResult,
 } from '../lib/campaignDiagnosis'
 import type { MetaAdDaily } from '../services/data'
 
@@ -240,13 +241,15 @@ export function CampaignsPanel() {
   const [requestedDate, setRequestedDate] = useState('')
   const [loading, setLoading] = useState(true)
   const [scope, setScope] = useState<CampaignScope>('JSU')
+  const [fetchResult, setFetchResult] = useState<CampaignFetchResult | null>(null)
 
   useEffect(() => {
     setLoading(true)
-    fetchCampaignRows().then(({ rows, usedDate: ud, requestedDate: rd }) => {
-      setAllRows(rows)
-      setUsedDate(ud)
-      setRequestedDate(rd)
+    fetchCampaignRows().then((result) => {
+      setFetchResult(result)
+      setAllRows(result.rows)
+      setUsedDate(result.usedDate)
+      setRequestedDate(result.requestedDate)
       setLoading(false)
     })
   }, [])
@@ -258,6 +261,15 @@ export function CampaignsPanel() {
 
   const isStale  = diagnosis.isStale
   const hasRows  = diagnosis.rowCount > 0
+  const sourceMismatch = fetchResult?.sourceMismatch ?? false
+  const aggregateSpendExists = fetchResult?.aggregateMetaSpendExists ?? false
+
+  // Empty state type:
+  // A) sourceMismatch: aggregate spend in v_daily_wix_meta_performance but meta_ads_daily=0 rows
+  // B) no data at all
+  const emptyStateType = !hasRows
+    ? (sourceMismatch ? 'mismatch' : 'empty')
+    : null
 
   return (
     <div>
@@ -269,7 +281,9 @@ export function CampaignsPanel() {
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted)' }}>
           {loading ? 'Loading…' : hasRows
             ? (isStale ? `Stale — showing ${usedDate}` : `Live — ${usedDate}`)
-            : 'No campaign rows in meta_ads_daily'}
+            : sourceMismatch
+              ? `Aggregate spend found, no campaign rows · source: v_daily_wix_meta_performance`
+              : 'No Meta data found'}
         </span>
       </div>
 
@@ -284,8 +298,31 @@ export function CampaignsPanel() {
         </div>
       )}
 
-      {/* No data at all */}
-      {!loading && !hasRows && (
+      {/* State A: Meta spend exists but campaign rows missing */}
+      {!loading && emptyStateType === 'mismatch' && (
+        <div style={{
+          padding: '24px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem',
+          background: 'rgba(251,191,36,0.04)', border: '1px solid rgba(251,191,36,0.25)',
+          borderRadius: '5px', marginBottom: '14px',
+        }}>
+          <div style={{ color: 'var(--amber)', fontWeight: 600, marginBottom: '10px', fontSize: '0.82rem' }}>
+            ⚠ Meta spend exists, but campaign-level rows are missing.
+          </div>
+          <div style={{ color: 'var(--text2)', lineHeight: 1.7 }}>
+            <div>Source used by Command Center: <span style={{ color: 'var(--teal)' }}>v_daily_wix_meta_performance</span></div>
+            <div>Total Meta spend (last 7d): <span style={{ color: 'var(--teal)' }}>{(fetchResult?.aggregateSpendTotal ?? 0).toFixed(2)} PLN</span></div>
+            <div>Latest aggregate date: <span style={{ color: 'var(--muted)' }}>{fetchResult?.aggregateLatestDate ?? '—'}</span></div>
+            <div style={{ marginTop: '8px' }}>Campaigns source: <span style={{ color: 'var(--orange)' }}>meta_ads_daily — 0 rows</span></div>
+          </div>
+          <div style={{ marginTop: '12px', fontSize: '0.72rem', color: 'var(--muted2)', lineHeight: 1.6 }}>
+            Missing required fields in meta_ads_daily: campaign_name, spend, clicks, purchases.<br />
+            Check that the Meta webhook maps data into the meta_ads_daily table.
+          </div>
+        </div>
+      )}
+
+      {/* State B: No Meta data anywhere */}
+      {!loading && emptyStateType === 'empty' && (
         <div style={{
           padding: '32px', textAlign: 'center',
           fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--muted)',
@@ -293,9 +330,9 @@ export function CampaignsPanel() {
           marginBottom: '14px',
         }}>
           <div style={{ marginBottom: '10px', opacity: 0.4, fontSize: '2rem' }}>📊</div>
-          No Meta campaign rows found in meta_ads_daily.
+          No Meta data found in Supabase.
           <div style={{ marginTop: '8px', fontSize: '0.72rem', color: 'var(--muted2)' }}>
-            latestMetaDate: none  ·  rowCount: 0
+            meta_ads_daily: 0 rows · v_daily_wix_meta_performance: no spend
           </div>
         </div>
       )}

@@ -20,6 +20,7 @@ import {
   type JsuFunnelSummary, type JsuParticipantRow,
 } from './services/webinarFunnel'
 import { fetchOpsWeekReport, type OpsWeekReport } from './lib/opsWeekReport'
+import { fetchOrdersData, type OrdersData } from './lib/ordersData'
 import {
   buildJsuWebinarReport, buildWhyCourseNotSelling, buildJsuFunnelReport,
   buildCompareJsuWebinars, buildDeliverabilityReport, buildMailingDiagnosis,
@@ -507,6 +508,9 @@ export default function App() {
   const [opsWeekReport, setOpsWeekReport]       = useState<OpsWeekReport | null>(null)
   const [opsWeekLoading, setOpsWeekLoading]     = useState(false)
 
+  // Orders data (backend, service role)
+  const [ordersData, setOrdersData] = useState<OrdersData | null>(null)
+
   // Conversational state
   const [response, setResponse]           = useState('')
   const [responseSpoken, setResponseSpoken] = useState('')
@@ -588,6 +592,15 @@ export default function App() {
     setJsuParticipantsLoading(false)
   }, [])
 
+  const loadOrdersData = useCallback(async () => {
+    try {
+      setOrdersData(await fetchOrdersData())
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('GIENIU orders-data failed:', e)
+    }
+  }, [])
+
   useEffect(() => {
     // eslint-disable-next-line no-console
     console.log(`GIENIU HQ build ${__BUILD_HASH__} loaded (${__BUILD_TIME__})`)
@@ -597,9 +610,10 @@ export default function App() {
     loadJsuFunnel()
     loadJsuParticipants()
     loadOpsWeekReport()
+    loadOrdersData()
     const interval = setInterval(() => { loadData(); loadAds() }, 5 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants, loadOpsWeekReport])
+  }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants, loadOpsWeekReport, loadOrdersData])
 
   // ── Opening greeting ─────────────────────────────────────────────────────────
 
@@ -686,7 +700,7 @@ export default function App() {
   function handleIntentQuery(query: string) {
     setLastQuery(query)
     stopSpeaking()
-    const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport })
+    const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData })
     speakAnswer(result)
   }
 

@@ -1,6 +1,7 @@
 import type { DailyPerformance, DataStatus, MetaAdDaily, MetaStatsToday } from '../services/data'
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import type { OpsWeekReport } from '../lib/opsWeekReport'
+import type { OrdersData } from '../lib/ordersData'
 import {
   buildRevenueReport, buildOperationalReport, buildPipelineReport,
   buildCPAThresholds, buildCPAThresholdsLang, buildRedFlags,
@@ -15,6 +16,7 @@ import {
   buildMemoryBundleAnswer, buildMemoryBundleSpoken,
   buildJsuWeekReport, buildJsuWeekReportSpoken, buildJsuSalesAnswer, buildJsuSalesSpoken,
   buildJzkWeekReport, buildJzkWeekReportSpoken, buildJzkSalesAnswer, buildJzkSalesSpoken,
+  buildTodayOrdersAnswer, buildTodayOrdersSpoken,
   // spoken text builders
   buildYesterdaySpoken, buildOpsBriefingSpoken, buildAdsDiagnosisSpoken,
   buildPeriodComparisonSpoken, buildWeekToDateSpoken, buildJsuWebinarSpoken,
@@ -36,6 +38,7 @@ export interface IntentContext {
   jsuSummary: JsuFunnelSummary | null
   trend: DailyPerformance[]
   opsWeekReport: OpsWeekReport | null
+  ordersData: OrdersData | null
 }
 
 function normalizePl(text: string): string {
@@ -70,7 +73,7 @@ function detectTimeRange(q: string): TimeRange | null {
 export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse {
   const rawQuery = query
   const q = normalizePl(query.toLowerCase().trim())
-  const { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport } = ctx
+  const { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData } = ctx
 
   let detectedIntent  = 'ops_briefing'
   let detectedPeriod: string | null = null
@@ -116,6 +119,18 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
       const spoken = `No today data yet, Lifidi. Latest from ${lDate}: ${orders} orders, ${revenue.toFixed(0)} Polish zloty revenue, ${spend.toFixed(0)} zloty spend.${cpa != null ? ` C P A was ${cpa.toFixed(0)} zloty.` : ''} Ask me about yesterday or the last 7 days for context.`
       result = w(lines.join('\n'), spoken)
     }
+  }
+
+  // ── Today orders query ("ile dziś zamówień", "ile zamówień dzisiaj") ──────────
+  // Uses orders-data backend (service role) — not stale dashboard state
+  if (!result && has(q,
+    'ile dzis zamowien', 'ile zamowien dzisiaj', 'ile zamowien dzis', 'dzis zamowienia',
+    'dzisiejsze zamowienia', 'ile dzis sprzedalismy', 'ile sprzedalismy dzis',
+    'ile zamowien mamy', 'ile nowych zamowien', 'zamowienia dzis', 'zamowienia dzisiaj',
+    'how many orders today', 'orders today', 'how many orders',
+  )) {
+    detectedIntent = 'today_orders_query'
+    result = w(buildTodayOrdersAnswer(ordersData), buildTodayOrdersSpoken(ordersData))
   }
 
   // ── JSU weekly report ("co bylo w tym tygodniu", "raport tygodnia") ──────────
