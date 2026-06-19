@@ -32,7 +32,11 @@ import {
   type InsightChartSpec,
 } from './brain/responses'
 import { resolveIntent } from './brain/intent'
-import { speak, stopAudio, prewarmAudio, isElevenLabsPaused, resetElevenLabs } from './voice/tts'
+import {
+  speak, stopAudio, prewarmAudio, isElevenLabsPaused, resetElevenLabs,
+  saveVoiceLanguage, getVoiceLanguage, getAvailableVoices, selectBrowserVoice,
+  resetVoiceState,
+} from './voice/tts'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -298,6 +302,11 @@ function RightPanel({
   ttsError,
   ttsFallbackActive,
   onRetryElevenLabs,
+  voiceLanguage,
+  onVoiceLanguageChange,
+  browserVoiceInfo,
+  englishVoiceCount,
+  onResetVoiceState,
 }: {
   response: string
   chart?: InsightChartSpec
@@ -316,6 +325,11 @@ function RightPanel({
   ttsError: string
   ttsFallbackActive: boolean
   onRetryElevenLabs: () => void
+  voiceLanguage: 'en' | 'pl'
+  onVoiceLanguageChange: (lang: 'en' | 'pl') => void
+  browserVoiceInfo: { name: string; lang: string } | null
+  englishVoiceCount: number
+  onResetVoiceState: () => void
 }) {
   const [inputVal, setInputVal] = useState('')
 
@@ -422,7 +436,48 @@ function RightPanel({
               )}
             </div>
 
-            {/* Fallback status notice — shown below response when browser TTS took over */}
+            {/* Browser TTS language selector + voice info — shown when fallback is active */}
+            {ttsFallbackActive && (
+              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--muted)' }}>Voice lang:</span>
+                  {(['en', 'pl'] as const).map(lang => (
+                    <button
+                      key={lang}
+                      className="btn-sm"
+                      onClick={() => onVoiceLanguageChange(lang)}
+                      style={{
+                        fontSize: '0.62rem', padding: '2px 8px',
+                        borderColor: voiceLanguage === lang ? 'var(--teal)' : 'var(--border)',
+                        color: voiceLanguage === lang ? 'var(--teal)' : 'var(--muted)',
+                      }}
+                    >
+                      {lang === 'en' ? 'English' : 'Polish'}
+                    </button>
+                  ))}
+                  <button
+                    className="btn-sm"
+                    onClick={onResetVoiceState}
+                    style={{ fontSize: '0.62rem', padding: '2px 8px', color: 'var(--muted2)', borderColor: 'var(--border)', marginLeft: '4px' }}
+                    title="Clears all voice localStorage state and resets to English"
+                  >
+                    Reset voice
+                  </button>
+                </div>
+                {browserVoiceInfo && (
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.63rem', color: 'var(--muted2)' }}>
+                    {browserVoiceInfo.name} ({browserVoiceInfo.lang})
+                  </div>
+                )}
+                {voiceLanguage === 'en' && englishVoiceCount === 0 && (
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.63rem', color: 'var(--orange)', lineHeight: 1.4 }}>
+                    No English browser voice found. Install an English Windows/browser voice or use ElevenLabs.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Fallback status notice */}
             {ttsFallbackActive && (
               <div style={{ marginTop: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', padding: '5px 8px', background: 'rgba(100,100,100,0.08)', borderRadius: '3px', borderLeft: '2px solid var(--border)' }}>
                 ElevenLabs limit reached — switched to Browser TTS.
@@ -558,6 +613,12 @@ export default function App() {
   const [ttsFallbackActive, setTtsFallbackActive] = useState(() => isElevenLabsPaused())
   const [ttsLastElevenError, setTtsLastElevenError] = useState('')
   const [voiceUnlocked, setVoiceUnlocked] = useState(() => sessionStorage.getItem(VOICE_UNLOCK_KEY) === '1')
+  const [voiceLanguage, setVoiceLanguage_] = useState<'en' | 'pl'>(getVoiceLanguage)
+
+  // Browser voice info — refreshed when voices are loaded or language changes
+  const [englishVoiceCount, setEnglishVoiceCount] = useState(0)
+  const [polishVoiceCount, setPolishVoiceCount]   = useState(0)
+  const [browserVoiceInfo, setBrowserVoiceInfo]   = useState<{ name: string; lang: string } | null>(null)
   const [lastQuery, setLastQuery]         = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
@@ -645,6 +706,20 @@ export default function App() {
       console.warn('GIENIU profit-data failed:', e)
     }
   }, [])
+
+  const refreshVoiceInfo = useCallback(() => {
+    const lang = getVoiceLanguage()
+    setEnglishVoiceCount(getAvailableVoices('en').length)
+    setPolishVoiceCount(getAvailableVoices('pl').length)
+    const sel = selectBrowserVoice(lang)
+    setBrowserVoiceInfo(sel ? { name: sel.name, lang: sel.lang } : null)
+  }, [])
+
+  useEffect(() => {
+    refreshVoiceInfo()
+    window.speechSynthesis?.addEventListener('voiceschanged', refreshVoiceInfo)
+    return () => window.speechSynthesis?.removeEventListener('voiceschanged', refreshVoiceInfo)
+  }, [refreshVoiceInfo, voiceLanguage])
 
   useEffect(() => {
     // eslint-disable-next-line no-console
@@ -772,9 +847,14 @@ export default function App() {
     setTtsError('')
     // eslint-disable-next-line no-console
     console.log('GIENIU Start voice — endpoint: /.netlify/functions/gieniu-tts')
+    // When browser TTS is active, use a concise language-appropriate test phrase
+    // so the English voice speaks English (not the Polish OPENING_TEXT).
+    const testText = isElevenLabsPaused()
+      ? (voiceLanguage === 'pl' ? 'Głos Gieniu jest aktywny.' : 'Gieniu voice is active.')
+      : (responseSpoken || response || OPENING_TEXT)
     const session = ++ttsSessionRef.current
     setSpeaking(true)
-    const result = await speak(responseSpoken || response || OPENING_TEXT)
+    const result = await speak(testText)
     if (ttsSessionRef.current !== session) return
     setSpeaking(false)
     if (result.ok && result.provider === 'browser') {
@@ -817,6 +897,23 @@ export default function App() {
       if (result.provider === 'elevenlabs') setTtsLastElevenError(result.error ?? '')
       setTtsError(result.error ?? 'unknown error')
     }
+  }
+
+  // ── Voice language change ─────────────────────────────────────────────────────
+
+  function handleVoiceLanguageChange(lang: 'en' | 'pl') {
+    saveVoiceLanguage(lang)
+    setVoiceLanguage_(lang)
+  }
+
+  // ── Reset all voice state ─────────────────────────────────────────────────────
+
+  function handleResetVoiceState() {
+    resetVoiceState()
+    setTtsFallbackActive(false)
+    setTtsError('')
+    setTtsLastElevenError('')
+    setVoiceLanguage_('en')
   }
 
   // ── PWA install ───────────────────────────────────────────────────────────────
@@ -1084,6 +1181,10 @@ export default function App() {
               opsWeekLoading={opsWeekLoading}
               ttsLastElevenError={ttsLastElevenError}
               ttsFallbackActive={ttsFallbackActive}
+              ttsLanguage={voiceLanguage}
+              browserVoiceInfo={browserVoiceInfo}
+              englishVoiceCount={englishVoiceCount}
+              polishVoiceCount={polishVoiceCount}
             />
           )}
 
@@ -1108,6 +1209,11 @@ export default function App() {
         ttsError={ttsError}
         ttsFallbackActive={ttsFallbackActive}
         onRetryElevenLabs={handleRetryElevenLabs}
+        voiceLanguage={voiceLanguage}
+        onVoiceLanguageChange={handleVoiceLanguageChange}
+        browserVoiceInfo={browserVoiceInfo}
+        englishVoiceCount={englishVoiceCount}
+        onResetVoiceState={handleResetVoiceState}
       />
 
       {/* Mobile bottom nav */}

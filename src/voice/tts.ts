@@ -1,5 +1,5 @@
 import { GIENIU_VOICE_ID, GIENIU_VOICE_NAME } from '../config/gieniuVoice'
-import { cleanForTTS, cleanForBrowserTTS } from './textClean'
+import { cleanForTTS, cleanForEnglishTTS, cleanForPolishTTS } from './textClean'
 
 console.log(`GIENIU voice: ${GIENIU_VOICE_NAME} ${GIENIU_VOICE_ID}`)
 
@@ -8,6 +8,85 @@ console.log(`GIENIU voice: ${GIENIU_VOICE_NAME} ${GIENIU_VOICE_ID}`)
 export const LS_TTS_PROVIDER   = 'gieniuTtsProvider'
 export const LS_ELEVEN_PAUSED  = 'gieniuElevenLabsPaused'
 export const LS_ELEVEN_REASON  = 'gieniuElevenLabsPausedReason'
+export const LS_VOICE_LANG     = 'gieniuVoiceLanguage'
+export const LS_VOICE_NAME     = 'gieniuVoiceName'
+
+// ── Language helpers ──────────────────────────────────────────────────────────
+
+export function getVoiceLanguage(): 'en' | 'pl' {
+  try {
+    const v = localStorage.getItem(LS_VOICE_LANG)
+    if (v === 'en' || v === 'pl') return v
+    localStorage.setItem(LS_VOICE_LANG, 'en')
+    return 'en'
+  } catch { return 'en' }
+}
+
+export function saveVoiceLanguage(lang: 'en' | 'pl'): void {
+  try {
+    localStorage.setItem(LS_VOICE_LANG, lang)
+    localStorage.removeItem(LS_VOICE_NAME)   // cached voice may not match new language
+  } catch { /* non-fatal */ }
+}
+
+// ── Voice selection ───────────────────────────────────────────────────────────
+
+export function getAvailableVoices(lang: 'en' | 'pl'): SpeechSynthesisVoice[] {
+  try {
+    const voices = window.speechSynthesis?.getVoices() ?? []
+    return voices.filter(v => v.lang.startsWith(lang))
+  } catch { return [] }
+}
+
+export function selectBrowserVoice(language: 'en' | 'pl'): SpeechSynthesisVoice | null {
+  try {
+    const voices = window.speechSynthesis?.getVoices() ?? []
+    if (language === 'en') {
+      const englishVoices = voices.filter(v => v.lang.startsWith('en'))
+      // Check if cached voice is English
+      const cached = getCachedVoiceName()
+      if (cached) {
+        const cachedVoice = voices.find(v => v.name === cached)
+        if (cachedVoice && cachedVoice.lang.startsWith('en')) return cachedVoice
+        // Cached voice is not English — discard it
+        try { localStorage.removeItem(LS_VOICE_NAME) } catch { /* non-fatal */ }
+      }
+      // Priority: Google > Microsoft > en-US > any English
+      return (
+        englishVoices.find(v => /google/i.test(v.name)) ??
+        englishVoices.find(v => /microsoft/i.test(v.name)) ??
+        englishVoices.find(v => v.lang === 'en-US') ??
+        englishVoices[0] ??
+        null
+      )
+    } else {
+      const polishVoices = voices.filter(v => v.lang.startsWith('pl'))
+      const cached = getCachedVoiceName()
+      if (cached) {
+        const cachedVoice = voices.find(v => v.name === cached)
+        if (cachedVoice && cachedVoice.lang.startsWith('pl')) return cachedVoice
+        try { localStorage.removeItem(LS_VOICE_NAME) } catch { /* non-fatal */ }
+      }
+      return (
+        polishVoices.find(v => /google/i.test(v.name)) ??
+        polishVoices[0] ??
+        null
+      )
+    }
+  } catch { return null }
+}
+
+function getCachedVoiceName(): string | null {
+  try { return localStorage.getItem(LS_VOICE_NAME) } catch { return null }
+}
+
+export function getCurrentVoiceInfo(language: 'en' | 'pl'): { name: string; lang: string } | null {
+  const voice = selectBrowserVoice(language)
+  if (!voice) return null
+  return { name: voice.name, lang: voice.lang }
+}
+
+// ── ElevenLabs state ──────────────────────────────────────────────────────────
 
 export function isElevenLabsPaused(): boolean {
   try { return localStorage.getItem(LS_ELEVEN_PAUSED) === 'true' } catch { return false }
@@ -29,13 +108,24 @@ function markElevenLabsPaused(reason: string): void {
   } catch { /* non-fatal */ }
 }
 
+// ── Voice state reset (clears all 7 voice keys, defaults to English) ──────────
+
+export function resetVoiceState(): void {
+  try {
+    for (const k of [LS_VOICE_NAME, LS_VOICE_LANG, LS_TTS_PROVIDER, LS_ELEVEN_PAUSED,
+      LS_ELEVEN_REASON, 'gieniuVoiceRate', 'gieniuVoicePitch']) {
+      localStorage.removeItem(k)
+    }
+    localStorage.setItem(LS_VOICE_LANG, 'en')
+  } catch { /* non-fatal */ }
+}
+
 // ── Module-level audio state ──────────────────────────────────────────────────
 
 let currentAudio: HTMLAudioElement | null = null
 let currentFetchAbort: AbortController | null = null
 let currentUtterance: SpeechSynthesisUtterance | null = null
 
-// AudioContext used to unlock browser autoplay policy during user gesture.
 let _warmCtx: AudioContext | null = null
 
 export function prewarmAudio(): void {
@@ -91,42 +181,31 @@ function isQuotaOrAuthError(err: string): boolean {
 
 // ── Browser TTS ───────────────────────────────────────────────────────────────
 
-function getBestPolishVoice(): SpeechSynthesisVoice | null {
-  try {
-    const voices = window.speechSynthesis?.getVoices() ?? []
-    const polish  = voices.filter(v => v.lang.startsWith('pl'))
-    const google  = polish.find(v => /google/i.test(v.name))
-    return google ?? polish[0] ?? null
-  } catch { return null }
-}
-
-async function speakBrowser(text: string): Promise<TTSResult> {
+async function speakBrowser(text: string, language: 'en' | 'pl'): Promise<TTSResult> {
   const synth = window.speechSynthesis
   if (!synth) {
     return { ok: false, provider: 'browser', error: 'speechSynthesis not supported in this browser' }
   }
 
-  // Cancel any prior browser TTS
   synth.cancel()
   currentUtterance = null
 
   // Wait up to 800 ms for voices to load if the list is empty
   if (synth.getVoices().length === 0) {
     await new Promise<void>(resolve => {
-      const onVoices = () => resolve()
-      synth.addEventListener('voiceschanged', onVoices, { once: true })
+      synth.addEventListener('voiceschanged', () => resolve(), { once: true })
       setTimeout(resolve, 800)
     })
   }
 
   const utt = new SpeechSynthesisUtterance(text)
-  utt.lang  = 'pl-PL'
-  const voice = getBestPolishVoice()
+  utt.lang  = language === 'en' ? 'en-US' : 'pl-PL'
+  const voice = selectBrowserVoice(language)
   if (voice) utt.voice = voice
   currentUtterance = utt
 
   // eslint-disable-next-line no-console
-  console.log(`GIENIU TTS browser: ${voice?.name ?? 'system default'} (${voice?.lang ?? 'pl-PL'})`)
+  console.log(`GIENIU TTS browser (${language}): ${voice?.name ?? 'system default'} (${voice?.lang ?? utt.lang})`)
 
   return new Promise<TTSResult>(resolve => {
     utt.onend = () => {
@@ -151,15 +230,18 @@ async function speakBrowser(text: string): Promise<TTSResult> {
 export async function speak(text: string): Promise<TTSResult> {
   stopAudio()
 
-  const cleaned = cleanForTTS(text)
-  if (!cleaned.trim()) return { ok: false, provider: 'elevenlabs', error: 'empty text' }
+  const language = getVoiceLanguage()
 
   // If ElevenLabs is paused from a prior quota/auth error, go straight to browser TTS
   if (isElevenLabsPaused()) {
     // eslint-disable-next-line no-console
-    console.log('GIENIU TTS: ElevenLabs paused — using browser TTS directly')
-    return speakBrowser(cleanForBrowserTTS(cleaned))
+    console.log(`GIENIU TTS: ElevenLabs paused — using browser TTS (${language}) directly`)
+    const browserText = language === 'pl' ? cleanForPolishTTS(text) : cleanForEnglishTTS(text)
+    return speakBrowser(browserText, language)
   }
+
+  const elevenText = cleanForTTS(text)
+  if (!elevenText.trim()) return { ok: false, provider: 'elevenlabs', error: 'empty text' }
 
   // eslint-disable-next-line no-console
   console.log(`GIENIU frontend requested voice: ${GIENIU_VOICE_NAME} ${GIENIU_VOICE_ID}`)
@@ -171,7 +253,7 @@ export async function speak(text: string): Promise<TTSResult> {
     const res = await fetch('/.netlify/functions/gieniu-tts', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ text: cleaned }),
+      body:    JSON.stringify({ text: elevenText }),
       signal:  ac.signal,
     })
     currentFetchAbort = null
@@ -202,7 +284,6 @@ export async function speak(text: string): Promise<TTSResult> {
       }
 
     } else {
-      // Parse structured error from the Netlify function
       let errorMsg: string
       try {
         const json = await res.json() as {
@@ -235,7 +316,8 @@ export async function speak(text: string): Promise<TTSResult> {
         // eslint-disable-next-line no-console
         console.warn('GIENIU TTS quota/auth error — switching to browser TTS:', errorMsg)
         markElevenLabsPaused('quota_or_api_error')
-        const browserResult = await speakBrowser(cleanForBrowserTTS(cleaned))
+        const browserText = language === 'pl' ? cleanForPolishTTS(text) : cleanForEnglishTTS(text)
+        const browserResult = await speakBrowser(browserText, language)
         return {
           ...browserResult,
           fallbackFrom: 'elevenlabs',

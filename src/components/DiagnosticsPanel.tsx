@@ -19,6 +19,10 @@ interface Props {
   opsWeekLoading: boolean
   ttsLastElevenError?: string
   ttsFallbackActive?: boolean
+  ttsLanguage?: 'en' | 'pl'
+  browserVoiceInfo?: { name: string; lang: string } | null
+  englishVoiceCount?: number
+  polishVoiceCount?: number
 }
 
 function Row({ label, value, ok }: { label: string; value: string; ok?: boolean | null }) {
@@ -31,7 +35,7 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
   )
 }
 
-export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive }: Props) {
+export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, ttsLanguage, browserVoiceInfo, englishVoiceCount, polishVoiceCount }: Props) {
   const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
   const [dataHealth, setDataHealth] = useState<DataHealthReport | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
@@ -115,6 +119,18 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
           <Row label="TTS voice"      value={ttsFallbackActive ? 'Browser TTS (ElevenLabs paused)' : 'George (ElevenLabs)'} ok={!ttsFallbackActive} />
           {ttsLastElevenError && (
             <Row label="Last ElevenLabs error" value={ttsLastElevenError.slice(0, 80)} ok={false} />
+          )}
+          {ttsLanguage != null && (
+            <Row label="Browser voice language" value={ttsLanguage === 'en' ? 'English (en)' : 'Polish (pl)'} />
+          )}
+          {browserVoiceInfo && (
+            <Row label="Browser voice" value={`${browserVoiceInfo.name} (${browserVoiceInfo.lang})`} />
+          )}
+          {englishVoiceCount != null && (
+            <Row label="English voices available" value={String(englishVoiceCount)} ok={englishVoiceCount > 0} />
+          )}
+          {polishVoiceCount != null && (
+            <Row label="Polish voices available" value={String(polishVoiceCount)} ok={polishVoiceCount > 0} />
           )}
           <Row label="PWA"            value={typeof window !== 'undefined' && 'serviceWorker' in navigator ? 'supported' : 'not supported'} />
           <Row label="Supabase"       value="connected" ok />

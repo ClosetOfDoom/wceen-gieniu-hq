@@ -68,10 +68,10 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
     fail('tts.ts must return { fallbackFrom: "elevenlabs" } when browser fallback triggers')
   }
 
-  if (c.includes('cleanForBrowserTTS')) {
-    pass('tts.ts uses cleanForBrowserTTS for browser TTS text')
+  if (c.includes('cleanForPolishTTS') || c.includes('cleanForEnglishTTS') || c.includes('cleanForBrowserTTS')) {
+    pass('tts.ts cleans text before calling speakBrowser()')
   } else {
-    fail('tts.ts must use cleanForBrowserTTS(text) before calling speakBrowser()')
+    fail('tts.ts must clean text (cleanForPolishTTS / cleanForEnglishTTS) before calling speakBrowser()')
   }
 
   // TTSResult must have provider field
