@@ -17,6 +17,8 @@ interface Props {
   jsuSummary: JsuFunnelSummary | null
   opsWeekReport: OpsWeekReport | null
   opsWeekLoading: boolean
+  ttsLastElevenError?: string
+  ttsFallbackActive?: boolean
 }
 
 function Row({ label, value, ok }: { label: string; value: string; ok?: boolean | null }) {
@@ -29,7 +31,7 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
   )
 }
 
-export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading }: Props) {
+export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive }: Props) {
   const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
   const [dataHealth, setDataHealth] = useState<DataHealthReport | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
@@ -110,7 +112,10 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
           <Row label="Build hash"     value={__BUILD_HASH__} ok />
           <Row label="Build time"     value={__BUILD_TIME__} />
           <Row label="TTS endpoint"   value="/.netlify/functions/gieniu-tts" ok />
-          <Row label="TTS voice"      value="George (ElevenLabs)" ok />
+          <Row label="TTS voice"      value={ttsFallbackActive ? 'Browser TTS (ElevenLabs paused)' : 'George (ElevenLabs)'} ok={!ttsFallbackActive} />
+          {ttsLastElevenError && (
+            <Row label="Last ElevenLabs error" value={ttsLastElevenError.slice(0, 80)} ok={false} />
+          )}
           <Row label="PWA"            value={typeof window !== 'undefined' && 'serviceWorker' in navigator ? 'supported' : 'not supported'} />
           <Row label="Supabase"       value="connected" ok />
         </div>

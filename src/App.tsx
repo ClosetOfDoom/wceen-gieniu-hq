@@ -31,7 +31,7 @@ import {
   type InsightChartSpec,
 } from './brain/responses'
 import { resolveIntent } from './brain/intent'
-import { speak, stopAudio, prewarmAudio } from './voice/tts'
+import { speak, stopAudio, prewarmAudio, isElevenLabsPaused, resetElevenLabs } from './voice/tts'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -260,24 +260,22 @@ function getTtsErrorMessage(err: string): string {
   if (/NotAllowedError|play\(\) failed|autoplay|interrupted/i.test(err))
     return 'Browser blocked autoplay — click "Start voice" once to unlock.'
   if (/missing_api_key/i.test(err))
-    return 'Voice unavailable: No API key found in Netlify env. Check ELEVENLABS_API_KEY (scope must be All, not Build-only).'
-  if (/quota_exceeded/i.test(err))
-    return 'Voice paused: quota exhausted. Upgrade the plan or wait for the monthly reset.'
+    return 'Voice unavailable: No API key found in Netlify env. Check ELEVENLABS_API_KEY.'
   if (/elevenStatus 401/i.test(err)) {
     if (/bearerPrefix/i.test(err))
-      return 'Voice: API key has "Bearer" prefix — was stripped. If still failing, update the key in Netlify env.'
+      return 'Voice: API key has "Bearer" prefix — stripped. Update key if still failing.'
     if (/quotedKey/i.test(err))
-      return 'Voice: API key was quoted — quotes stripped. If still failing, update the key in Netlify env.'
+      return 'Voice: API key was quoted — stripped. Update key if still failing.'
     if (/len:0|len:1[0-9]$/i.test(err))
-      return 'Voice: API key looks too short (possibly truncated). Check ELEVENLABS_API_KEY in Netlify env vars.'
-    return 'Voice: API key rejected (401). Check ELEVENLABS_API_KEY in Netlify env vars — scope must be "All" not "Build".'
+      return 'Voice: API key too short. Check ELEVENLABS_API_KEY in Netlify env vars.'
+    return 'Voice: API key rejected (401). Check ELEVENLABS_API_KEY — scope must be "All".'
   }
   if (/elevenStatus 422/i.test(err))
     return 'Voice: TTS request rejected (422). Voice ID or model may be wrong.'
-  if (/elevenStatus 429/i.test(err))
-    return 'Voice: Rate limit hit (429). Character quota may be exhausted.'
+  if (/browser tts:/i.test(err))
+    return `Browser TTS error: ${err.replace(/browser tts:\s*/i, '').slice(0, 100)}`
   if (/elevenlabs_http_error|HTTP [45]\d\d/i.test(err))
-    return `Voice unavailable: ${err.replace(/^HTTP \d+: /, '').slice(0, 140)}`
+    return `Voice unavailable: ${err.replace(/^HTTP \d+: /, '').slice(0, 120)}`
   return 'Tab may be muted. Unmute the tab in browser settings, then click Speak again.'
 }
 
@@ -297,6 +295,8 @@ function RightPanel({
   onMuteToggle,
   transcript,
   ttsError,
+  ttsFallbackActive,
+  onRetryElevenLabs,
 }: {
   response: string
   chart?: InsightChartSpec
@@ -313,6 +313,8 @@ function RightPanel({
   onMuteToggle: () => void
   transcript: string
   ttsError: string
+  ttsFallbackActive: boolean
+  onRetryElevenLabs: () => void
 }) {
   const [inputVal, setInputVal] = useState('')
 
@@ -391,12 +393,40 @@ function RightPanel({
                   ▶ Speak again
                 </button>
               )}
-              {ttsError && (
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--orange)', lineHeight: 1.4, maxWidth: '200px' }}>
+
+              {/* Browser TTS fallback status — calm, non-blocking */}
+              {ttsFallbackActive && !ttsError && (
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted)', lineHeight: 1.4 }}>
+                  Browser TTS active
+                </span>
+              )}
+
+              {/* Retry ElevenLabs button — shown when fallback is active */}
+              {ttsFallbackActive && (
+                <button
+                  className="btn-sm"
+                  onClick={onRetryElevenLabs}
+                  style={{ fontSize: '0.65rem', padding: '4px 10px', borderColor: 'var(--muted2)', color: 'var(--muted2)' }}
+                  title="Try ElevenLabs again — if quota still exhausted, will stay on Browser TTS"
+                >
+                  Try ElevenLabs again
+                </button>
+              )}
+
+              {/* Only show error for non-quota, non-fallback issues */}
+              {ttsError && !ttsFallbackActive && (
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--orange)', lineHeight: 1.4, maxWidth: '220px' }}>
                   {getTtsErrorMessage(ttsError)}
                 </span>
               )}
             </div>
+
+            {/* Fallback status notice — shown below response when browser TTS took over */}
+            {ttsFallbackActive && (
+              <div style={{ marginTop: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', padding: '5px 8px', background: 'rgba(100,100,100,0.08)', borderRadius: '3px', borderLeft: '2px solid var(--border)' }}>
+                ElevenLabs limit reached — switched to Browser TTS.
+              </div>
+            )}
           </>
         ) : (
           <div style={{ padding: '28px 20px', background: 'var(--surface)', border: '1px dashed var(--border)', borderRadius: '4px', textAlign: 'center' }}>
@@ -521,6 +551,8 @@ export default function App() {
   const [listening, setListening]         = useState(false)
   const [transcript, setTranscript]       = useState('')
   const [ttsError, setTtsError]           = useState('')
+  const [ttsFallbackActive, setTtsFallbackActive] = useState(() => isElevenLabsPaused())
+  const [ttsLastElevenError, setTtsLastElevenError] = useState('')
   const [voiceUnlocked, setVoiceUnlocked] = useState(() => sessionStorage.getItem(VOICE_UNLOCK_KEY) === '1')
   const [lastQuery, setLastQuery]         = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -625,9 +657,13 @@ export default function App() {
       setSpeaking(true)
       const result = await speak(OPENING_TEXT)
       setSpeaking(false)
-      if (!result.ok && !result.aborted) {
+      if (result.ok && result.provider === 'browser') {
+        setTtsFallbackActive(true)
+        if (result.error) setTtsLastElevenError(result.error)
+      } else if (!result.ok && !result.aborted) {
         // eslint-disable-next-line no-console
         console.log('GIENIU TTS error detail', result.error)
+        if (result.provider === 'elevenlabs') setTtsLastElevenError(result.error ?? '')
         setTtsError(result.error ?? 'unknown error')
       } else if (result.ok) {
         // eslint-disable-next-line no-console
@@ -661,7 +697,11 @@ export default function App() {
     const result = await speak(gr.spokenText)
     if (ttsSessionRef.current !== session) return
     setSpeaking(false)
-    if (!result.ok && !result.aborted) {
+    if (result.ok && result.provider === 'browser') {
+      setTtsFallbackActive(true)
+      if (result.error) setTtsLastElevenError(result.error)
+    } else if (!result.ok && !result.aborted) {
+      if (result.provider === 'elevenlabs') setTtsLastElevenError(result.error ?? '')
       setTtsError(result.error ?? 'unknown error')
       // eslint-disable-next-line no-console
       console.log('GIENIU TTS error detail', result.error)
@@ -682,12 +722,19 @@ export default function App() {
     speak(toSpeak).then(res => {
       if (ttsSessionRef.current !== session) return
       setSpeaking(false)
-      if (res.ok && !voiceUnlocked) {
-        sessionStorage.setItem(VOICE_UNLOCK_KEY, '1')
-        setVoiceUnlocked(true)
-        // eslint-disable-next-line no-console
-        console.log('GIENIU voice unlocked', true)
-      } else if (!res.ok && !res.aborted) {
+      if (res.ok && res.provider === 'browser') {
+        setTtsFallbackActive(true)
+        if (res.error) setTtsLastElevenError(res.error)
+        if (!voiceUnlocked) { sessionStorage.setItem(VOICE_UNLOCK_KEY, '1'); setVoiceUnlocked(true) }
+      } else if (res.ok) {
+        if (!voiceUnlocked) {
+          sessionStorage.setItem(VOICE_UNLOCK_KEY, '1')
+          setVoiceUnlocked(true)
+          // eslint-disable-next-line no-console
+          console.log('GIENIU voice unlocked', true)
+        }
+      } else if (!res.aborted) {
+        if (res.provider === 'elevenlabs') setTtsLastElevenError(res.error ?? '')
         setTtsError(res.error ?? 'unknown error')
         // eslint-disable-next-line no-console
         console.log('GIENIU TTS error detail', res.error)
@@ -716,15 +763,45 @@ export default function App() {
     const result = await speak(responseSpoken || response || OPENING_TEXT)
     if (ttsSessionRef.current !== session) return
     setSpeaking(false)
-    if (result.ok) {
+    if (result.ok && result.provider === 'browser') {
+      setTtsFallbackActive(true)
+      if (result.error) setTtsLastElevenError(result.error)
+      sessionStorage.setItem(VOICE_UNLOCK_KEY, '1')
+      setVoiceUnlocked(true)
+    } else if (result.ok) {
       sessionStorage.setItem(VOICE_UNLOCK_KEY, '1')
       setVoiceUnlocked(true)
       // eslint-disable-next-line no-console
       console.log('GIENIU voice unlocked', true)
     } else if (!result.aborted) {
+      if (result.provider === 'elevenlabs') setTtsLastElevenError(result.error ?? '')
       setTtsError(result.error ?? 'unknown error')
       // eslint-disable-next-line no-console
       console.log('GIENIU TTS error detail', result.error)
+    }
+  }
+
+  // ── Retry ElevenLabs ─────────────────────────────────────────────────────────
+
+  async function handleRetryElevenLabs() {
+    resetElevenLabs()
+    setTtsFallbackActive(false)
+    setTtsError('')
+    prewarmAudio()
+    const session = ++ttsSessionRef.current
+    setSpeaking(true)
+    const result = await speak(responseSpoken || response || OPENING_TEXT)
+    if (ttsSessionRef.current !== session) return
+    setSpeaking(false)
+    if (result.ok && result.provider === 'browser') {
+      // ElevenLabs still quota'd — browser fallback kicked in again silently
+      setTtsFallbackActive(true)
+    } else if (result.ok && result.provider === 'elevenlabs') {
+      // ElevenLabs working again
+      setTtsFallbackActive(false)
+    } else if (!result.aborted) {
+      if (result.provider === 'elevenlabs') setTtsLastElevenError(result.error ?? '')
+      setTtsError(result.error ?? 'unknown error')
     }
   }
 
@@ -940,6 +1017,8 @@ export default function App() {
               jsuSummary={jsuSummary}
               opsWeekReport={opsWeekReport}
               opsWeekLoading={opsWeekLoading}
+              ttsLastElevenError={ttsLastElevenError}
+              ttsFallbackActive={ttsFallbackActive}
             />
           )}
 
@@ -962,6 +1041,8 @@ export default function App() {
         onMuteToggle={() => setMuted(m => !m)}
         transcript={transcript}
         ttsError={ttsError}
+        ttsFallbackActive={ttsFallbackActive}
+        onRetryElevenLabs={handleRetryElevenLabs}
       />
 
       {/* Mobile bottom nav */}
