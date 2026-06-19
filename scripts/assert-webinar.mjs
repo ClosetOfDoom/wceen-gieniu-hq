@@ -60,23 +60,31 @@ if (!existsSync(normPath)) {
   }
 }
 
-// 4. webinarFunnel.ts uses raw tables as primary (not view as primary)
+// 4. webinarFunnel.ts uses backend function (service role) or raw tables as primary
 const funnelPath = join(rootDir, 'src/services/webinarFunnel.ts')
 if (!existsSync(funnelPath)) {
   fail('src/services/webinarFunnel.ts does not exist')
 } else {
   const c = readFileSync(funnelPath, 'utf8')
-  // Should query raw tables
-  if (c.includes("from('webinar_participants')") && c.includes("from('webinar_sessions')")) {
-    pass('webinarFunnel.ts queries raw tables')
+  // Must use backend function OR direct raw table queries (never just view)
+  const usesBackend = c.includes('webinar-data') || c.includes('fetchWebinarBackend')
+  const usesRawTables = c.includes("from('webinar_participants')") && c.includes("from('webinar_sessions')")
+  if (usesBackend || usesRawTables) {
+    pass('webinarFunnel.ts uses backend function or raw tables (not just view) for webinar data')
   } else {
-    fail('webinarFunnel.ts does not query webinar_participants or webinar_sessions directly')
+    fail('webinarFunnel.ts does not use backend function or raw tables — may rely on view returning 0')
   }
-  // Should NOT have a block where view returns data and it STOPS there without checking raw participants
-  if (!c.includes('ALWAYS query raw tables') && !c.includes('raw tables as primary')) {
-    fail('webinarFunnel.ts has no comment about raw tables priority — may still rely on view')
+  // Must have comment about RLS / service role / raw tables being required
+  if (c.includes('service role') || c.includes('raw tables') || c.includes('PRIMARY SOURCE')) {
+    pass('webinarFunnel.ts has comment explaining why direct/backend access is required')
   } else {
-    pass('webinarFunnel.ts marks raw tables as primary source')
+    fail('webinarFunnel.ts missing explanation for why service role or raw tables are needed')
+  }
+  // Must NOT show "No ClickMeeting data" when backend returns participantsCount > 0
+  if (c.includes('Backend webinar-data failed')) {
+    pass('webinarFunnel.ts shows explicit backend error message (not fake "No ClickMeeting data")')
+  } else {
+    fail('webinarFunnel.ts does not show backend error message — may show misleading "No ClickMeeting data"')
   }
 }
 

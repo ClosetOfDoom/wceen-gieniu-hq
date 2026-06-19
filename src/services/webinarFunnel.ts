@@ -1,5 +1,7 @@
-﻿import { supabase } from './supabase'
-import { normalizeParticipantFields } from '../lib/clickmeetingNormalize'
+// Webinar funnel data loader.
+// PRIMARY SOURCE: /.netlify/functions/webinar-data (service role — bypasses RLS).
+// The anon key cannot read webinar_sessions or webinar_participants due to RLS.
+// Direct Supabase anon queries will return 0 rows even when the table has data.
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,7 +76,7 @@ export interface JsuFunnelDebug {
   registrationsFromParticipants?: boolean
   attendanceStatus?: 'populated' | 'not_populated'
   purchaseMappingStatus?: 'mapped' | 'not_mapped_yet'
-  source: 'view' | 'raw_tables' | 'none'
+  source: 'view' | 'raw_tables' | 'none' | 'backend-function'
   viewParticipants?: number
   rawParticipants?: number
   hasMismatch?: boolean
@@ -94,88 +96,98 @@ export interface JsuFunnelSummary {
   _debug?: JsuFunnelDebug
 }
 
-// ── Loaders ──────────────────────────────────────────────────────────────────
+// ── Backend response types ────────────────────────────────────────────────────
+
+interface BackendParticipant {
+  id: string
+  session_id: string
+  email_masked: string
+  registered_at: string | null
+  attended: boolean | null
+  attend_duration_min: number | null
+  purchased_at: string | null
+  purchase_value: number | null
+  wix_order_id: string | null
+}
+
+interface BackendSession {
+  id: string
+  session_name?: string
+  product_tag?: string | null
+  scheduled_at?: string
+  registered_count?: number
+  attendee_count?: number
+}
+
+interface WebinarBackendResponse {
+  ok: boolean
+  sessionsCount: number
+  participantsCount: number
+  uniqueEmailsCount: number
+  sessions: BackendSession[]
+  participants: BackendParticipant[]
+  debug: {
+    source: string
+    sessionsError: string | null
+    participantsError: string | null
+  }
+  error?: string
+}
+
+// ── Backend fetch ─────────────────────────────────────────────────────────────
+
+async function fetchWebinarBackend(): Promise<WebinarBackendResponse> {
+  const res = await fetch('/.netlify/functions/webinar-data')
+  if (!res.ok) {
+    const text = await res.text().catch(() => 'no response body')
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`)
+  }
+  return res.json() as Promise<WebinarBackendResponse>
+}
+
+// ── Main loader ───────────────────────────────────────────────────────────────
 
 export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
-  // ALWAYS query raw tables first — views can report 0 while raw table has rows
-  const [{ data: rawSessions, error: sessErr }, { data: rawParticipants, error: partErr }] = await Promise.all([
-    supabase
-      .from('webinar_sessions')
-      .select('*')
-      .order('scheduled_at', { ascending: false })
-      .limit(50),
-    supabase
-      .from('webinar_participants')
-      // registration_date is NOT a real column — it only exists inside JSON blobs
-      // stored in the email field. Extract it via normalizeParticipantFields() after fetch.
-      .select('id, session_id, email, registered_at, attended, attend_duration_min, purchased_at, purchase_value, wix_order_id, created_at')
-      .order('created_at', { ascending: false })
-      .limit(1000),
-  ])
+  // Backend function uses service role key — bypasses RLS that blocks anon queries.
+  let backendData: WebinarBackendResponse | null = null
+  let backendError: string | null = null
 
-  if (sessErr) console.warn('webinar_sessions error:', sessErr.message)
-  if (partErr) console.warn('webinar_participants error:', partErr.message)
-
-  type RawSession = {
-    id: string; session_name?: string; product_tag?: string
-    scheduled_at?: string; ended_at?: string
-    registered_count?: number; attendee_count?: number
-  }
-  type RawParticipant = {
-    id?: string; session_id: string; email?: string | null
-    registered_at?: string | null
-    // registration_date NOT selected from DB — may appear dynamically from email JSON parsing
-    attended?: boolean; attend_duration_min?: number | null
-    purchased_at?: string | null; purchase_value?: number | null
-    wix_order_id?: string | null; created_at?: string | null
-  }
-
-  const sessions    = (rawSessions    ?? []) as RawSession[]
-  // If participant query failed, treat as empty — but still surface error in debug
-  const rawPartRows = partErr ? [] : (rawParticipants ?? []) as RawParticipant[]
-
-  const participantRows = rawPartRows.map(p => {
-    const { email, registered_at } = normalizeParticipantFields({
-      email: p.email, registered_at: p.registered_at,
-      // registration_date not in DB; normalizeParticipantFields will parse it from email JSON if present
-      created_at: p.created_at,
-    })
-    return { ...p, email, registered_at }
-  })
-
-  const uniqueEmails = new Set(
-    participantRows.map(p => (p.email ?? '').toLowerCase()).filter(e => e.includes('@'))
-  ).size
-
-  if (sessions.length === 0 && participantRows.length === 0) {
-    // Only true empty if BOTH failed — a participant query error still lets sessions show
-    const errorMsg = sessErr?.message || partErr?.message
-    console.log('GIENIU webinar: no raw data', { sessErr: sessErr?.message, partErr: partErr?.message })
-    const empty = buildEmptySummary(partErr ? `Participant query error: ${partErr.message}` : errorMsg)
-    empty._debug = {
-      sessionsCount: 0, participantsCount: 0, source: 'none',
-      lastError: errorMsg,
+  try {
+    backendData = await fetchWebinarBackend()
+    if (!backendData.ok) {
+      backendError = backendData.error ?? 'Backend returned ok: false'
     }
+  } catch (e) {
+    backendError = e instanceof Error ? e.message : String(e)
+  }
+
+  if (backendError || !backendData) {
+    const msg = `Backend webinar-data failed: ${backendError ?? 'unknown error'}`
+    console.error('GIENIU webinar backend error:', msg)
+    const empty = buildEmptySummary(msg)
+    empty._debug = { sessionsCount: 0, participantsCount: 0, source: 'none', lastError: msg }
     return empty
   }
 
+  const { sessions, participants, uniqueEmailsCount, debug: backendDebug } = backendData
+
   const registeredFromSessions = sessions.reduce((s, r) => s + (r.registered_count ?? 0), 0)
-  const registered = registeredFromSessions > 0 ? registeredFromSessions : participantRows.length
-  const registrationsFromParticipants = registeredFromSessions === 0 && participantRows.length > 0
+  const registered = registeredFromSessions > 0 ? registeredFromSessions : participants.length
+  const registrationsFromParticipants = registeredFromSessions === 0 && participants.length > 0
 
   const attendeesFromSessions     = sessions.reduce((s, r) => s + (r.attendee_count ?? 0), 0)
-  const attendeesFromParticipants = participantRows.filter(p => p.attended).length
+  const attendeesFromParticipants = participants.filter(p => p.attended).length
   const attendees = attendeesFromSessions > 0 ? attendeesFromSessions : attendeesFromParticipants
 
-  const purchases = participantRows.filter(p => p.purchased_at || p.wix_order_id).length
-  const revenue   = participantRows.reduce((s, p) => s + (p.purchase_value ?? 0), 0)
+  const purchases = participants.filter(p => p.purchased_at || p.wix_order_id).length
+  const revenue   = participants.reduce((s, p) => s + (p.purchase_value ?? 0), 0)
 
   const hasClickMeetingData = registered > 0 || attendees > 0 || sessions.length > 0
   const attendanceRate = registered > 0 && attendees > 0 ? attendees / registered : null
   const purchaseRate   = attendees   > 0                  ? purchases / attendees  : null
 
   const syntheticRows: JsuFunnelRow[] = sessions.map(s => {
-    const sp  = participantRows.filter(p => p.session_id === s.id)
+    const sp  = participants.filter(p => p.session_id === s.id)
     const spu = sp.filter(p => p.purchased_at || p.wix_order_id)
     const spr = sp.reduce((acc, p) => acc + (p.purchase_value ?? 0), 0)
     const spa = sp.filter(p => p.attended).length
@@ -202,57 +214,59 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
     attendance_rate: attendanceRate, purchase_rate: purchaseRate,
   }
 
-  const { bottleneck, diagnosis } = diagnose(totals, rates, false, hasClickMeetingData, participantRows.length)
+  const { bottleneck, diagnosis } = diagnose(totals, rates, false, hasClickMeetingData, participants.length)
 
-  console.log('GIENIU webinar raw_tables', {
-    sessions: sessions.length, participants: participantRows.length,
-    uniqueEmails, registered, attendees, purchases, source: 'raw_tables',
+  const partErr = backendDebug.participantsError
+  const sessErr = backendDebug.sessionsError
+
+  console.log('GIENIU webinar backend-function', {
+    sessions: sessions.length, participants: participants.length,
+    uniqueEmails: uniqueEmailsCount, registered, attendees, purchases,
   })
 
   return {
     sessions: syntheticRows, hasEmailData: false, hasClickMeetingData,
     bottleneck, diagnosis, totals, rates,
     _debug: {
-      sessionsCount: sessions.length, participantsCount: participantRows.length,
-      uniqueEmails, registrationsFromParticipants,
-      source: 'raw_tables', rawParticipants: participantRows.length,
+      sessionsCount: sessions.length, participantsCount: participants.length,
+      uniqueEmails: uniqueEmailsCount, registrationsFromParticipants,
+      source: 'backend-function', rawParticipants: participants.length,
       latestSessionDate: sessions[0]?.scheduled_at?.slice(0, 10),
       latestSessionName: sessions[0]?.session_name,
       attendanceStatus:      attendees > 0 ? 'populated' : 'not_populated',
       purchaseMappingStatus: purchases > 0 ? 'mapped'    : 'not_mapped_yet',
-      lastError: partErr ? `participant query: ${partErr.message}` : sessErr ? `sessions query: ${sessErr.message}` : undefined,
+      lastError: partErr ? `participant: ${partErr}` : sessErr ? `sessions: ${sessErr}` : undefined,
     },
   }
 }
 
 export async function loadJsuParticipantJourney(sessionId?: string): Promise<JsuParticipantRow[]> {
-  let query = supabase
-    .from('webinar_participants')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(500)
-  if (sessionId) query = query.eq('session_id', sessionId)
-  const { data, error } = await query
-  if (error) { console.warn('webinar_participants query error:', error.message); return [] }
-  return ((data ?? []) as Record<string, unknown>[]).map(r => {
-    const rawEmail = String(r.email ?? '')
-    const { email, registered_at } = normalizeParticipantFields({
-      email: rawEmail, registered_at: r.registered_at as string | null,
-      // registration_date not a real DB column — normalizeParticipantFields parses it from email JSON
-      created_at: r.created_at as string | null,
-    })
-    return {
-      participant_id:      String(r.id ?? String(Math.random())),
-      session_id:          String(r.session_id ?? ''), email,
-      session_date:        String(r.session_date ?? registered_at?.slice(0, 10) ?? ''),
-      session_name:        String(r.session_name ?? ''), registered_at,
-      attended:            Boolean(r.attended ?? false),
-      attend_duration_min: (r.attend_duration_min as number | null) ?? null,
-      purchased_at:        (r.purchased_at as string | null) ?? null,
-      purchase_value:      (r.purchase_value as number | null) ?? null,
-      wix_order_id:        (r.wix_order_id as string | null) ?? null,
-    }
-  })
+  let backendData: WebinarBackendResponse | null = null
+  try {
+    backendData = await fetchWebinarBackend()
+  } catch (e) {
+    console.warn('webinar-data backend failed for participant journey:', e)
+    return []
+  }
+  if (!backendData?.ok) return []
+
+  const rows = sessionId
+    ? backendData.participants.filter(p => p.session_id === sessionId)
+    : backendData.participants
+
+  return rows.map(p => ({
+    participant_id:      String(p.id ?? ''),
+    session_id:          p.session_id,
+    email:               p.email_masked, // masked — only used for display
+    session_date:        p.registered_at?.slice(0, 10) ?? '',
+    session_name:        '',
+    registered_at:       p.registered_at,
+    attended:            p.attended ?? false,
+    attend_duration_min: p.attend_duration_min ?? null,
+    purchased_at:        p.purchased_at  ?? null,
+    purchase_value:      p.purchase_value ?? null,
+    wix_order_id:        p.wix_order_id  ?? null,
+  }))
 }
 
 // ── Diagnosis ─────────────────────────────────────────────────────────────────
@@ -322,3 +336,4 @@ export function fmtPlnFunnel(n: number | null | undefined): string {
   if (n == null) return '—'
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' PLN'
 }
+

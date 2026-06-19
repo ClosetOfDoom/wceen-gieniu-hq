@@ -91,7 +91,7 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary }: Props) 
           <Row label="Participants in DB"  value={String(webinarParticipants)} ok={webinarParticipants > 0} />
           <Row label="Latest session"      value={jsuSummary?._debug?.latestSessionName?.slice(0, 30) ?? '—'} />
           <Row label="Latest session date" value={jsuSummary?._debug?.latestSessionDate ?? '—'} />
-          <Row label="Data source"         value={jsuSummary?._debug?.source ?? '—'} ok={jsuSummary?._debug?.source === 'raw_tables'} />
+          <Row label="Data source"         value={jsuSummary?._debug?.source ?? '—'} ok={jsuSummary?._debug?.source === 'raw_tables' || jsuSummary?._debug?.source === 'backend-function'} />
           <Row label="Bottleneck"          value={jsuSummary?.bottleneck ?? '—'} ok={jsuSummary?.bottleneck === 'OK'} />
         </div>
 
