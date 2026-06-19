@@ -353,7 +353,6 @@ export const handler = async (event) => {
     try {
       const rawOrderData = await supabaseGet(supabaseUrl, serviceKey, tableName, {
         select: '*',
-        order:  'created_at.desc',
         limit:  200,
       })
       rawOrders = rawOrderData
@@ -615,6 +614,7 @@ export const handler = async (event) => {
         wixOrdersHasProductData:  debug.wixOrdersHasProductData,
         wixOrdersHasEmailData:    debug.wixOrdersHasEmailData,
         wixOrdersError,
+        orderTableErrors,
         webinarSessionsError:     debug.webinarSessionsError,
         webinarParticipantsError: debug.webinarParticipantsError,
         wixPerformanceError:      debug.wixPerformanceError,
