@@ -1,5 +1,6 @@
 import type { DailyPerformance, DataStatus, MetaAdDaily, MetaStatsToday } from '../services/data'
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
+import type { OpsWeekReport } from '../lib/opsWeekReport'
 import {
   buildRevenueReport, buildOperationalReport, buildPipelineReport,
   buildCPAThresholds, buildCPAThresholdsLang, buildRedFlags,
@@ -12,6 +13,7 @@ import {
   buildLast7Days, buildPeriodComparison, buildAdsDiagnosis,
   buildWorkflowInstructions,
   buildMemoryBundleAnswer, buildMemoryBundleSpoken,
+  buildJsuWeekReport, buildJsuWeekReportSpoken, buildJsuSalesAnswer, buildJsuSalesSpoken,
   // spoken text builders
   buildYesterdaySpoken, buildOpsBriefingSpoken, buildAdsDiagnosisSpoken,
   buildPeriodComparisonSpoken, buildWeekToDateSpoken, buildJsuWebinarSpoken,
@@ -32,6 +34,7 @@ export interface IntentContext {
   metaStats: MetaStatsToday
   jsuSummary: JsuFunnelSummary | null
   trend: DailyPerformance[]
+  opsWeekReport: OpsWeekReport | null
 }
 
 function normalizePl(text: string): string {
@@ -66,7 +69,7 @@ function detectTimeRange(q: string): TimeRange | null {
 export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse {
   const rawQuery = query
   const q = normalizePl(query.toLowerCase().trim())
-  const { perf, status, ads, metaStats, jsuSummary, trend } = ctx
+  const { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport } = ctx
 
   let detectedIntent  = 'ops_briefing'
   let detectedPeriod: string | null = null
@@ -112,6 +115,32 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
       const spoken = `No today data yet, Lifidi. Latest from ${lDate}: ${orders} orders, ${revenue.toFixed(0)} Polish zloty revenue, ${spend.toFixed(0)} zloty spend.${cpa != null ? ` C P A was ${cpa.toFixed(0)} zloty.` : ''} Ask me about yesterday or the last 7 days for context.`
       result = w(lines.join('\n'), spoken)
     }
+  }
+
+  // ── JSU weekly report ("co bylo w tym tygodniu", "raport tygodnia") ──────────
+  // Must be BEFORE webinar_funnel — these queries contain 'jsu'/'webinar' but want week-level data
+  if (!result && has(q,
+    'co bylo w tym tygodniu', 'co sie dzialo w tym tygodniu', 'raport tygodnia', 'raport tygodniowy',
+    'jaki byl ten tydzien', 'jak poszedl ten tydzien', 'jak szedl tydzien', 'podsumowanie tygodnia',
+    'summary of the week', 'week report', 'jak poszedl webinar pamieciowy', 'jak poszedl wczorajszy webinar',
+    'jak poszedl jsu', 'jak poszedl webinar jsu', 'wyniki webinaru', 'wyniki webinar',
+    'wczoraj byl webinar', 'jak bylo na webinarze', 'co bylo na webinarze',
+    'ile osob bylo na webinarze', 'ile osob przyszlo na webinar',
+  )) {
+    detectedIntent = 'jsu_week_report'
+    result = w(buildJsuWeekReport(opsWeekReport), buildJsuWeekReportSpoken(opsWeekReport))
+  }
+
+  // ── JSU sales query ("ile zeszło JSU", "ile sprzedało JSU") ──────────────────
+  // Must be BEFORE webinar_funnel and product_scope handlers — both catch 'jsu'
+  if (!result && has(q,
+    'ile zeszlo jsu', 'ile sprzedalo jsu', 'ile jsu sprzedano', 'ile sprzedalismy jsu',
+    'ile sie sprzedalo jsu', 'ile kursow jsu', 'jsu sprzedaz', 'jsu sales',
+    'ile szlo jsu', 'jsu sprzedal', 'ile jsu kupiono', 'ile jsu kupil',
+    'ile sprzedano kursow', 'ile kursow sprzedano',
+  )) {
+    detectedIntent = 'jsu_sales_query'
+    result = w(buildJsuSalesAnswer(opsWeekReport), buildJsuSalesSpoken(opsWeekReport))
   }
 
   // ── JSU / webinar funnel ──────────────────────────────────────────────────────

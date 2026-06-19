@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { DailyPerformance, MetaAdDaily, AutomationRun } from '../services/data'
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import { fetchDataContract, type DataContractReport } from '../lib/dataAudit'
+import type { OpsWeekReport } from '../lib/opsWeekReport'
 
 // Injected at build time by vite.config.ts
 declare const __BUILD_HASH__: string
@@ -13,6 +14,8 @@ interface Props {
   ads: MetaAdDaily[]
   runs: AutomationRun[]
   jsuSummary: JsuFunnelSummary | null
+  opsWeekReport: OpsWeekReport | null
+  opsWeekLoading: boolean
 }
 
 function Row({ label, value, ok }: { label: string; value: string; ok?: boolean | null }) {
@@ -25,7 +28,7 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
   )
 }
 
-export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary }: Props) {
+export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading }: Props) {
   const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
 
   useEffect(() => {
@@ -128,6 +131,57 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary }: Props) 
                   GIENIU cannot answer "how many memory bundles" until line items are saved per order.<br />
                   Fix: extend Make → Wix scenario → see docs/wix_orders_product_mapping_fix.md
                 </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Ops Week Report */}
+        <div className="card" style={{ padding: '18px 20px', gridColumn: '1 / -1' }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '12px' }}>
+            Ops Week Report (JSU / Memory)
+          </div>
+          {opsWeekLoading || opsWeekReport === null ? (
+            <Row label="Status" value={opsWeekLoading ? 'loading…' : 'not loaded'} />
+          ) : !opsWeekReport.ok ? (
+            <Row label="Error" value={opsWeekReport.error ?? 'unknown error'} ok={false} />
+          ) : (
+            <>
+              <Row label="Week range"
+                value={`${opsWeekReport.range.week_start} → ${opsWeekReport.range.week_end}`}
+                ok />
+              <Row label="JSU sessions this week"
+                value={String(opsWeekReport.webinars.this_week.jsu_sessions)}
+                ok={opsWeekReport.webinars.this_week.jsu_sessions > 0} />
+              <Row label="JSU participants this week"
+                value={String(opsWeekReport.webinars.this_week.jsu_participants)}
+                ok={opsWeekReport.webinars.this_week.jsu_participants > 0} />
+              <Row label="Yesterday JSU webinar"
+                value={opsWeekReport.summary.jsu_webinar_ran_yesterday ? 'yes' : 'no'}
+                ok={opsWeekReport.summary.jsu_webinar_ran_yesterday} />
+              <Row label="Yesterday JSU participants"
+                value={String(opsWeekReport.webinars.yesterday.jsu_participants)}
+                ok={opsWeekReport.webinars.yesterday.jsu_participants > 0} />
+              <Row label="All Wix orders this week"
+                value={String(opsWeekReport.orders.this_week.all_orders)}
+                ok={opsWeekReport.orders.this_week.all_orders > 0} />
+              <Row label="JSU course orders"
+                value={opsWeekReport.orders.this_week.product_classification === 'available'
+                  ? String(opsWeekReport.orders.this_week.jsu_course_orders)
+                  : 'unavailable (no product data)'}
+                ok={opsWeekReport.orders.this_week.product_classification === 'available'
+                  ? opsWeekReport.orders.this_week.jsu_course_orders > 0
+                  : null} />
+              <Row label="Attribution"
+                value={opsWeekReport.attribution.attribution_reason.slice(0, 60)}
+                ok={opsWeekReport.attribution.attributed_sales > 0 ? true : null} />
+              <Row label="Order source"
+                value={opsWeekReport.debug.orderClassificationSource} />
+              {opsWeekReport.debug.webinarSessionsError && (
+                <Row label="Sessions error" value={opsWeekReport.debug.webinarSessionsError.slice(0, 60)} ok={false} />
+              )}
+              {opsWeekReport.debug.wixOrdersError && (
+                <Row label="Orders error" value={opsWeekReport.debug.wixOrdersError.slice(0, 60)} ok={false} />
               )}
             </>
           )}

@@ -3,6 +3,7 @@ import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import { pct } from '../services/webinarFunnel'
 import { normalizeProduct, productFromQuery, type ProductTag } from '../lib/webinarProduct'
 import { PRODUCT_CLASSIFICATION_REASON } from '../lib/productClassifier'
+import type { OpsWeekReport } from '../lib/opsWeekReport'
 import {
   pickPhrase,
   OPENERS, GOOD_VERDICTS, HIGH_CPA_VERDICTS, SALES_WARNING_VERDICTS,
@@ -1503,6 +1504,158 @@ export function buildJsuWebinarSpoken(s: JsuFunnelSummary | null, queryHint = ''
   if (diagFirst) parts.push(`${diagFirst}.`)
   if (s.hasClickMeetingData) parts.push('Funnel chart is on screen.')
   return parts.join(' ')
+}
+
+// ── JSU Weekly Report builders ────────────────────────────────────────────────
+
+export function buildJsuWeekReport(r: OpsWeekReport | null): string {
+  if (!r) {
+    return `— JSU / MEMORY WEEK REPORT —\n\nWeekly data not loaded yet. Try asking again in a moment.`
+  }
+  if (!r.ok) {
+    return `— JSU / MEMORY WEEK REPORT —\n\nBackend error: ${r.error ?? 'unknown'}\n\nSet SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Netlify environment variables.`
+  }
+
+  const { webinars, orders, attribution, summary, range, debug } = r
+  const w  = webinars.this_week
+  const wy = webinars.yesterday
+  const o  = orders.this_week
+  const oy = orders.yesterday
+
+  const lines: string[] = [
+    `— JSU / MEMORY WEEK REPORT — ${range.week_start} to ${range.week_end} —`,
+    '',
+    '── WEBINARS ──',
+  ]
+
+  if (w.jsu_sessions === 0 && w.all_participants === 0) {
+    lines.push('No JSU/memory webinar sessions found this week.')
+  } else {
+    lines.push(`JSU sessions this week: ${w.jsu_sessions}`)
+    lines.push(`JSU participants this week: ${w.jsu_participants}`)
+    for (const s of w.sessions) {
+      const dateStr = s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' }) : s.date
+      lines.push(`  ${dateStr}  —  "${s.session_name}"  —  ${s.participants} participants`)
+    }
+  }
+
+  lines.push('')
+  if (summary.jsu_webinar_ran_yesterday) {
+    lines.push(`Yesterday (${range.yesterday}): JSU webinar ran — ${wy.jsu_participants} participant${wy.jsu_participants !== 1 ? 's' : ''}.`)
+  } else {
+    lines.push(`Yesterday (${range.yesterday}): no JSU webinar.`)
+  }
+
+  lines.push('', '── ORDERS ──')
+
+  if (o.product_classification === 'unavailable') {
+    lines.push(`All Wix orders this week: ${o.all_orders}  |  ${o.all_revenue.toFixed(2)} PLN revenue`)
+    lines.push(`Product breakdown: not available — ${debug.orderClassificationSource} has no item-level data.`)
+    lines.push(`JSU course orders: cannot determine (data source: ${debug.orderClassificationSource})`)
+  } else {
+    lines.push(`All Wix orders this week: ${o.all_orders}`)
+    lines.push(`JSU course orders: ${o.jsu_course_orders}  |  ${o.jsu_course_revenue.toFixed(2)} PLN`)
+    lines.push(`Memory pack orders: ${o.memory_pack_orders}  |  ${o.memory_pack_revenue.toFixed(2)} PLN`)
+    lines.push(`Językozak AI orders: ${o.jzk_orders}`)
+    lines.push(`Unclassified orders: ${o.unclassified_orders}`)
+  }
+
+  lines.push(`Yesterday: ${oy.all_orders} Wix orders`)
+  if (o.product_classification === 'available') {
+    lines.push(`Yesterday JSU course: ${oy.jsu_course_orders}`)
+  }
+
+  lines.push('', '── ATTRIBUTION ──')
+  lines.push(`Yesterday JSU participants: ${attribution.yesterday_webinar_participants}`)
+  lines.push(`JSU sales after webinar: ${attribution.jsu_sales_after_webinar}`)
+  lines.push(`Email-attributed: ${attribution.attributed_sales}`)
+  lines.push(attribution.attribution_reason)
+
+  if (r.meta.this_week_spend > 0) {
+    lines.push('', `Meta spend this week: ${r.meta.this_week_spend.toFixed(2)} PLN`)
+  }
+
+  return lines.join('\n')
+}
+
+export function buildJsuWeekReportSpoken(r: OpsWeekReport | null): string {
+  if (!r || !r.ok) {
+    return r?.error
+      ? `Lifidi, the weekly report backend returned an error: ${r.error.slice(0, 100)}.`
+      : 'Weekly report is not loaded yet. Try asking again in a moment.'
+  }
+
+  const { webinars, orders, attribution, summary } = r
+  const w = webinars.this_week
+  const o = orders.this_week
+  const parts: string[] = ['Lifidi, here is the weekly JSU and memory summary.']
+
+  // Webinars
+  if (w.jsu_sessions > 0) {
+    parts.push(`This week: ${w.jsu_sessions} JSU webinar session${w.jsu_sessions > 1 ? 's' : ''}, ${w.jsu_participants} participant${w.jsu_participants !== 1 ? 's' : ''}.`)
+    if (summary.jsu_webinar_ran_yesterday) {
+      parts.push(`Yesterday's memory webinar had ${webinars.yesterday.jsu_participants} participant${webinars.yesterday.jsu_participants !== 1 ? 's' : ''}.`)
+    }
+  } else {
+    parts.push('No JSU webinar sessions found this week.')
+  }
+
+  // Orders
+  if (o.product_classification === 'available') {
+    parts.push(`JSU course sales this week: ${o.jsu_course_orders}.`)
+    if (o.memory_pack_orders > 0) parts.push(`Memory pack sales: ${o.memory_pack_orders}.`)
+    parts.push(`I am not counting all ${o.all_orders} Wix orders here — only JSU classified ones.`)
+  } else {
+    parts.push(`Total Wix orders this week: ${o.all_orders} for ${o.all_revenue.toFixed(0)} zloty. Product breakdown is unavailable because order line items are not saved to Supabase.`)
+  }
+
+  // Attribution
+  if (attribution.attributed_sales > 0) {
+    parts.push(`Attribution confirmed: ${attribution.attributed_sales} JSU sale email-matched to yesterday's webinar.`)
+  } else if (attribution.jsu_sales_after_webinar > 0) {
+    parts.push(`Attribution: ${attribution.attribution_reason}`)
+  }
+
+  return parts.join(' ')
+}
+
+export function buildJsuSalesAnswer(r: OpsWeekReport | null): string {
+  if (!r || !r.ok) {
+    return `— JSU COURSE SALES —\n\nCould not load weekly report: ${r?.error ?? 'not loaded yet'}.`
+  }
+  const { orders, range } = r
+  const o  = orders.this_week
+  const oy = orders.yesterday
+
+  const lines = ['— JSU COURSE SALES —', '']
+  lines.push(`Week ${range.week_start} → ${range.week_end}:`)
+
+  if (o.product_classification === 'available') {
+    lines.push(`  JSU course orders: ${o.jsu_course_orders}  (${o.jsu_course_revenue.toFixed(2)} PLN)`)
+    lines.push(`  Yesterday: ${oy.jsu_course_orders} JSU orders`)
+    lines.push('')
+    lines.push(`I am NOT counting the ${o.all_orders} total Wix orders. Only orders classified as JSU_COURSE.`)
+  } else {
+    lines.push(`  All Wix orders this week: ${o.all_orders}  (${o.all_revenue.toFixed(2)} PLN)`)
+    lines.push(`  Yesterday: ${oy.all_orders} Wix orders`)
+    lines.push('')
+    lines.push('⚠  Product-level classification is unavailable.')
+    lines.push('The orders database does not store product names per line item.')
+    lines.push('I cannot isolate JSU-only orders from the total.')
+    lines.push('See docs/wix_orders_product_mapping_fix.md for the fix.')
+  }
+  return lines.join('\n')
+}
+
+export function buildJsuSalesSpoken(r: OpsWeekReport | null): string {
+  if (!r || !r.ok) return 'JSU course sales data is not available. Check the weekly report backend.'
+  const { orders } = r
+  const o = orders.this_week
+  if (o.product_classification === 'available') {
+    const y = orders.yesterday.jsu_course_orders
+    return `JSU course sales this week: ${o.jsu_course_orders}. Yesterday: ${y}. I am not counting all ${o.all_orders} Wix orders here.`
+  }
+  return `I cannot isolate JSU orders from the ${o.all_orders} total Wix orders this week — product names are not stored per line item. Total Wix revenue: ${o.all_revenue.toFixed(0)} zloty.`
 }
 
 /** Detect the dominant product tag from the loaded sessions. */

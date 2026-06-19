@@ -19,6 +19,7 @@ import {
   loadJsuWebinarFunnel, loadJsuParticipantJourney,
   type JsuFunnelSummary, type JsuParticipantRow,
 } from './services/webinarFunnel'
+import { fetchOpsWeekReport, type OpsWeekReport } from './lib/opsWeekReport'
 import {
   buildJsuWebinarReport, buildWhyCourseNotSelling, buildJsuFunnelReport,
   buildCompareJsuWebinars, buildDeliverabilityReport, buildMailingDiagnosis,
@@ -502,6 +503,10 @@ export default function App() {
   const [jsuLoading, setJsuLoading]                   = useState(false)
   const [jsuParticipantsLoading, setJsuParticipantsLoading] = useState(false)
 
+  // Ops week report
+  const [opsWeekReport, setOpsWeekReport]       = useState<OpsWeekReport | null>(null)
+  const [opsWeekLoading, setOpsWeekLoading]     = useState(false)
+
   // Conversational state
   const [response, setResponse]           = useState('')
   const [responseSpoken, setResponseSpoken] = useState('')
@@ -564,6 +569,19 @@ export default function App() {
     setJsuLoading(false)
   }, [])
 
+  const loadOpsWeekReport = useCallback(async () => {
+    setOpsWeekLoading(true)
+    try {
+      setOpsWeekReport(await fetchOpsWeekReport())
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('GIENIU ops-week-report failed:', e)
+      setOpsWeekReport({ ok: false, error: String(e), range: {} as never, webinars: {} as never, orders: {} as never, attribution: {} as never, meta: {} as never, summary: {} as never, debug: {} as never })
+    } finally {
+      setOpsWeekLoading(false)
+    }
+  }, [])
+
   const loadJsuParticipants = useCallback(async () => {
     setJsuParticipantsLoading(true)
     setJsuParticipants(await loadJsuParticipantJourney())
@@ -578,9 +596,10 @@ export default function App() {
     loadRuns()
     loadJsuFunnel()
     loadJsuParticipants()
+    loadOpsWeekReport()
     const interval = setInterval(() => { loadData(); loadAds() }, 5 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants])
+  }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants, loadOpsWeekReport])
 
   // ── Opening greeting ─────────────────────────────────────────────────────────
 
@@ -667,7 +686,7 @@ export default function App() {
   function handleIntentQuery(query: string) {
     setLastQuery(query)
     stopSpeaking()
-    const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend })
+    const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport })
     speakAnswer(result)
   }
 
@@ -905,6 +924,8 @@ export default function App() {
               ads={ads}
               runs={runs}
               jsuSummary={jsuSummary}
+              opsWeekReport={opsWeekReport}
+              opsWeekLoading={opsWeekLoading}
             />
           )}
 
