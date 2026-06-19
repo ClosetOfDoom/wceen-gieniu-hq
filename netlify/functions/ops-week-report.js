@@ -347,11 +347,12 @@ export const handler = async (event) => {
   let rawOrders = []
   let wixOrdersError = null
   let ordersTable = 'none'
+  const orderTableErrors = {}
   const orderTableCandidates = ['orders', 'wix_orders']
   for (const tableName of orderTableCandidates) {
     try {
       const rawOrderData = await supabaseGet(supabaseUrl, serviceKey, tableName, {
-        select: 'id,external_order_id,product_name_raw,product_name,item_name,amount,total,price,buyer_email,email,customer_email,order_date,created_at,sku,line_items',
+        select: '*',
         order:  'created_at.desc',
         limit:  200,
       })
@@ -365,16 +366,23 @@ export const handler = async (event) => {
       debug.wixOrdersHasEmailData = emailFields.some(f => f in sample && sample[f] != null)
       // Filter for this week client-side
       rawOrders = rawOrders.filter(r => {
-        const d = (r.order_date ?? r.created_at ?? r.date ?? '').slice(0, 10)
+        const d = (r.order_date ?? r.created_at ?? r.date ?? r.created ?? '').slice(0, 10)
         return !d || d >= weekStart
       })
       wixOrdersError = null
       debug.wixOrdersError = null
       break
     } catch (e) {
-      wixOrdersError = String(e?.message ?? e)
-      debug.wixOrdersError = wixOrdersError
+      const errMsg = String(e?.message ?? e)
+      orderTableErrors[tableName] = errMsg
+      wixOrdersError = errMsg
+      debug.wixOrdersError = errMsg
     }
+  }
+  if (ordersTable === 'none') {
+    debug.wixOrdersError = Object.entries(orderTableErrors)
+      .map(([t, e]) => `${t}: ${e.slice(0, 100)}`)
+      .join(' | ')
   }
 
   // ── Classify raw orders ───────────────────────────────────────────────────────
