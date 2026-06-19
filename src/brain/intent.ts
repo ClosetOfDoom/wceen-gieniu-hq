@@ -14,7 +14,7 @@ import {
   buildWorkflowInstructions,
   buildMemoryBundleAnswer, buildMemoryBundleSpoken,
   buildJsuWeekReport, buildJsuWeekReportSpoken, buildJsuSalesAnswer, buildJsuSalesSpoken,
-  buildJzkWeekReport, buildJzkWeekReportSpoken,
+  buildJzkWeekReport, buildJzkWeekReportSpoken, buildJzkSalesAnswer, buildJzkSalesSpoken,
   // spoken text builders
   buildYesterdaySpoken, buildOpsBriefingSpoken, buildAdsDiagnosisSpoken,
   buildPeriodComparisonSpoken, buildWeekToDateSpoken, buildJsuWebinarSpoken,
@@ -142,6 +142,19 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
   )) {
     detectedIntent = 'jsu_sales_query'
     result = w(buildJsuSalesAnswer(opsWeekReport), buildJsuSalesSpoken(opsWeekReport))
+  }
+
+  // ── JZK sales query ("ile zeszło Językozaka", "ile zeszło JZK") ─────────────
+  // 347 PLN = JZK_LANGUAGE absolute rule; answers from jzk_orders
+  // Positioned before the JZK week-report handler (which also catches 'jezykozak')
+  if (!result && has(q,
+    'ile zeszlo jezykozaka', 'ile sprzedalo jezykozaka', 'ile zeszlo jzk',
+    'ile sprzedalo jzk', 'ile jzk sprzedano', 'ile jezykozakow', 'ile jezykozak',
+    'jzk sprzedaz', 'jzk sales', 'ile jezykozak ai', 'ile zeszlo jezyk ai',
+    'sprzedaz jezykozaka', 'wyniki sprzedazy jzk',
+  )) {
+    detectedIntent = 'jzk_sales_query'
+    result = w(buildJzkSalesAnswer(opsWeekReport), buildJzkSalesSpoken(opsWeekReport))
   }
 
   // ── JZK (Językozak AI) weekly report ─────────────────────────────────────────

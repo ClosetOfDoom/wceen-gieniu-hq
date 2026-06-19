@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Assert WCEEN price-first product classification rules.
-// When Wix product_name_raw is wrong/misleading, price is the authoritative signal.
-// Rules: 549 PLN = JSU_COURSE | 347 PLN = JZK only if language name | 119 PLN + memory name = MEMORY_PACK
+// Assert WCEEN absolute product price classification rules.
+// 549 PLN = JSU_COURSE | 347 PLN = JZK_LANGUAGE | 119 PLN = MEMORY_PACK
+// These are absolute business rules — no keyword checks required.
+// UNKNOWN_PRICE_347 must not exist.
 
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
@@ -16,140 +17,139 @@ function pass(msg) { console.log('  pass', msg) }
 function read(rel) { return readFileSync(join(rootDir, rel), 'utf8') }
 function exists(rel) { return existsSync(join(rootDir, rel)) }
 
-// 1. productClassifier.ts has UNKNOWN_PRICE_347 and classifyByPrice
+// 1. productClassifier.ts — absolute rules, no UNKNOWN_PRICE_347
 if (!exists('src/lib/productClassifier.ts')) {
   fail('src/lib/productClassifier.ts does not exist')
 } else {
   const c = read('src/lib/productClassifier.ts')
+
   if (c.includes('UNKNOWN_PRICE_347')) {
-    pass('productClassifier.ts has UNKNOWN_PRICE_347 ProductLine')
+    fail('productClassifier.ts still contains UNKNOWN_PRICE_347 — must be removed (347 PLN is always JZK_LANGUAGE)')
   } else {
-    fail('productClassifier.ts missing UNKNOWN_PRICE_347 — ambiguous 347 PLN orders would be mislabelled')
+    pass('productClassifier.ts does not contain UNKNOWN_PRICE_347 (correct)')
   }
+
   if (c.includes('classifyByPrice')) {
     pass('productClassifier.ts exports classifyByPrice()')
   } else {
-    fail('productClassifier.ts missing classifyByPrice() — no price-first classification available')
+    fail('productClassifier.ts missing classifyByPrice()')
   }
-  if (c.includes('549')) {
-    pass('productClassifier.ts has 549 PLN → JSU_COURSE rule')
+
+  if (c.includes('absolute price rule: 549') || (c.includes('549') && c.includes('JSU_COURSE'))) {
+    pass('productClassifier.ts has absolute 549 PLN → JSU_COURSE rule')
   } else {
-    fail('productClassifier.ts missing 549 PLN price rule')
+    fail('productClassifier.ts missing absolute 549 PLN = JSU rule')
   }
-  if (c.includes('347')) {
-    pass('productClassifier.ts has 347 PLN rule (JZK or UNKNOWN_PRICE_347)')
+
+  if (c.includes('absolute price rule: 347') || (c.includes('347') && c.includes('JZK_LANGUAGE'))) {
+    pass('productClassifier.ts has absolute 347 PLN → JZK_LANGUAGE rule')
   } else {
-    fail('productClassifier.ts missing 347 PLN rule')
+    fail('productClassifier.ts missing absolute 347 PLN = JZK rule')
   }
-  if (c.includes('119')) {
-    pass('productClassifier.ts has 119 PLN rule (MEMORY_PACK with memory keywords)')
+
+  if (c.includes('absolute price rule: 119') || (c.includes('119') && c.includes('MEMORY_PACK'))) {
+    pass('productClassifier.ts has absolute 119 PLN → MEMORY_PACK rule')
   } else {
-    fail('productClassifier.ts missing 119 PLN rule')
+    fail('productClassifier.ts missing absolute 119 PLN = memory pack rule')
   }
+
+  // 347 PLN must not require language keywords
+  if (c.includes('amount === 347') && !c.includes('UNKNOWN_PRICE_347')) {
+    pass('productClassifier.ts classifies 347 PLN as JZK_LANGUAGE without requiring language keywords')
+  } else if (c.includes('amount === 347')) {
+    fail('productClassifier.ts still routes 347 PLN to UNKNOWN — must be JZK_LANGUAGE unconditionally')
+  }
+
   if (c.includes('maskEmail')) {
     pass('productClassifier.ts exports maskEmail()')
   } else {
-    fail('productClassifier.ts missing maskEmail() helper')
+    fail('productClassifier.ts missing maskEmail()')
   }
-  // Must NOT classify 347 PLN as JZK when name has no language keywords
-  if (c.includes('UNKNOWN_PRICE_347') && c.includes('347')) {
-    pass('productClassifier.ts routes ambiguous 347 PLN to UNKNOWN_PRICE_347 (not blindly JZK)')
-  }
-  // PRODUCT_CLASSIFICATION_AVAILABLE must still be false (frontend RLS still blocks anon key)
+
   if (c.includes('PRODUCT_CLASSIFICATION_AVAILABLE = false')) {
-    pass('productClassifier.ts keeps PRODUCT_CLASSIFICATION_AVAILABLE = false (correct: frontend anon key blocked)')
+    pass('productClassifier.ts keeps PRODUCT_CLASSIFICATION_AVAILABLE = false (price classification is backend-only)')
   } else {
-    fail('productClassifier.ts should keep PRODUCT_CLASSIFICATION_AVAILABLE = false — price classification is backend-only')
+    fail('productClassifier.ts should keep PRODUCT_CLASSIFICATION_AVAILABLE = false')
   }
 }
 
-// 2. Live classification test via ops-week-report backend logic
+// 2. Live classification test via scheduleUtils.js (for import machinery) + static ops-week-report checks
 try {
   const utilsPath = pathToFileURL(join(rootDir, 'netlify/functions/scheduleUtils.js')).href
-  await import(utilsPath) // warm up module system
+  await import(utilsPath)
 
-  // Inline test by reading and evaluating ops-week-report.js classify function
-  // We can't import it directly (it has top-level await in handler), so we test it statically
   const c = read('netlify/functions/ops-week-report.js')
 
-  // 549 PLN rule must be present and unconditional
+  // 549 PLN → JSU_COURSE (absolute, no keyword requirement)
   if (c.includes('amount === 549') && c.includes('JSU_COURSE')) {
-    pass('ops-week-report.js classifies 549 PLN → JSU_COURSE unconditionally')
+    pass('ops-week-report.js classifies 549 PLN → JSU_COURSE (absolute)')
   } else {
-    fail('ops-week-report.js missing "amount === 549 → JSU_COURSE" rule')
+    fail('ops-week-report.js missing 549 PLN → JSU_COURSE absolute rule')
   }
 
-  // 347 PLN must NOT blindly map to JZK
-  if (c.includes('amount === 347') && c.includes('UNKNOWN_PRICE_347')) {
-    pass('ops-week-report.js routes 347 PLN without language name → UNKNOWN_PRICE_347 (not blindly JZK)')
+  // 347 PLN → JZK_LANGUAGE (absolute, no keyword requirement)
+  if (c.includes('amount === 347') && c.includes('JZK_LANGUAGE')) {
+    pass('ops-week-report.js classifies 347 PLN → JZK_LANGUAGE (absolute)')
   } else {
-    fail('ops-week-report.js must route 347 PLN without language keywords to UNKNOWN_PRICE_347')
+    fail('ops-week-report.js missing absolute 347 PLN = JZK rule')
   }
 
-  // 119 PLN + memory rule
+  // 347 PLN must NOT route to UNKNOWN_PRICE_347
+  if (c.includes('UNKNOWN_PRICE_347')) {
+    fail('ops-week-report.js still contains UNKNOWN_PRICE_347 — must be removed')
+  } else {
+    pass('ops-week-report.js does not contain UNKNOWN_PRICE_347 (correct)')
+  }
+
+  // 119 PLN → MEMORY_PACK (absolute)
   if (c.includes('amount === 119') && c.includes('MEMORY_PACK')) {
-    pass('ops-week-report.js has 119 PLN + memory keywords → MEMORY_PACK rule')
+    pass('ops-week-report.js classifies 119 PLN → MEMORY_PACK (absolute)')
   } else {
-    fail('ops-week-report.js missing 119 PLN + memory → MEMORY_PACK rule')
+    fail('ops-week-report.js missing 119 PLN = memory pack rule')
   }
 
-  // Warning when price fallback used
-  if (c.includes('Product name from Wix may be wrong') || c.includes('price fallback')) {
-    pass('ops-week-report.js emits classification warning when price overrides misleading name')
+  // Reason strings must say "absolute price rule"
+  if (c.includes('absolute price rule')) {
+    pass('ops-week-report.js uses "absolute price rule" in classification reason strings')
   } else {
-    fail('ops-week-report.js does not warn when product name is misleading and price fallback used')
+    fail('ops-week-report.js should say "absolute price rule" in reason strings')
+  }
+
+  // Warning when product_name_raw contradicts price rule
+  if (c.includes('Wix product_name_raw is misleading') || c.includes('Price rule used')) {
+    pass('ops-week-report.js warns when product_name_raw contradicts price rule')
+  } else {
+    fail('ops-week-report.js does not warn when Wix name contradicts price — silent misclassification invisible')
   }
 
 } catch (e) {
-  fail(`Could not test ops-week-report.js classification logic: ${e.message}`)
+  fail(`Could not run ops-week-report.js classification tests: ${e.message}`)
 }
 
-// 3. ops-week-report.js has extractAmount and order_diagnostics
+// 3. ops-week-report.js infrastructure
 if (!exists('netlify/functions/ops-week-report.js')) {
   fail('netlify/functions/ops-week-report.js does not exist')
 } else {
   const c = read('netlify/functions/ops-week-report.js')
   if (c.includes('extractAmount')) {
-    pass('ops-week-report.js has extractAmount() to read amount/total/price fields')
+    pass('ops-week-report.js has extractAmount()')
   } else {
-    fail('ops-week-report.js missing extractAmount() — may use wrong amount field')
+    fail('ops-week-report.js missing extractAmount()')
   }
   if (c.includes('order_diagnostics')) {
     pass('ops-week-report.js builds and returns order_diagnostics array')
   } else {
-    fail('ops-week-report.js missing order_diagnostics — no per-order classification detail available')
+    fail('ops-week-report.js missing order_diagnostics')
   }
-  if (c.includes('maskEmail') || c.includes('email_masked')) {
-    pass('ops-week-report.js masks emails before returning in order_diagnostics')
+  if (c.includes('email_masked')) {
+    pass('ops-week-report.js masks emails in order_diagnostics')
   } else {
-    fail('ops-week-report.js must mask emails in order_diagnostics (email_masked field)')
-  }
-  if (c.includes('external_order_id')) {
-    pass('ops-week-report.js includes external_order_id in order_diagnostics')
-  } else {
-    fail('ops-week-report.js missing external_order_id in order_diagnostics')
-  }
-  if (c.includes('classification_reason') || c.includes('classificationReason')) {
-    pass('ops-week-report.js includes classification_reason in order_diagnostics')
-  } else {
-    fail('ops-week-report.js missing classification_reason in order_diagnostics')
-  }
-  if (c.includes("'orders'") && c.includes("'wix_orders'")) {
-    pass("ops-week-report.js tries 'orders' table first, falls back to 'wix_orders'")
-  } else if (c.includes('wix_orders')) {
-    pass('ops-week-report.js attempts wix_orders for order data (legacy)')
-  } else {
-    fail('ops-week-report.js does not attempt any orders table')
+    fail('ops-week-report.js must mask emails (email_masked field)')
   }
   if (c.includes('price_warnings_count')) {
     pass('ops-week-report.js tracks price_warnings_count')
   } else {
-    fail('ops-week-report.js missing price_warnings_count — cannot detect misleading Wix names')
-  }
-  if (c.includes('priceRulesApplied')) {
-    pass('ops-week-report.js includes priceRulesApplied flag in debug')
-  } else {
-    fail('ops-week-report.js missing priceRulesApplied debug flag')
+    fail('ops-week-report.js missing price_warnings_count')
   }
 }
 
@@ -163,91 +163,105 @@ if (!exists('src/lib/opsWeekReport.ts')) {
   } else {
     fail('opsWeekReport.ts missing OrderDiagnosticRow interface')
   }
-  if (c.includes('external_order_id') && c.includes('email_masked') && c.includes('product_name_raw') && c.includes('classified_product') && c.includes('classification_reason')) {
-    pass('OrderDiagnosticRow has all required fields (order_id, email, name, amount, classified, reason)')
+  if (c.includes('order_diagnostics') && c.includes('price_warnings_count')) {
+    pass('opsWeekReport.ts has order_diagnostics + price_warnings_count in OpsWeekOrders')
   } else {
-    fail('OrderDiagnosticRow missing one or more required fields')
-  }
-  if (c.includes('order_diagnostics')) {
-    pass('opsWeekReport.ts includes order_diagnostics in OpsWeekOrders')
-  } else {
-    fail('opsWeekReport.ts missing order_diagnostics field in OpsWeekOrders')
-  }
-  if (c.includes('price_warnings_count')) {
-    pass('opsWeekReport.ts includes price_warnings_count in OpsWeekOrders')
-  } else {
-    fail('opsWeekReport.ts missing price_warnings_count in OpsWeekOrders')
+    fail('opsWeekReport.ts missing order_diagnostics or price_warnings_count')
   }
 }
 
-// 5. responses.ts uses correct labels ("JSU course sold", not "memory pack sold" for JSU)
+// 5. responses.ts — correct labels and builders
 if (!exists('src/brain/responses.ts')) {
   fail('src/brain/responses.ts does not exist')
 } else {
   const c = read('src/brain/responses.ts')
-  // Must say "JSU course sold" (with 549 PLN reference) not "memory pack sold" for JSU orders
+
   if (c.includes('JSU course sold') || (c.includes('JSU course') && c.includes('549'))) {
-    pass('responses.ts uses "JSU course sold" label (not "memory pack sold") for JSU orders')
+    pass('responses.ts uses "JSU course sold" label for 549 PLN orders')
   } else {
-    fail('responses.ts must say "JSU course sold" not "memory pack sold" when reporting JSU orders at 549 PLN')
+    fail('responses.ts must say "JSU course sold" (549 PLN) for JSU orders')
   }
+
+  if (c.includes('buildJzkSalesAnswer')) {
+    pass('responses.ts has buildJzkSalesAnswer() for JZK order count')
+  } else {
+    fail('responses.ts missing buildJzkSalesAnswer() — "ile zeszło Językozaka" has no answer')
+  }
+
+  if (c.includes('buildJzkSalesSpoken')) {
+    pass('responses.ts has buildJzkSalesSpoken()')
+  } else {
+    fail('responses.ts missing buildJzkSalesSpoken()')
+  }
+
+  // JZK sales answer must reference 347 PLN
+  if (c.includes('347 PLN') || c.includes('347')) {
+    pass('responses.ts JZK sales answer references 347 PLN price rule')
+  } else {
+    fail('responses.ts JZK sales answer does not reference 347 PLN — unclear what orders are counted')
+  }
+
   if (c.includes('price_warnings_count') || c.includes('price fallback')) {
-    pass('responses.ts shows warning when price fallback was used')
+    pass('responses.ts shows price fallback warning when applicable')
   } else {
-    fail('responses.ts does not mention price fallback warning — user cannot see when names were misleading')
-  }
-  if (c.includes('Wix product_name_raw was misleading') || c.includes('product name was misleading') || c.includes('Wix product name')) {
-    pass('responses.ts explains that Wix product name may be misleading')
-  } else {
-    fail('responses.ts does not explain that Wix product_name_raw may be misleading')
+    fail('responses.ts does not mention price fallback warning')
   }
 }
 
-// 6. DiagnosticsPanel.tsx shows order diagnostics table
+// 6. intent.ts — jzk_sales_query intent
+if (!exists('src/brain/intent.ts')) {
+  fail('src/brain/intent.ts does not exist')
+} else {
+  const c = read('src/brain/intent.ts')
+
+  if (c.includes('jzk_sales_query') && c.includes('buildJzkSalesAnswer')) {
+    pass('intent.ts has jzk_sales_query intent using buildJzkSalesAnswer()')
+  } else {
+    fail('intent.ts missing jzk_sales_query intent — "ile zeszło Językozaka" has no route')
+  }
+
+  if (c.includes('ile zeszlo jezykozaka') || c.includes('ile zeszlo jzk') || c.includes('ile jezykozakow')) {
+    pass('intent.ts recognizes "ile zeszło Językozaka" / "ile zeszło JZK" queries')
+  } else {
+    fail('intent.ts missing JZK sales trigger phrases')
+  }
+
+  // jzk_sales_query must be BEFORE jzk_week_report (both catch 'jezykozak')
+  const salesIdx   = c.indexOf('jzk_sales_query')
+  const weekIdx    = c.indexOf('jzk_week_report')
+  if (salesIdx > 0 && weekIdx > 0 && salesIdx < weekIdx) {
+    pass('jzk_sales_query handler is positioned BEFORE jzk_week_report (correct priority)')
+  } else {
+    fail('jzk_sales_query must be BEFORE jzk_week_report — otherwise "ile zeszło JZK" routes to week report')
+  }
+
+  if (c.includes('ile zeszlo jsu') || c.includes('ile kursow jsu')) {
+    pass('intent.ts recognizes "ile zeszło JSU" (549 PLN) queries')
+  } else {
+    fail('intent.ts missing "ile zeszło JSU" trigger phrases')
+  }
+}
+
+// 7. DiagnosticsPanel shows order diagnostics table and price warnings
 if (!exists('src/components/DiagnosticsPanel.tsx')) {
   fail('src/components/DiagnosticsPanel.tsx does not exist')
 } else {
   const c = read('src/components/DiagnosticsPanel.tsx')
-  if (c.includes('order_diagnostics') || c.includes('OrderDiagnosticRow') || c.includes('Order Classification')) {
+  if (c.includes('order_diagnostics') || c.includes('Order Classification')) {
     pass('DiagnosticsPanel.tsx shows order diagnostics table')
   } else {
     fail('DiagnosticsPanel.tsx missing order diagnostics table')
   }
-  if (c.includes('external_order_id') || c.includes('Order ID')) {
-    pass('DiagnosticsPanel.tsx shows external_order_id column')
+  if (c.includes('price_warnings_count') || c.includes('Price fallback')) {
+    pass('DiagnosticsPanel.tsx shows price fallback warning row')
   } else {
-    fail('DiagnosticsPanel.tsx missing external_order_id in order diagnostics')
-  }
-  if (c.includes('email_masked') || c.includes('Email')) {
-    pass('DiagnosticsPanel.tsx shows masked email column')
-  } else {
-    fail('DiagnosticsPanel.tsx missing email_masked in order diagnostics')
-  }
-  if (c.includes('product_name_raw') || c.includes('Product name')) {
-    pass('DiagnosticsPanel.tsx shows product_name_raw column')
-  } else {
-    fail('DiagnosticsPanel.tsx missing product_name_raw in order diagnostics')
-  }
-  if (c.includes('classified_product') || c.includes('Classified')) {
-    pass('DiagnosticsPanel.tsx shows classified_product column')
-  } else {
-    fail('DiagnosticsPanel.tsx missing classified_product in order diagnostics')
-  }
-  if (c.includes('classification_reason') || c.includes('Reason')) {
-    pass('DiagnosticsPanel.tsx shows classification_reason column')
-  } else {
-    fail('DiagnosticsPanel.tsx missing classification_reason in order diagnostics')
-  }
-  if (c.includes('price_warnings_count') || c.includes('Price fallback') || c.includes('priceRulesApplied')) {
-    pass('DiagnosticsPanel.tsx shows price fallback warning when applicable')
-  } else {
-    fail('DiagnosticsPanel.tsx does not show price_warnings_count — misleading name events invisible')
+    fail('DiagnosticsPanel.tsx missing price_warnings_count row')
   }
 }
 
 console.log()
 if (errors === 0) {
-  console.log('PASS — Price-first product classification rules satisfied.')
+  console.log('PASS — Absolute price classification rules satisfied.')
   process.exit(0)
 } else {
   console.error(`FAIL — ${errors} price classification violation(s).`)

@@ -12,7 +12,6 @@ export type ProductLine =
   | 'WSZTP'
   | 'MARITIME'
   | 'OTHER'
-  | 'UNKNOWN_PRICE_347'
   | 'UNKNOWN_UNCLASSIFIABLE'
 
 export interface ClassifiedOrder {
@@ -94,15 +93,10 @@ const JZK_NAME_PATTERNS  = ['jezykozak', 'jezykowy', 'nauka jezykow', 'jzk', 'je
 const MEMORY_NAME_119    = ['pamiec', 'trening interaktywny', 'pakiet pamieciowy', 'memory']
 
 /**
- * Classify by price + product name. Returns null when the amount does not
- * match any price rule (caller should fall back to text classification).
- *
- * Priority:
- *  1. 549 PLN → JSU_COURSE unconditionally (override misleading product names)
- *  2. Any name → JSU_COURSE if name contains JSU keywords
- *  3. 119 PLN + memory name → MEMORY_PACK
- *  4. 347 PLN + language name → JZK_LANGUAGE
- *  5. 347 PLN without language name → UNKNOWN_PRICE_347 (warn: do not guess)
+ * Absolute price rules — business rule, no keyword checks needed.
+ * 549 PLN = JSU_COURSE | 347 PLN = JZK_LANGUAGE | 119 PLN = MEMORY_PACK
+ * Returns null for other amounts (caller falls back to text classification).
+ * Warning is emitted when product_name_raw contradicts the price rule.
  */
 export function classifyByPrice(
   amount: number,
@@ -110,52 +104,46 @@ export function classifyByPrice(
 ): PriceClassification | null {
   const norm = normalizeText(productNameRaw ?? '')
 
-  // Rule 1: 549 PLN = JSU_COURSE — strongest signal, overrides product name
+  // Absolute rule 1: 549 PLN = JSU course
   if (amount === 549) {
-    const nameConfirms = JSU_NAME_PATTERNS.some(p => norm.includes(p))
+    const nameContradicts = !JSU_NAME_PATTERNS.some(p => norm.includes(p)) && norm.length > 0
     return {
       productLine: 'JSU_COURSE',
       productLabel: 'Kurs Jak się uczyć',
-      reason: 'price rule: 549 PLN',
-      usedPriceFallback: !nameConfirms,
+      reason: 'absolute price rule: 549 PLN = JSU',
+      usedPriceFallback: nameContradicts,
     }
   }
 
-  // Rule 2: Name contains JSU keywords → JSU_COURSE regardless of price
+  // Absolute rule 2: 347 PLN = Językozak AI
+  if (amount === 347) {
+    const nameContradicts = !JZK_NAME_PATTERNS.some(p => norm.includes(p)) && norm.length > 0
+    return {
+      productLine: 'JZK_LANGUAGE',
+      productLabel: 'Językozak AI',
+      reason: 'absolute price rule: 347 PLN = Językozak AI',
+      usedPriceFallback: nameContradicts,
+    }
+  }
+
+  // Absolute rule 3: 119 PLN = memory pack
+  if (amount === 119) {
+    const nameContradicts = !MEMORY_NAME_119.some(p => norm.includes(p)) && norm.length > 0
+    return {
+      productLine: 'MEMORY_PACK',
+      productLabel: 'Pakiet pamięciowy',
+      reason: 'absolute price rule: 119 PLN = memory pack',
+      usedPriceFallback: nameContradicts,
+    }
+  }
+
+  // Name contains JSU keywords → JSU_COURSE regardless of price
   if (JSU_NAME_PATTERNS.some(p => norm.includes(p))) {
     return {
       productLine: 'JSU_COURSE',
       productLabel: 'Kurs Jak się uczyć',
       reason: 'product name matches JSU pattern',
       usedPriceFallback: false,
-    }
-  }
-
-  // Rule 3: 119 PLN + memory keywords → MEMORY_PACK
-  if (amount === 119 && MEMORY_NAME_119.some(p => norm.includes(p))) {
-    return {
-      productLine: 'MEMORY_PACK',
-      productLabel: 'Pakiet pamięciowy',
-      reason: 'price rule: 119 PLN + memory keywords',
-      usedPriceFallback: false,
-    }
-  }
-
-  // Rule 4/5: 347 PLN — JZK only if language keywords present
-  if (amount === 347) {
-    if (JZK_NAME_PATTERNS.some(p => norm.includes(p))) {
-      return {
-        productLine: 'JZK_LANGUAGE',
-        productLabel: 'Językozak AI',
-        reason: 'price rule: 347 PLN + language keywords',
-        usedPriceFallback: false,
-      }
-    }
-    return {
-      productLine: 'UNKNOWN_PRICE_347',
-      productLabel: 'Nieznany (347 PLN)',
-      reason: 'price 347 PLN but product name has no language keywords — not classified as JZK',
-      usedPriceFallback: true,
     }
   }
 
@@ -174,14 +162,13 @@ export function classifyProductName(name: string): ProductLine {
 }
 
 const PRODUCT_LINE_LABELS: Record<ProductLine, string> = {
-  JSU_COURSE:           'Kurs Jak się uczyć',
-  MEMORY_PACK:          'Pakiet pamięciowy',
-  MEMORY_BOOK:          'Ebook pamięci',
-  JZK_LANGUAGE:         'Językozak AI',
-  WSZTP:                'WSZTP',
-  MARITIME:             'Szanty',
-  OTHER:                'Inne',
-  UNKNOWN_PRICE_347:    'Nieznany (347 PLN)',
+  JSU_COURSE:             'Kurs Jak się uczyć',
+  MEMORY_PACK:            'Pakiet pamięciowy',
+  MEMORY_BOOK:            'Ebook pamięci',
+  JZK_LANGUAGE:           'Językozak AI',
+  WSZTP:                  'WSZTP',
+  MARITIME:               'Szanty',
+  OTHER:                  'Inne',
   UNKNOWN_UNCLASSIFIABLE: 'Niesklasyfikowany',
 }
 

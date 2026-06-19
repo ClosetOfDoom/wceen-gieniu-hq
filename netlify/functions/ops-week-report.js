@@ -72,55 +72,61 @@ function extractProductNameRaw(row) {
 }
 
 /**
- * Price-first classification.
- * 1. amount=549 → JSU_COURSE (overrides any misleading product name)
- * 2. name contains JSU keywords → JSU_COURSE
- * 3. amount=119 + memory keywords → MEMORY_PACK
- * 4. amount=347 + language keywords → JZK_LANGUAGE
- * 5. amount=347 without language keywords → UNKNOWN_PRICE_347 (warn, do not guess)
- * 6. Text fallback for everything else
+ * Absolute price rules — no keyword checks needed.
+ * 549 PLN = JSU_COURSE | 347 PLN = JZK_LANGUAGE | 119 PLN = MEMORY_PACK
+ * Warning only when product_name_raw contradicts the price rule.
+ * Text fallback for other amounts.
  */
 function classifyOrder(row) {
   const amount  = extractAmount(row)
   const rawName = extractProductNameRaw(row) ?? ''
   const norm    = normalizeText(rawName)
 
-  // Rule 1: 549 PLN = JSU course unconditionally
+  // Absolute rule 1: 549 PLN = JSU course
   if (amount === 549) {
-    const nameConfirms = JSU_NAME_PATTERNS.some(p => norm.includes(p))
+    const nameContradicts = rawName.length > 0 && !JSU_NAME_PATTERNS.some(p => norm.includes(p))
     return {
       classification: 'JSU_COURSE',
       productLabel:   'Kurs Jak się uczyć',
-      reason:         'price rule: 549 PLN',
-      warning: nameConfirms ? null
-        : `Product name from Wix may be wrong/misaligned ("${rawName.slice(0, 50)}"). Classification used price fallback.`,
+      reason:         'absolute price rule: 549 PLN = JSU',
+      warning: nameContradicts
+        ? `Wix product_name_raw is misleading ("${rawName.slice(0, 50)}"). Price rule used.`
+        : null,
     }
   }
 
-  // Rule 2: name explicitly says JSU
+  // Absolute rule 2: 347 PLN = Językozak AI
+  if (amount === 347) {
+    const nameContradicts = rawName.length > 0 && !JZK_NAME_PATTERNS.some(p => norm.includes(p))
+    return {
+      classification: 'JZK_LANGUAGE',
+      productLabel:   'Językozak AI',
+      reason:         'absolute price rule: 347 PLN = Językozak AI',
+      warning: nameContradicts
+        ? `Wix product_name_raw is misleading ("${rawName.slice(0, 50)}"). Price rule used.`
+        : null,
+    }
+  }
+
+  // Absolute rule 3: 119 PLN = memory pack
+  if (amount === 119) {
+    const nameContradicts = rawName.length > 0 && !MEMORY_NAME_119.some(p => norm.includes(p))
+    return {
+      classification: 'MEMORY_PACK',
+      productLabel:   'Pakiet pamięciowy',
+      reason:         'absolute price rule: 119 PLN = memory pack',
+      warning: nameContradicts
+        ? `Wix product_name_raw is misleading ("${rawName.slice(0, 50)}"). Price rule used.`
+        : null,
+    }
+  }
+
+  // Name explicitly says JSU (no price match needed)
   if (JSU_NAME_PATTERNS.some(p => norm.includes(p))) {
     return { classification: 'JSU_COURSE', productLabel: 'Kurs Jak się uczyć', reason: 'product name matches JSU pattern', warning: null }
   }
 
-  // Rule 3: 119 PLN + memory keywords
-  if (amount === 119 && MEMORY_NAME_119.some(p => norm.includes(p))) {
-    return { classification: 'MEMORY_PACK', productLabel: 'Pakiet pamięciowy', reason: 'price rule: 119 PLN + memory keywords', warning: null }
-  }
-
-  // Rule 4/5: 347 PLN
-  if (amount === 347) {
-    if (JZK_NAME_PATTERNS.some(p => norm.includes(p))) {
-      return { classification: 'JZK_LANGUAGE', productLabel: 'Językozak AI', reason: 'price rule: 347 PLN + language keywords', warning: null }
-    }
-    return {
-      classification: 'UNKNOWN_PRICE_347',
-      productLabel:   'Nieznany (347 PLN)',
-      reason:         'price 347 PLN but product name has no language keywords — not classified as JZK',
-      warning:        `Product name "${rawName.slice(0, 50)}" at 347 PLN does not confirm JZK offer. Manual review needed.`,
-    }
-  }
-
-  // Rule 6: text fallback for other amounts
+  // Text fallback for other amounts
   const candidates = [rawName, row.description, row.sku]
   for (const key of ['line_items', 'items', 'raw', 'raw_payload']) {
     const v = row[key]

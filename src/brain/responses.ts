@@ -1758,6 +1758,47 @@ export function buildJzkWeekReportSpoken(r: OpsWeekReport | null): string {
   return parts.join(' ')
 }
 
+// ── JZK Sales Answer builders ─────────────────────────────────────────────────
+
+export function buildJzkSalesAnswer(r: OpsWeekReport | null): string {
+  if (!r || !r.ok) {
+    return `— JĘZYKOZAK AI SALES —\n\nCould not load weekly report: ${r?.error ?? 'not loaded yet'}.`
+  }
+  const { orders, range } = r
+  const o  = orders.this_week
+  const lines = ['— JĘZYKOZAK AI SALES (347 PLN) —', '']
+  lines.push(`Week ${range.week_start} → ${range.week_end}:`)
+
+  if (o.product_classification === 'available') {
+    lines.push(`  Językozak AI orders (347 PLN): ${o.jzk_orders}`)
+    lines.push('')
+    lines.push(`I am NOT counting the ${o.all_orders} total Wix orders. Only orders classified as JZK_LANGUAGE (347 PLN absolute rule).`)
+    if ((o.price_warnings_count ?? 0) > 0) {
+      lines.push(`⚠ Price fallback used on ${o.price_warnings_count} order(s) — Wix product_name_raw was misleading. Amount 347 PLN ruled as JZK.`)
+    }
+  } else {
+    lines.push(`  All Wix orders this week: ${o.all_orders}  (${o.all_revenue.toFixed(2)} PLN)`)
+    lines.push('')
+    lines.push('⚠  Product-level classification is unavailable.')
+    lines.push('The orders database does not store product names per line item.')
+    lines.push('I cannot isolate Językozak-only orders from the total.')
+  }
+  return lines.join('\n')
+}
+
+export function buildJzkSalesSpoken(r: OpsWeekReport | null): string {
+  if (!r || !r.ok) return 'Językozak AI sales data is not available. Check the weekly report backend.'
+  const { orders } = r
+  const o = orders.this_week
+  if (o.product_classification === 'available') {
+    const warning = (o.price_warnings_count ?? 0) > 0
+      ? ` Note: ${o.price_warnings_count} order(s) were classified by price rule (347 PLN) because the Wix product name was misleading.`
+      : ''
+    return `Językozak AI sales this week: ${o.jzk_orders} order${o.jzk_orders !== 1 ? 's' : ''} at 347 PLN each. I am not counting all ${o.all_orders} Wix orders here.${warning}`
+  }
+  return `I cannot isolate Językozak orders from the ${o.all_orders} total Wix orders this week — product names are not stored per line item.`
+}
+
 /** Detect the dominant product tag from the loaded sessions. */
 function detectProductFromSessions(s: JsuFunnelSummary): ProductTag {
   const counts: Record<ProductTag, number> = { JSU: 0, JZK: 0, OTHER: 0 }
