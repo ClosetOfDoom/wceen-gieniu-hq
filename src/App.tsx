@@ -21,6 +21,7 @@ import {
 } from './services/webinarFunnel'
 import { fetchOpsWeekReport, type OpsWeekReport } from './lib/opsWeekReport'
 import { fetchOrdersData, type OrdersData } from './lib/ordersData'
+import { fetchProfitData, type ProfitData } from './lib/profitData'
 import {
   buildJsuWebinarReport, buildWhyCourseNotSelling, buildJsuFunnelReport,
   buildCompareJsuWebinars, buildDeliverabilityReport, buildMailingDiagnosis,
@@ -541,6 +542,9 @@ export default function App() {
   // Orders data (backend, service role)
   const [ordersData, setOrdersData] = useState<OrdersData | null>(null)
 
+  // Profit data (backend, service role — contribution margin minus ad spend)
+  const [profitData, setProfitData] = useState<ProfitData | null>(null)
+
   // Conversational state
   const [response, setResponse]           = useState('')
   const [responseSpoken, setResponseSpoken] = useState('')
@@ -633,6 +637,15 @@ export default function App() {
     }
   }, [])
 
+  const loadProfitData = useCallback(async () => {
+    try {
+      setProfitData(await fetchProfitData())
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('GIENIU profit-data failed:', e)
+    }
+  }, [])
+
   useEffect(() => {
     // eslint-disable-next-line no-console
     console.log(`GIENIU HQ build ${__BUILD_HASH__} loaded (${__BUILD_TIME__})`)
@@ -643,9 +656,10 @@ export default function App() {
     loadJsuParticipants()
     loadOpsWeekReport()
     loadOrdersData()
-    const interval = setInterval(() => { loadData(); loadAds() }, 5 * 60 * 1000)
+    loadProfitData()
+    const interval = setInterval(() => { loadData(); loadAds(); loadProfitData() }, 5 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants, loadOpsWeekReport, loadOrdersData])
+  }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants, loadOpsWeekReport, loadOrdersData, loadProfitData])
 
   // ── Opening greeting ─────────────────────────────────────────────────────────
 
@@ -747,7 +761,7 @@ export default function App() {
   function handleIntentQuery(query: string) {
     setLastQuery(query)
     stopSpeaking()
-    const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData })
+    const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData, profitData })
     speakAnswer(result)
   }
 
@@ -926,6 +940,14 @@ export default function App() {
   const cpaHigh      = displayPerf?.real_cpa != null && displayPerf.real_cpa > 50
   const jsuAlert     = !!jsuSummary && jsuSummary.bottleneck !== 'OK' && jsuSummary.bottleneck !== 'NO_DATA' && jsuSummary.bottleneck !== 'NO_SOURCES'
 
+  // Profit KPI derived states
+  const profitEst         = profitData?.ok ? profitData.estimatedProfitAfterAds : null
+  const profitPositive    = profitEst != null && profitEst > 100
+  const profitWarning     = profitEst != null && profitEst >= 0 && profitEst <= 100
+  const profitDanger      = profitEst != null && profitEst < 0
+  const hasUnknownRevenue = (profitData?.unknownRevenue ?? 0) > 0
+  const profitMismatch    = profitData?.ok && profitData.ordersCount === 0 && (ordersData?.totals.today_orders ?? 0) > 0
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -956,14 +978,57 @@ export default function App() {
                       No data for today yet — showing latest available: {trend[0]?.date}
                     </div>
                   )}
+                  {/* Row 1: core metrics + profit */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                     <KPICard label="Wix Orders" value={fmtNum(displayPerf?.wix_orders)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
                     <KPICard label="Wix Revenue" value={fmtPln(displayPerf?.wix_revenue)} accent sublabel={perfIsStale ? trend[0]?.date : undefined} />
                     <KPICard label="Ad Spend" value={fmtPln(displayPerf?.meta_spend)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
+                    <KPICard
+                      label="Est. Profit"
+                      value={profitEst != null ? fmtPln(profitEst) : '—'}
+                      positive={profitPositive}
+                      warning={profitWarning}
+                      danger={profitDanger}
+                      sublabel="Margin − ad spend"
+                    />
                     <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Meta spend / Wix orders" />
                     <KPICard label="Real ROAS" value={fmtRoas(displayPerf?.real_roas)} sublabel="Wix revenue / Meta spend" />
+                  </div>
+
+                  {/* Row 2: margin detail + warnings */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
+                    <KPICard
+                      label="Margin Before Ads"
+                      value={profitData?.ok ? fmtPln(profitData.marginBeforeAds) : '—'}
+                      sublabel="Known contribution margin"
+                    />
+                    <KPICard
+                      label="Profit / Order"
+                      value={profitData?.ok && profitData.ordersCount > 0 ? fmtPln(profitData.estimatedProfitPerOrder) : '—'}
+                      positive={profitPositive}
+                      danger={profitDanger}
+                      sublabel="After ad spend"
+                    />
+                    <KPICard
+                      label="Unmapped Revenue"
+                      value={profitData?.ok ? fmtPln(profitData.unknownRevenue) : '—'}
+                      warning={hasUnknownRevenue}
+                      sublabel={hasUnknownRevenue ? 'Needs margin mapping' : 'All products mapped'}
+                    />
                     <KPICard label="Meta Attr." value={fmtNum(metaStats.meta_purchases)} dim sublabel="Meta-reported purchases" />
                   </div>
+
+                  {/* Profit data warnings */}
+                  {profitMismatch && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)', padding: '6px 12px', background: 'rgba(251,146,60,0.06)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: '3px' }}>
+                      ⚠ Profit endpoint returned 0 orders but ordersData shows orders today — filter mismatch or stale cache.
+                    </div>
+                  )}
+                  {hasUnknownRevenue && !profitMismatch && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)', padding: '6px 12px', background: 'rgba(251,146,60,0.06)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: '3px' }}>
+                      ⚠ {fmtPln(profitData!.unknownRevenue)} revenue from unmapped products — contribution margin not included in Est. Profit.
+                    </div>
+                  )}
                 </>
               )}
 

@@ -18,7 +18,8 @@
     "assert:webinar-schedule": "node scripts/assert-webinar-schedule.mjs",
     "assert:price-classification": "node scripts/assert-price-classification.mjs",
     "assert:data-sources": "node scripts/assert-data-sources.mjs",
-    "assert:tts-fallback": "node scripts/assert-tts-fallback.mjs"
+    "assert:tts-fallback": "node scripts/assert-tts-fallback.mjs",
+    "assert:profit-metrics": "node scripts/assert-profit-metrics.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.4",

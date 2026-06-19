@@ -3,24 +3,42 @@ interface Props {
   value: string
   accent?: boolean
   warning?: boolean
+  positive?: boolean
+  danger?: boolean
   dim?: boolean
   sublabel?: string
 }
 
-export function KPICard({ label, value, accent, warning, dim, sublabel }: Props) {
-  const valueColor = warning
-    ? 'var(--orange)'
-    : accent
-      ? 'var(--gold-bright)'
-      : dim
-        ? 'var(--muted)'
-        : 'var(--text)'
+export function KPICard({ label, value, accent, warning, positive, danger, dim, sublabel }: Props) {
+  const valueColor = danger
+    ? '#ef4444'
+    : warning
+      ? 'var(--orange)'
+      : positive
+        ? 'var(--teal)'
+        : accent
+          ? 'var(--gold-bright)'
+          : dim
+            ? 'var(--muted)'
+            : 'var(--text)'
 
-  const borderColor = warning
-    ? 'rgba(251, 146, 60, 0.35)'
-    : accent
-      ? 'rgba(201, 169, 110, 0.3)'
-      : 'var(--border)'
+  const borderColor = danger
+    ? 'rgba(239, 68, 68, 0.35)'
+    : warning
+      ? 'rgba(251, 146, 60, 0.35)'
+      : positive
+        ? 'rgba(94, 234, 212, 0.25)'
+        : accent
+          ? 'rgba(201, 169, 110, 0.3)'
+          : 'var(--border)'
+
+  const topAccentBg = danger
+    ? '#ef4444'
+    : warning
+      ? 'var(--orange)'
+      : positive
+        ? 'var(--teal)'
+        : 'linear-gradient(90deg, var(--gold), transparent)'
 
   return (
     <div
@@ -35,14 +53,14 @@ export function KPICard({ label, value, accent, warning, dim, sublabel }: Props)
         overflow: 'hidden',
       }}
     >
-      {(accent || warning) && (
+      {(accent || warning || positive || danger) && (
         <div style={{
           position: 'absolute',
           top: 0,
           left: 0,
           right: 0,
           height: '2px',
-          background: warning ? 'var(--orange)' : 'linear-gradient(90deg, var(--gold), transparent)',
+          background: topAccentBg,
         }} />
       )}
 

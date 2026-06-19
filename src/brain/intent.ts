@@ -2,6 +2,7 @@ import type { DailyPerformance, DataStatus, MetaAdDaily, MetaStatsToday } from '
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import type { OpsWeekReport } from '../lib/opsWeekReport'
 import type { OrdersData } from '../lib/ordersData'
+import type { ProfitData } from '../lib/profitData'
 import {
   buildRevenueReport, buildOperationalReport, buildPipelineReport,
   buildCPAThresholds, buildCPAThresholdsLang, buildRedFlags,
@@ -17,6 +18,7 @@ import {
   buildJsuWeekReport, buildJsuWeekReportSpoken, buildJsuSalesAnswer, buildJsuSalesSpoken,
   buildJzkWeekReport, buildJzkWeekReportSpoken, buildJzkSalesAnswer, buildJzkSalesSpoken,
   buildTodayOrdersAnswer, buildTodayOrdersSpoken,
+  buildProfitAnswer, buildProfitSpoken,
   // spoken text builders
   buildYesterdaySpoken, buildOpsBriefingSpoken, buildAdsDiagnosisSpoken,
   buildPeriodComparisonSpoken, buildWeekToDateSpoken, buildJsuWebinarSpoken,
@@ -39,6 +41,7 @@ export interface IntentContext {
   trend: DailyPerformance[]
   opsWeekReport: OpsWeekReport | null
   ordersData: OrdersData | null
+  profitData: ProfitData | null
 }
 
 function normalizePl(text: string): string {
@@ -73,7 +76,7 @@ function detectTimeRange(q: string): TimeRange | null {
 export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse {
   const rawQuery = query
   const q = normalizePl(query.toLowerCase().trim())
-  const { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData } = ctx
+  const { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData, profitData } = ctx
 
   let detectedIntent  = 'ops_briefing'
   let detectedPeriod: string | null = null
@@ -119,6 +122,20 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
       const spoken = `No today data yet, Lifidi. Latest from ${lDate}: ${orders} orders, ${revenue.toFixed(0)} Polish zloty revenue, ${spend.toFixed(0)} zloty spend.${cpa != null ? ` C P A was ${cpa.toFixed(0)} zloty.` : ''} Ask me about yesterday or the last 7 days for context.`
       result = w(lines.join('\n'), spoken)
     }
+  }
+
+  // ── Profit query ("ile na czysto", "zysk dzisiaj", "profit today") ──────────
+  // Uses profit-data backend — contribution margin minus ad spend for today
+  if (!result && has(q,
+    'ile na czysto', 'zysk dzisiaj', 'zysk dzis', 'jaki zysk', 'ile zysku',
+    'profit today', 'profit dzisiaj', 'profit dzis',
+    'ile zarobiliśmy', 'ile zarobilismy', 'ile zarobil', 'szacowany zysk',
+    'czy to sie oplaca', 'czy to sie oplaci', 'czy sie oplaca',
+    'marza dzis', 'marza dzisiaj', 'jaka marza', 'ile marzy',
+    'zysk po reklamie', 'profit after ads', 'zysk netto', 'na czysto',
+  )) {
+    detectedIntent = 'profit_query'
+    result = buildProfitAnswer(profitData)
   }
 
   // ── Today orders query ("ile dziś zamówień", "ile zamówień dzisiaj") ──────────

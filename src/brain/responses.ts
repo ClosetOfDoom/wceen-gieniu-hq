@@ -1954,3 +1954,80 @@ export function buildWebinarFunnelChart(s: JsuFunnelSummary | null): InsightChar
     series: [{ key: 'count', label: 'Count', color: 'var(--gold)' }],
   }
 }
+
+// ── Profit builders ───────────────────────────────────────────────────────────
+
+import type { ProfitData } from '../lib/profitData'
+
+function profitVerdict(profit: number, ordersCount: number): string {
+  if (ordersCount === 0) return 'Brak zamówień dziś.'
+  if (profit >= 500)     return 'Dobry dzień — wyraźnie do przodu.'
+  if (profit >= 100)     return 'To żyje, ale nie jest jeszcze powód, żeby stawiać Mecie pomnik z paragonów.'
+  if (profit >= 0)       return 'Wychodzi na zero. Marża pokrywa reklamę na styk.'
+  return 'Dziś dokładamy do interesu. Sprawdź kampanie i wróć tu za godzinę.'
+}
+
+export function buildProfitAnswer(d: ProfitData | null): GieniuResponse {
+  if (!d || !d.ok) {
+    const err = (d as ProfitData | null)?.error ?? 'brak danych'
+    return wrapResponse(
+      `Szacowany zysk — błąd danych\n\nNie można wyliczyć zysku: ${err}`,
+      'Nie mam danych o zysku na dziś.',
+    )
+  }
+
+  const breakdownLines = d.productBreakdown.map(p => {
+    const margin = p.contributionMargin != null
+      ? `${p.orders} × ${p.contributionMargin} PLN = ${fmtPln(p.marginTotal)} marży`
+      : `${p.orders} zamówień — marża niezdefiniowana`
+    return `  • ${p.displayName}: ${margin}`
+  }).join('\n')
+
+  const unmappedNote = d.unknownRevenue > 0
+    ? `\n⚠ Niezidentyfikowany przychód: ${fmtPln(d.unknownRevenue)} (${d.unknownOrdersCount} zam.) — nie wliczony w marżę.`
+    : ''
+
+  const display = [
+    `Szacowany zysk — ${d.dateWarsaw}`,
+    '',
+    `Zamówienia:         ${d.ordersCount}`,
+    `Przychód:           ${fmtPln(d.revenue)}`,
+    `Marża przed reklamą: ${fmtPln(d.marginBeforeAds)}`,
+    `Ad Spend:           ${fmtPln(d.adSpend)} (${d.adSpendSource})`,
+    '─'.repeat(42),
+    `Szacowany zysk:     ${fmtPln(d.estimatedProfitAfterAds)}`,
+    `Zysk / zamówienie:  ${fmtPln(d.estimatedProfitPerOrder)}`,
+    '',
+    'Produkty:',
+    breakdownLines || '  (brak zamówień)',
+    unmappedNote,
+    '',
+    profitVerdict(d.estimatedProfitAfterAds, d.ordersCount),
+  ].filter(l => l !== undefined).join('\n').trim()
+
+  const spoken = buildProfitSpoken(d)
+
+  return wrapResponse(display, spoken)
+}
+
+export function buildProfitSpoken(d: ProfitData | null): string {
+  if (!d || !d.ok || d.ordersCount === 0) {
+    return d?.ordersCount === 0
+      ? 'Brak zamówień dziś — nie ma z czego liczyć zysku.'
+      : 'Nie mam danych o zysku na dziś.'
+  }
+
+  const parts: string[] = [
+    `Dziś mamy ${d.ordersCount} zamówień i ${fmtPln(d.revenue)} przychodu.`,
+    `Zmapowana marża to ${fmtPln(d.marginBeforeAds)}.`,
+    `Meta wydała ${fmtPln(d.adSpend)}, więc szacowany zysk po reklamie to ${fmtPln(d.estimatedProfitAfterAds)}.`,
+  ]
+
+  if (d.unknownRevenue > 0) {
+    parts.push(`Uwaga: ${fmtPln(d.unknownRevenue)} z niezidentyfikowanych produktów nie jest wliczone w marżę.`)
+  }
+
+  parts.push(profitVerdict(d.estimatedProfitAfterAds, d.ordersCount))
+
+  return parts.join(' ')
+}
