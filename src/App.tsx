@@ -37,6 +37,7 @@ import {
   saveVoiceLanguage, getVoiceLanguage, getAvailableVoices, selectBrowserVoice,
   resetVoiceState,
 } from './voice/tts'
+import { fetchGieniuCommand, type GieniuCommandContext } from './lib/gieniuCommand'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -615,6 +616,11 @@ export default function App() {
   const [voiceUnlocked, setVoiceUnlocked] = useState(() => sessionStorage.getItem(VOICE_UNLOCK_KEY) === '1')
   const [voiceLanguage, setVoiceLanguage_] = useState<'en' | 'pl'>(getVoiceLanguage)
 
+  // Intent gateway diagnostics
+  const [lastIntent, setLastIntent]               = useState('')
+  const [lastIntentConfidence, setLastIntentConfidence] = useState(0)
+  const [llmConnected, setLlmConnected]           = useState<boolean | null>(null)
+
   // Browser voice info — refreshed when voices are loaded or language changes
   const [englishVoiceCount, setEnglishVoiceCount] = useState(0)
   const [polishVoiceCount, setPolishVoiceCount]   = useState(0)
@@ -831,13 +837,80 @@ export default function App() {
     })
   }
 
+  // ── Context snapshot for gieniu-command API ───────────────────────────────────
+
+  function buildCommandContext(): GieniuCommandContext {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+    const latestMetaDate = ads[0]?.date ?? trend.find(r => r.meta_spend > 0)?.date ?? '—'
+    const latestWixDate  = trend[0]?.date ?? '—'
+    return {
+      todayKPIs: perf ? {
+        wix_orders: perf.wix_orders,
+        wix_revenue: perf.wix_revenue,
+        meta_spend: perf.meta_spend,
+        real_cpa: perf.real_cpa,
+        real_roas: perf.real_roas,
+        date: perf.date,
+      } : null,
+      profitData: profitData?.ok ? {
+        ok: true,
+        marginBeforeAds: profitData.marginBeforeAds,
+        adSpend: profitData.adSpend,
+        estimatedProfitAfterAds: profitData.estimatedProfitAfterAds,
+        estimatedProfitPerOrder: profitData.estimatedProfitPerOrder,
+        unknownRevenue: profitData.unknownRevenue,
+        ordersCount: profitData.ordersCount,
+      } : null,
+      dataHealth: {
+        metaFresh: latestMetaDate === today,
+        wixFresh:  latestWixDate === today,
+        latestMetaDate,
+        latestWixDate,
+        today,
+      },
+      jsuSummary: jsuSummary ? {
+        bottleneck: jsuSummary.bottleneck,
+        diagnosis:  jsuSummary.diagnosis,
+        totals: jsuSummary.totals,
+        rates:  jsuSummary.rates,
+      } : null,
+      topCampaigns: ads.slice(0, 5).map(a => ({
+        name: a.campaign_name,
+        spend: a.spend,
+        clicks: a.clicks,
+        impressions: a.impressions,
+        purchases: a.purchases,
+      })),
+      currentRoute: section,
+    }
+  }
+
   // ── Intent handler ────────────────────────────────────────────────────────────
 
-  function handleIntentQuery(query: string) {
+  async function handleIntentQuery(query: string) {
     setLastQuery(query)
     stopSpeaking()
-    const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData, profitData })
-    speakAnswer(result)
+    setThinking(true)
+
+    try {
+      const ctx = buildCommandContext()
+      const cmdResult = await fetchGieniuCommand(query, ctx, voiceLanguage)
+      setLastIntent(cmdResult.intent)
+      setLastIntentConfidence(cmdResult.confidence)
+      if (cmdResult.warnings.includes('LLM not configured')) {
+        setLlmConnected(false)
+      } else if (cmdResult.llmUsed) {
+        setLlmConnected(true)
+      }
+      speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText })
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('gieniu-command failed — falling back to local intent resolve:', err)
+      const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData, profitData })
+      speakAnswer(result)
+    } finally {
+      setThinking(false)
+    }
   }
 
   // ── Start George voice ────────────────────────────────────────────────────────
@@ -1016,8 +1089,8 @@ export default function App() {
         setThinking(true)
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
-          setThinking(false)
-          handleIntentQuery(final)
+          // handleIntentQuery is async and manages setThinking(false) in its finally block
+          void handleIntentQuery(final)
         }, 750)
       }
     }
@@ -1185,6 +1258,9 @@ export default function App() {
               browserVoiceInfo={browserVoiceInfo}
               englishVoiceCount={englishVoiceCount}
               polishVoiceCount={polishVoiceCount}
+              lastIntent={lastIntent}
+              lastIntentConfidence={lastIntentConfidence}
+              llmConnected={llmConnected}
             />
           )}
 

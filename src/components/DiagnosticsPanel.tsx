@@ -23,6 +23,9 @@ interface Props {
   browserVoiceInfo?: { name: string; lang: string } | null
   englishVoiceCount?: number
   polishVoiceCount?: number
+  lastIntent?: string
+  lastIntentConfidence?: number
+  llmConnected?: boolean | null
 }
 
 function Row({ label, value, ok }: { label: string; value: string; ok?: boolean | null }) {
@@ -35,7 +38,7 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
   )
 }
 
-export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, ttsLanguage, browserVoiceInfo, englishVoiceCount, polishVoiceCount }: Props) {
+export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, ttsLanguage, browserVoiceInfo, englishVoiceCount, polishVoiceCount, lastIntent, lastIntentConfidence, llmConnected }: Props) {
   const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
   const [dataHealth, setDataHealth] = useState<DataHealthReport | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
@@ -131,6 +134,15 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
           )}
           {polishVoiceCount != null && (
             <Row label="Polish voices available" value={String(polishVoiceCount)} ok={polishVoiceCount > 0} />
+          )}
+          <Row label="LLM Gateway"
+            value={llmConnected === true ? 'connected' : llmConnected === false ? 'not connected' : 'unknown'}
+            ok={llmConnected === true ? true : llmConnected === false ? false : null}
+          />
+          {lastIntent && (
+            <Row label="Last intent"
+              value={`${lastIntent} (${lastIntentConfidence != null ? (lastIntentConfidence * 100).toFixed(0) + '%' : '—'})`}
+            />
           )}
           <Row label="PWA"            value={typeof window !== 'undefined' && 'serviceWorker' in navigator ? 'supported' : 'not supported'} />
           <Row label="Supabase"       value="connected" ok />
