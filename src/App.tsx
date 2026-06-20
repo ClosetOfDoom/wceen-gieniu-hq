@@ -38,6 +38,10 @@ import {
   resetVoiceState,
 } from './voice/tts'
 import { fetchGieniuCommand, type GieniuCommandContext } from './lib/gieniuCommand'
+import {
+  getSttLanguage, setSttLanguage, startListening, isSpeechRecognitionAvailable,
+  type SttLanguage, type SttResult,
+} from './voice/stt'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -308,6 +312,12 @@ function RightPanel({
   browserVoiceInfo,
   englishVoiceCount,
   onResetVoiceState,
+  sttLanguage,
+  onSttLanguageChange,
+  sttStatus,
+  sttConfidence,
+  sttRejectionReason,
+  sttPrefillInput,
 }: {
   response: string
   chart?: InsightChartSpec
@@ -331,8 +341,19 @@ function RightPanel({
   browserVoiceInfo: { name: string; lang: string } | null
   englishVoiceCount: number
   onResetVoiceState: () => void
+  sttLanguage: SttLanguage
+  onSttLanguageChange: (lang: SttLanguage) => void
+  sttStatus: 'idle' | 'accepted' | 'rejected'
+  sttConfidence: number | null
+  sttRejectionReason: string
+  sttPrefillInput: string
 }) {
   const [inputVal, setInputVal] = useState('')
+
+  // Fill input when STT rejects — lets user edit and re-send manually
+  useEffect(() => {
+    if (sttPrefillInput) setInputVal(sttPrefillInput)
+  }, [sttPrefillInput])
 
   function handleSubmit() {
     const q = inputVal.trim()
@@ -503,9 +524,19 @@ function RightPanel({
       {/* Input area — fixed at bottom */}
       <div style={{ flexShrink: 0, padding: '16px 20px', borderTop: '1px solid var(--border)' }}>
 
+        {/* STT transcript display */}
         {transcript && (
-          <div className="transcript-display" style={{ marginBottom: '10px' }}>
-            Heard: "{transcript}"
+          <div
+            className="transcript-display"
+            style={{
+              marginBottom: '10px',
+              borderColor: sttStatus === 'rejected' ? 'var(--orange)' : sttStatus === 'accepted' ? 'var(--teal)' : 'var(--border)',
+            }}
+          >
+            {sttStatus === 'rejected'
+              ? <>I heard: &ldquo;{transcript}&rdquo; — {sttRejectionReason}. Tap again and repeat, or edit below.</>
+              : <>Heard: &ldquo;{transcript}&rdquo;{sttConfidence !== null ? ` (${(sttConfidence * 100).toFixed(0)}%)` : ''}</>
+            }
           </div>
         )}
 
@@ -538,9 +569,27 @@ function RightPanel({
           >
             {listening ? '⏹' : speaking ? '✋' : '🎙'}
           </button>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '5px' }}>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: listening ? 'var(--teal)' : thinking ? 'var(--gold)' : speaking ? 'var(--teal)' : 'var(--muted2)' }}>
               {listening ? 'Listening...' : thinking ? 'Thinking...' : speaking ? 'Speaking...' : 'Tap to speak'}
+            </div>
+            {/* STT language selector */}
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted)' }}>Mic:</span>
+              {(['en-US', 'pl-PL'] as const).map(lang => (
+                <button
+                  key={lang}
+                  className="btn-sm"
+                  onClick={() => onSttLanguageChange(lang)}
+                  style={{
+                    fontSize: '0.60rem', padding: '2px 7px',
+                    borderColor: sttLanguage === lang ? 'var(--teal)' : 'var(--border)',
+                    color: sttLanguage === lang ? 'var(--teal)' : 'var(--muted)',
+                  }}
+                >
+                  {lang === 'en-US' ? 'EN' : 'PL'}
+                </button>
+              ))}
             </div>
             <button
               className={`btn-mute${muted ? ' muted' : ''}`}
@@ -620,6 +669,15 @@ export default function App() {
   const [lastIntent, setLastIntent]               = useState('')
   const [lastIntentConfidence, setLastIntentConfidence] = useState(0)
   const [llmConnected, setLlmConnected]           = useState<boolean | null>(null)
+
+  // STT (speech-to-text) state — separate from TTS voice language
+  const [sttLanguage, setSttLanguage_]       = useState<SttLanguage>(getSttLanguage)
+  const [sttLastFinal, setSttLastFinal]       = useState('')
+  const [sttInterim, setSttInterim]           = useState('')
+  const [sttConfidence, setSttConfidence]     = useState<number | null>(null)
+  const [sttStatus, setSttStatus]             = useState<'idle' | 'accepted' | 'rejected'>('idle')
+  const [sttRejectionReason, setSttRejectionReason] = useState('')
+  const [sttPrefillInput, setSttPrefillInput] = useState('')
 
   // Browser voice info — refreshed when voices are loaded or language changes
   const [englishVoiceCount, setEnglishVoiceCount] = useState(0)
@@ -979,6 +1037,13 @@ export default function App() {
     setVoiceLanguage_(lang)
   }
 
+  // ── STT language change ───────────────────────────────────────────────────────
+
+  function handleSttLanguageChange(lang: SttLanguage) {
+    setSttLanguage(lang)
+    setSttLanguage_(lang)
+  }
+
   // ── Reset all voice state ─────────────────────────────────────────────────────
 
   function handleResetVoiceState() {
@@ -1045,62 +1110,67 @@ export default function App() {
       return
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any
-    const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition
+    setSttStatus('idle')
+    setSttInterim('')
+    setSttPrefillInput('')
+    setTranscript('')
 
-    if (!SR) {
-      speakAnswer(wrapResponse('Voice input is not supported in this browser. Use Chrome or Edge.'))
-      return
-    }
-
-    const rec = new SR()
-    rec.lang = 'pl-PL'
-    rec.interimResults = true
-    rec.maxAlternatives = 1
-    recognitionRef.current = rec
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult = (event: any) => {
-      let interim = ''
-      let final   = ''
-      for (let i = 0; i < event.results.length; i++) {
-        if (event.results[i].isFinal) final   += event.results[i][0].transcript
-        else                          interim += event.results[i][0].transcript
-      }
-      setTranscript(final || interim)
-
-      if (final) {
-        const normalized = normalizeSpeech(final)
-        // eslint-disable-next-line no-console
-        console.log('GIENIU speech final transcript', final)
-        // eslint-disable-next-line no-console
-        console.log('GIENIU normalized query', normalized)
-
+    const controller = startListening({
+      language: sttLanguage,
+      onInterim: (text) => {
+        setSttInterim(text)
+        setTranscript(text)
+      },
+      onFinal: (result: SttResult) => {
         setListening(false)
+        setSttLastFinal(result.transcript)
+        setSttInterim('')
+        setTranscript(result.transcript)
+        setSttConfidence(result.confidence)
+        // eslint-disable-next-line no-console
+        console.log('GIENIU STT final', result)
 
+        if (!result.accepted) {
+          setSttStatus('rejected')
+          setSttRejectionReason(result.rejectionReason ?? 'unknown')
+          setSttPrefillInput(result.transcript)
+          setThinking(false)
+          return
+        }
+
+        setSttStatus('accepted')
+        setSttRejectionReason('')
+
+        const normalized = normalizeSpeech(result.transcript)
         if (isStopCommand(normalized)) {
           stopSpeaking()
-          // eslint-disable-next-line no-console
-          console.log('GIENIU stop command received')
           return
         }
 
         setThinking(true)
         if (debounceRef.current) clearTimeout(debounceRef.current)
         debounceRef.current = setTimeout(() => {
-          // handleIntentQuery is async and manages setThinking(false) in its finally block
-          void handleIntentQuery(final)
+          void handleIntentQuery(result.transcript)
         }, 750)
-      }
+      },
+      onError: (msg) => {
+        setListening(false)
+        setThinking(false)
+        // eslint-disable-next-line no-console
+        console.warn('GIENIU STT error:', msg)
+      },
+      onEnd: () => {
+        setListening(false)
+      },
+    })
+
+    if (!controller) {
+      speakAnswer(wrapResponse('Voice input is not supported in this browser. Use Chrome or Edge.'))
+      return
     }
 
-    rec.onerror = () => { setListening(false); setThinking(false) }
-    rec.onend   = () => { setListening(false) }
-
-    rec.start()
+    recognitionRef.current = controller
     setListening(true)
-    setTranscript('')
   }
 
   // ── Derived ──────────────────────────────────────────────────────────────────
@@ -1261,6 +1331,12 @@ export default function App() {
               lastIntent={lastIntent}
               lastIntentConfidence={lastIntentConfidence}
               llmConnected={llmConnected}
+              sttLanguage={sttLanguage}
+              sttLastFinal={sttLastFinal}
+              sttInterim={sttInterim}
+              sttConfidence={sttConfidence}
+              sttStatus={sttStatus}
+              sttRejectionReason={sttRejectionReason}
             />
           )}
 
@@ -1290,6 +1366,12 @@ export default function App() {
         browserVoiceInfo={browserVoiceInfo}
         englishVoiceCount={englishVoiceCount}
         onResetVoiceState={handleResetVoiceState}
+        sttLanguage={sttLanguage}
+        onSttLanguageChange={handleSttLanguageChange}
+        sttStatus={sttStatus}
+        sttConfidence={sttConfidence}
+        sttRejectionReason={sttRejectionReason}
+        sttPrefillInput={sttPrefillInput}
       />
 
       {/* Mobile bottom nav */}

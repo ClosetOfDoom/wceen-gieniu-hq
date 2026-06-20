@@ -26,6 +26,12 @@ interface Props {
   lastIntent?: string
   lastIntentConfidence?: number
   llmConnected?: boolean | null
+  sttLanguage?: string
+  sttLastFinal?: string
+  sttInterim?: string
+  sttConfidence?: number | null
+  sttStatus?: 'idle' | 'accepted' | 'rejected'
+  sttRejectionReason?: string
 }
 
 function Row({ label, value, ok }: { label: string; value: string; ok?: boolean | null }) {
@@ -38,7 +44,7 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
   )
 }
 
-export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, ttsLanguage, browserVoiceInfo, englishVoiceCount, polishVoiceCount, lastIntent, lastIntentConfidence, llmConnected }: Props) {
+export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, ttsLanguage, browserVoiceInfo, englishVoiceCount, polishVoiceCount, lastIntent, lastIntentConfidence, llmConnected, sttLanguage, sttLastFinal, sttInterim, sttConfidence, sttStatus, sttRejectionReason }: Props) {
   const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
   const [dataHealth, setDataHealth] = useState<DataHealthReport | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
@@ -143,6 +149,29 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
             <Row label="Last intent"
               value={`${lastIntent} (${lastIntentConfidence != null ? (lastIntentConfidence * 100).toFixed(0) + '%' : '—'})`}
             />
+          )}
+          <Row label="SpeechRecognition"
+            value={typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) ? 'available' : 'not available'}
+            ok={typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) ? true : false}
+          />
+          {sttLanguage && <Row label="STT language" value={sttLanguage} />}
+          {sttLastFinal && (
+            <Row label="Last STT transcript"
+              value={sttLastFinal.length > 50 ? sttLastFinal.slice(0, 50) + '…' : sttLastFinal}
+            />
+          )}
+          {sttInterim && <Row label="STT interim" value={sttInterim.slice(0, 50)} />}
+          {sttConfidence != null && (
+            <Row label="STT confidence"
+              value={`${(sttConfidence * 100).toFixed(0)}%`}
+              ok={sttConfidence >= 0.65}
+            />
+          )}
+          {sttStatus && sttStatus !== 'idle' && (
+            <Row label="STT result" value={sttStatus} ok={sttStatus === 'accepted'} />
+          )}
+          {sttStatus === 'rejected' && sttRejectionReason && (
+            <Row label="Rejection reason" value={sttRejectionReason} ok={false} />
           )}
           <Row label="PWA"            value={typeof window !== 'undefined' && 'serviceWorker' in navigator ? 'supported' : 'not supported'} />
           <Row label="Supabase"       value="connected" ok />
