@@ -10,7 +10,7 @@
 function cleanBase(text: string): string {
   return text
     .replace(/\\n/g, '\n')                        // literal \n → real newline
-    .replace(/\bzł\b/g, 'PLN')                   // zł → PLN for all paths
+    .replace(/zł/g, 'PLN')                        // zł → PLN (ł is non-ASCII, \b won't fire)
     .replace(/(\d),(\d)/g, '$1.$2')              // decimal comma → decimal point
     .replace(/—/g, '')
     .replace(/✓/g, '')
