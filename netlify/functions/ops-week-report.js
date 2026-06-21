@@ -37,17 +37,23 @@ function isJzkSession(session) {
 
 // ── Order product classifier ──────────────────────────────────────────────────
 
-const JSU_NAME_PATTERNS    = ['jak sie uczyc', 'kurs jak sie', 'jsu']
-const MEMORY_NAME_119      = ['pamiec', 'trening interaktywny', 'pakiet pamieciowy', 'memory']
-const JZK_NAME_PATTERNS    = ['jezykozak', 'jezykowy', 'nauka jezykow', 'jzk', 'jezyk']
-const MEMORY_PACK_PATTERNS = ['pakiet pamieciowy', 'pamieciowy', 'memory pack', 'memory bundle', 'pakiet mix']
+const JSU_NAME_PATTERNS  = ['jak sie uczyc', 'kurs jak sie', 'jsu', 'nauka uczenia', 'jak sie uczys']
+const JZK_MAIN_PATTERNS  = ['jezykozak', 'jzk', 'nauka jezykow', 'nauka jezyk']
+const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy']
+const MEMORY_PATTERNS    = ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']
+// Note: 'jezyk' alone and 'memory' alone intentionally excluded — too broad
+
+function anyMatch(norm, patterns) {
+  return patterns.some(p => norm.includes(p))
+}
 
 function classifyText(text) {
   const n = normalizeText(text)
   if (n.length === 0) return null
-  if (JSU_NAME_PATTERNS.some(p => n.includes(p)))    return 'JSU_COURSE'
-  if (MEMORY_PACK_PATTERNS.some(p => n.includes(p))) return 'MEMORY_PACK'
-  if (JZK_NAME_PATTERNS.some(p => n.includes(p)))    return 'JZK_LANGUAGE'
+  if (anyMatch(n, JSU_NAME_PATTERNS))    return 'JSU_COURSE'
+  if (anyMatch(n, MEMORY_PATTERNS))      return 'MEMORY_PACK'
+  if (anyMatch(n, JZK_MAIN_PATTERNS))    return 'JZK_LANGUAGE'
+  if (anyMatch(n, LANG_PACK_PATTERNS))   return 'JZK_LANGUAGE'
   return null
 }
 
@@ -84,45 +90,34 @@ function classifyOrder(row) {
 
   // Absolute rule 1: 549 PLN = JSU course
   if (amount === 549) {
-    const nameContradicts = rawName.length > 0 && !JSU_NAME_PATTERNS.some(p => norm.includes(p))
-    return {
-      classification: 'JSU_COURSE',
-      productLabel:   'Kurs Jak się uczyć',
-      reason:         'absolute price rule: 549 PLN = JSU',
-      warning: nameContradicts
-        ? `Wix product_name_raw is misleading ("${rawName.slice(0, 50)}"). Price rule used.`
-        : null,
-    }
+    const nc = rawName.length > 0 && !anyMatch(norm, JSU_NAME_PATTERNS)
+    return { classification: 'JSU_COURSE',   productLabel: 'Kurs Jak się uczyć', reason: 'absolute price rule: 549 PLN = JSU',
+      warning: nc ? `product_name_raw "${rawName.slice(0, 50)}" doesn't match JSU patterns. Price rule used.` : null }
   }
 
   // Absolute rule 2: 347 PLN = Językozak AI
   if (amount === 347) {
-    const nameContradicts = rawName.length > 0 && !JZK_NAME_PATTERNS.some(p => norm.includes(p))
-    return {
-      classification: 'JZK_LANGUAGE',
-      productLabel:   'Językozak AI',
-      reason:         'absolute price rule: 347 PLN = Językozak AI',
-      warning: nameContradicts
-        ? `Wix product_name_raw is misleading ("${rawName.slice(0, 50)}"). Price rule used.`
-        : null,
-    }
+    const nc = rawName.length > 0 && !anyMatch(norm, [...JZK_MAIN_PATTERNS, ...LANG_PACK_PATTERNS])
+    return { classification: 'JZK_LANGUAGE', productLabel: 'Językozak AI',        reason: 'absolute price rule: 347 PLN = Językozak AI',
+      warning: nc ? `product_name_raw "${rawName.slice(0, 50)}" doesn't match JZK patterns. Price rule used.` : null }
   }
 
   // Absolute rule 3: 119 PLN = memory pack
   if (amount === 119) {
-    const nameContradicts = rawName.length > 0 && !MEMORY_NAME_119.some(p => norm.includes(p))
-    return {
-      classification: 'MEMORY_PACK',
-      productLabel:   'Pakiet pamięciowy',
-      reason:         'absolute price rule: 119 PLN = memory pack',
-      warning: nameContradicts
-        ? `Wix product_name_raw is misleading ("${rawName.slice(0, 50)}"). Price rule used.`
-        : null,
-    }
+    const nc = rawName.length > 0 && !anyMatch(norm, MEMORY_PATTERNS)
+    return { classification: 'MEMORY_PACK',  productLabel: 'Pakiet pamięciowy',   reason: 'absolute price rule: 119 PLN = Pakiet Pamięciowy',
+      warning: nc ? `product_name_raw "${rawName.slice(0, 50)}" doesn't match memory patterns. Price rule used.` : null }
+  }
+
+  // Absolute rule 4: 114 PLN = Pakiet Językowy
+  if (amount === 114) {
+    const nc = rawName.length > 0 && !anyMatch(norm, [...JZK_MAIN_PATTERNS, ...LANG_PACK_PATTERNS])
+    return { classification: 'JZK_LANGUAGE', productLabel: 'Pakiet Językowy',     reason: 'absolute price rule: 114 PLN = Pakiet Językowy',
+      warning: nc ? `product_name_raw "${rawName.slice(0, 50)}" doesn't match language pack patterns. Price rule used.` : null }
   }
 
   // Name explicitly says JSU (no price match needed)
-  if (JSU_NAME_PATTERNS.some(p => norm.includes(p))) {
+  if (anyMatch(norm, JSU_NAME_PATTERNS)) {
     return { classification: 'JSU_COURSE', productLabel: 'Kurs Jak się uczyć', reason: 'product name matches JSU pattern', warning: null }
   }
 
