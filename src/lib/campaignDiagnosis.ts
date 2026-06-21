@@ -215,6 +215,7 @@ export interface CampaignFetchResult {
   aggregateSpendTotal: number
   sourceMismatch: boolean
   sourceMismatchExplanation: string | null
+  fetchError: string | null  // null = success or empty; non-null = network/auth error
 }
 
 export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
@@ -223,6 +224,7 @@ export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
     rows: [], usedDate: '', requestedDate: today,
     aggregateMetaSpendExists: false, aggregateLatestDate: null,
     aggregateSpendTotal: 0, sourceMismatch: false, sourceMismatchExplanation: null,
+    fetchError: null,
   }
 
   try {
@@ -230,8 +232,9 @@ export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
       headers: { Accept: 'application/json' },
     })
     if (!res.ok) {
-      console.warn('campaign-data HTTP error:', res.status)
-      return empty
+      const errMsg = `HTTP ${res.status}`
+      console.warn('campaign-data HTTP error:', errMsg)
+      return { ...empty, fetchError: errMsg }
     }
     const json = await res.json() as {
       ok: boolean
@@ -246,7 +249,7 @@ export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
     }
     if (!json.ok) {
       console.warn('campaign-data returned ok=false')
-      return empty
+      return { ...empty, fetchError: 'Backend returned ok: false' }
     }
     return {
       rows:                      json.rows ?? [],
@@ -257,9 +260,11 @@ export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
       aggregateSpendTotal:       json.aggregateSpendTotal ?? 0,
       sourceMismatch:            json.sourceMismatch ?? false,
       sourceMismatchExplanation: json.sourceMismatchExplanation ?? null,
+      fetchError:                null,
     }
   } catch (e) {
-    console.warn('fetchCampaignRows backend error:', e)
-    return empty
+    const errMsg = e instanceof Error ? e.message : String(e)
+    console.warn('fetchCampaignRows backend error:', errMsg)
+    return { ...empty, fetchError: errMsg }
   }
 }

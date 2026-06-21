@@ -263,13 +263,17 @@ export function CampaignsPanel() {
   const hasRows  = diagnosis.rowCount > 0
   const sourceMismatch = fetchResult?.sourceMismatch ?? false
   const aggregateSpendExists = fetchResult?.aggregateMetaSpendExists ?? false
+  const fetchError = fetchResult?.fetchError ?? null
 
-  // Empty state type:
-  // A) sourceMismatch: aggregate spend in v_daily_wix_meta_performance but meta_ads_daily=0 rows
-  // B) no data at all
-  const emptyStateType = !hasRows
-    ? (sourceMismatch ? 'mismatch' : 'empty')
-    : null
+  // Empty/error state type:
+  // A) fetchError: network/auth error
+  // B) sourceMismatch: aggregate spend found but no campaign rows
+  // C) no data at all
+  const emptyStateType = fetchError
+    ? 'error'
+    : !hasRows
+      ? (sourceMismatch ? 'mismatch' : 'empty')
+      : null
 
   return (
     <div>
@@ -295,6 +299,22 @@ export function CampaignsPanel() {
           border: '1px solid rgba(251,191,36,0.2)', borderRadius: '3px', marginBottom: '14px',
         }}>
           ⚠ Today's Meta campaign rows are not in yet. Showing latest available data from {usedDate}.
+        </div>
+      )}
+
+      {/* State Error: network/auth failure during fetch */}
+      {!loading && emptyStateType === 'error' && (
+        <div style={{
+          padding: '16px 20px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem',
+          background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.3)',
+          borderRadius: '5px', marginBottom: '14px',
+        }}>
+          <div style={{ color: 'var(--red)', fontWeight: 600, marginBottom: '6px' }}>
+            ✕ Failed to load campaign data
+          </div>
+          <div style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>
+            {fetchError}
+          </div>
         </div>
       )}
 
