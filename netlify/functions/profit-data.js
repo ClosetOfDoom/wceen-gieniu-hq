@@ -82,6 +82,20 @@ function extractProductNameRaw(row) {
   return row.product_name_raw ?? row.product_name ?? row.item_name ?? row.product_title ?? null
 }
 
+function extractOrderEmail(row) {
+  const raw = String(
+    row.buyer_email ?? row.email ?? row.customer_email ?? row.contact_email ?? ''
+  ).trim().toLowerCase()
+  const m = raw.match(/[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/)
+  return m ? m[0] : ''
+}
+
+function normalizeEmail(raw) {
+  const s = String(raw ?? '').trim().toLowerCase()
+  const m = s.match(/[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/)
+  return m ? m[0] : ''
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export const handler = async (event) => {
@@ -184,6 +198,67 @@ export const handler = async (event) => {
 
   const productBreakdown = Object.values(productAccum)
 
+  // ── Email-norm join: reclassify unmatched orders via webinar participants ─
+  // Only runs if there are unclassified orders — avoids an extra DB call otherwise.
+  let emailNormReclassified = 0
+  const emailNormWarnings   = []
+
+  if (unmappedOrders.length > 0) {
+    try {
+      const participants = await supabaseGet(supabaseUrl, serviceKey, 'webinar_participants', {
+        select: 'email',
+        limit:  '2000',
+      })
+      const participantEmailSet = new Set(
+        participants.map(p => normalizeEmail(p.email)).filter(e => e.includes('@'))
+      )
+
+      // Collect unclassified raw orders from todayOrders
+      const jsuRule = MARGIN_RULES.find(r => r.productKey === 'jsu_course')
+      if (jsuRule && participantEmailSet.size > 0) {
+        const stillUnmapped = []
+        for (const raw of todayOrders) {
+          const amount = extractAmount(raw)
+          if (getMarginRule(amount)) continue  // already classified by price
+          const email = extractOrderEmail(raw)
+          if (email && participantEmailSet.has(email)) {
+            // Webinar participant → classify as JSU, emit warning
+            knownMargin        += jsuRule.contributionMargin
+            emailNormReclassified++
+            emailNormWarnings.push({
+              email_masked: email.replace(/(?<=.).(?=[^@]*@)/, '*'),
+              amount,
+              classification: 'jsu_course',
+              reason:         'email_norm_join: email found in webinar_participants',
+            })
+            if (!productAccum[jsuRule.productKey]) {
+              productAccum[jsuRule.productKey] = {
+                productKey:         jsuRule.productKey,
+                displayName:        jsuRule.displayName,
+                orders:             0,
+                revenue:            0,
+                contributionMargin: jsuRule.contributionMargin,
+                marginTotal:        0,
+              }
+            }
+            productAccum[jsuRule.productKey].orders++
+            productAccum[jsuRule.productKey].revenue += amount
+            productAccum[jsuRule.productKey].marginTotal += jsuRule.contributionMargin
+          } else {
+            stillUnmapped.push({ amount, product_name_raw: extractProductNameRaw(raw) ?? '—', order_date: extractOrderDate(raw), note: 'no margin rule for this price' })
+          }
+        }
+        // Recount true unknowns after reclassification
+        unknownOrdersCount = stillUnmapped.length
+        unknownRevenue = stillUnmapped.reduce((s, o) => s + o.amount, 0)
+        unmappedOrders.length = 0
+        for (const o of stillUnmapped) unmappedOrders.push(o)
+      }
+    } catch (e) {
+      errors.push(`email_norm_join: ${String(e?.message ?? e)}`)
+    }
+  }
+
   // ── Fetch today's ad spend ────────────────────────────────────────────────
 
   let adSpend       = 0
@@ -223,6 +298,7 @@ export const handler = async (event) => {
 
   // ── Compute profit ────────────────────────────────────────────────────────
 
+  const productBreakdownFinal   = Object.values(productAccum)
   const marginBeforeAds         = knownMargin
   const estimatedProfitAfterAds = knownMargin - adSpend
   const ordersCount             = todayOrders.length
@@ -249,8 +325,10 @@ export const handler = async (event) => {
       marginBeforeAds,
       estimatedProfitAfterAds,
       estimatedProfitPerOrder,
-      productBreakdown,
+      productBreakdown:      productBreakdownFinal,
       unmappedOrders,
+      emailNormReclassified,
+      emailNormWarnings:     emailNormWarnings.length > 0 ? emailNormWarnings : undefined,
       sourceTable:           usedOrdersTable,
       errors:                errors.length > 0 ? errors : undefined,
     }),

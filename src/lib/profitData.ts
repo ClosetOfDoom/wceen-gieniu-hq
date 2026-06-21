@@ -28,6 +28,7 @@ export interface ProfitData {
   estimatedProfitPerOrder: number
   productBreakdown: ProductBreakdownItem[]
   unmappedOrders: unknown[]
+  emailNormReclassified?: number
   sourceTable: string
   errors?: string[]
   error?: string

@@ -1283,6 +1283,11 @@ export default function App() {
                       ⚠ {fmtPln(profitData!.unknownRevenue)} revenue from unmapped products — contribution margin not included in Est. Profit.
                     </div>
                   )}
+                  {(profitData?.emailNormReclassified ?? 0) > 0 && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', padding: '6px 12px', background: 'rgba(99,211,199,0.06)', border: '1px solid rgba(99,211,199,0.2)', borderRadius: '3px' }}>
+                      ℹ {profitData!.emailNormReclassified} order(s) classified via email→webinar match — treated as JSU.
+                    </div>
+                  )}
                 </>
               )}
 
