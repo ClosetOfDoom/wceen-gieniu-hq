@@ -32,6 +32,9 @@ interface Props {
   sttConfidence?: number | null
   sttStatus?: 'idle' | 'accepted' | 'rejected'
   sttRejectionReason?: string
+  lastRefresh?: Date | null
+  profitDataDate?: string | null
+  profitDataOrders?: number | null
 }
 
 function Row({ label, value, ok }: { label: string; value: string; ok?: boolean | null }) {
@@ -44,7 +47,7 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
   )
 }
 
-export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, ttsLanguage, browserVoiceInfo, englishVoiceCount, polishVoiceCount, lastIntent, lastIntentConfidence, llmConnected, sttLanguage, sttLastFinal, sttInterim, sttConfidence, sttStatus, sttRejectionReason }: Props) {
+export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, ttsLanguage, browserVoiceInfo, englishVoiceCount, polishVoiceCount, lastIntent, lastIntentConfidence, llmConnected, sttLanguage, sttLastFinal, sttInterim, sttConfidence, sttStatus, sttRejectionReason, lastRefresh, profitDataDate, profitDataOrders }: Props) {
   const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
   const [dataHealth, setDataHealth] = useState<DataHealthReport | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
@@ -88,6 +91,16 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
           <Row label="Wix trend rows"    value={String(trend.length)} ok={trend.length > 0} />
           <Row label="Today's Wix orders" value={perf ? String(perf.wix_orders) : '—'} ok={perf != null} />
           <Row label="Today's Meta spend" value={perf ? perf.meta_spend.toFixed(2) + ' PLN' : '—'} ok={perf != null} />
+          {profitDataDate != null && (
+            <Row label="Profit data date"   value={profitDataDate} ok={profitDataDate === today} />
+          )}
+          {profitDataOrders != null && (
+            <Row label="Profit paid orders" value={String(profitDataOrders)} ok={profitDataOrders > 0} />
+          )}
+          {lastRefresh && (
+            <Row label="Last refresh"    value={lastRefresh.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} ok />
+          )}
+          <Row label="Auto-refresh"    value="every 60 s" ok />
         </div>
 
         {/* Automation */}

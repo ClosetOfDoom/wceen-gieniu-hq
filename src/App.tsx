@@ -1351,6 +1351,9 @@ export default function App() {
               sttConfidence={sttConfidence}
               sttStatus={sttStatus}
               sttRejectionReason={sttRejectionReason}
+              lastRefresh={lastRefresh}
+              profitDataDate={profitData?.ok ? profitData.dateWarsaw ?? null : null}
+              profitDataOrders={profitData?.ok ? profitData.ordersCount : null}
             />
           )}
 
