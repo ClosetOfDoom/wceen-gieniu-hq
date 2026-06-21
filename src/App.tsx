@@ -21,7 +21,7 @@ import {
 } from './services/webinarFunnel'
 import { fetchOpsWeekReport, type OpsWeekReport } from './lib/opsWeekReport'
 import { fetchOrdersData, type OrdersData } from './lib/ordersData'
-import { fetchProfitData, type ProfitData } from './lib/profitData'
+import { fetchProfitData, mapProfitToSummary, type ProfitData } from './lib/profitData'
 import {
   buildJsuWebinarReport, buildWhyCourseNotSelling, buildJsuFunnelReport,
   buildCompareJsuWebinars, buildDeliverabilityReport, buildMailingDiagnosis,
@@ -1182,8 +1182,9 @@ export default function App() {
   const cpaHigh      = displayPerf?.real_cpa != null && displayPerf.real_cpa > 50
   const jsuAlert     = !!jsuSummary && jsuSummary.bottleneck !== 'OK' && jsuSummary.bottleneck !== 'NO_DATA' && jsuSummary.bottleneck !== 'NO_SOURCES'
 
-  // Profit KPI derived states
-  const profitEst         = profitData?.ok ? profitData.estimatedProfitAfterAds : null
+  // Profit KPI derived states — via mapProfitToSummary for canonical ProfitSummary shape
+  const profitSummary     = profitData?.ok ? mapProfitToSummary(profitData) : null
+  const profitEst         = profitSummary?.estimatedProfit ?? null
   const profitPositive    = profitEst != null && profitEst > 100
   const profitWarning     = profitEst != null && profitEst >= 0 && profitEst <= 100
   const profitDanger      = profitEst != null && profitEst < 0
@@ -1241,15 +1242,26 @@ export default function App() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
                     <KPICard
                       label="Margin Before Ads"
-                      value={profitData?.ok ? fmtPln(profitData.marginBeforeAds) : '—'}
+                      value={profitSummary ? fmtPln(profitSummary.marginBeforeAds) : '—'}
                       sublabel="Known contribution margin"
                     />
                     <KPICard
                       label="Profit / Order"
-                      value={profitData?.ok && profitData.ordersCount > 0 ? fmtPln(profitData.estimatedProfitPerOrder) : '—'}
+                      value={profitSummary && (profitData?.ordersCount ?? 0) > 0 ? fmtPln(profitSummary.profitPerOrder) : '—'}
                       positive={profitPositive}
                       danger={profitDanger}
                       sublabel="After ad spend"
+                    />
+                    <KPICard
+                      label="True CPA"
+                      value={profitSummary?.realCpa != null ? fmtPln(profitSummary.realCpa) : '—'}
+                      warning={profitSummary?.realCpa != null && profitSummary.realCpa > 50}
+                      sublabel="Ad spend ÷ paid orders"
+                    />
+                    <KPICard
+                      label="Margin ROAS"
+                      value={profitSummary?.realRoas != null ? `${profitSummary.realRoas.toFixed(2)}×` : '—'}
+                      sublabel="Revenue ÷ ad spend"
                     />
                     <KPICard
                       label="Unmapped Revenue"

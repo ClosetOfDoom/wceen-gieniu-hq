@@ -1,5 +1,6 @@
 // Frontend lib for profit-data backend endpoint.
 // Caches for 2 minutes — same TTL as ordersData.
+import type { ProfitSummary } from '../services/productMargins'
 
 export interface ProductBreakdownItem {
   productKey: string
@@ -29,6 +30,22 @@ export interface ProfitData {
   sourceTable: string
   errors?: string[]
   error?: string
+}
+
+// Maps a successful backend ProfitData response to the canonical ProfitSummary
+// shape from productMargins.ts so UI can use one unified interface.
+export function mapProfitToSummary(pd: ProfitData): ProfitSummary {
+  return {
+    marginBeforeAds: pd.marginBeforeAds,
+    estimatedProfit: pd.estimatedProfitAfterAds,
+    profitPerOrder:  pd.estimatedProfitPerOrder,
+    realCpa:         pd.ordersCount > 0 ? pd.adSpend / pd.ordersCount : null,
+    realRoas:        pd.adSpend > 0 ? pd.revenue / pd.adSpend : null,
+    unmappedRevenue: pd.unknownRevenue,
+    unmappedCount:   pd.unknownOrdersCount,
+    adSpend:         pd.adSpend,
+    paidCount:       pd.ordersCount,
+  }
 }
 
 let _cache: { data: ProfitData; ts: number } | null = null
