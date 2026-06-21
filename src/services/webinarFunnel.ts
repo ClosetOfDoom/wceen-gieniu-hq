@@ -2,6 +2,7 @@
 // PRIMARY SOURCE: /.netlify/functions/webinar-data (service role — bypasses RLS).
 // The anon key cannot read webinar_sessions or webinar_participants due to RLS.
 // Direct Supabase anon queries will return 0 rows even when the table has data.
+import { bustUrl } from '../utils/cacheBust'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -137,7 +138,9 @@ interface WebinarBackendResponse {
 // ── Backend fetch ─────────────────────────────────────────────────────────────
 
 async function fetchWebinarBackend(): Promise<WebinarBackendResponse> {
-  const res = await fetch('/.netlify/functions/webinar-data')
+  const res = await fetch(bustUrl('/.netlify/functions/webinar-data'), {
+    headers: { 'Cache-Control': 'no-store' },
+  })
   if (!res.ok) {
     const text = await res.text().catch(() => 'no response body')
     throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`)

@@ -796,7 +796,7 @@ export default function App() {
     loadOpsWeekReport()
     loadOrdersData()
     loadProfitData()
-    const interval = setInterval(() => { loadData(); loadAds(); loadProfitData() }, 5 * 60 * 1000)
+    const interval = setInterval(() => { loadData(); loadAds(); loadProfitData(); loadOrdersData() }, 60 * 1000)
     return () => clearInterval(interval)
   }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants, loadOpsWeekReport, loadOrdersData, loadProfitData])
 
@@ -1204,7 +1204,7 @@ export default function App() {
           loading={loading}
           lastRefresh={lastRefresh}
           isStale={metaStats.isStale}
-          onRefresh={() => { loadData(); loadAds(); loadRuns(); loadJsuFunnel() }}
+          onRefresh={() => { loadData(); loadAds(); loadRuns(); loadJsuFunnel(); loadOrdersData(); loadProfitData() }}
         />
 
         <div style={{ flex: 1, padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: '28px', overflowY: 'auto' }}>

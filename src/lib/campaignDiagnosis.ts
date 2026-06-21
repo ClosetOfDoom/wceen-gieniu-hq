@@ -1,4 +1,5 @@
 import type { MetaAdDaily } from '../services/data'
+import { bustUrl } from '../utils/cacheBust'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -228,8 +229,8 @@ export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
   }
 
   try {
-    const res = await fetch('/.netlify/functions/campaign-data', {
-      headers: { Accept: 'application/json' },
+    const res = await fetch(bustUrl('/.netlify/functions/campaign-data'), {
+      headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
     })
     if (!res.ok) {
       const errMsg = `HTTP ${res.status}`

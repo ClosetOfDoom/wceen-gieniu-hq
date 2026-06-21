@@ -1,6 +1,7 @@
 // Typed fetch helper for /.netlify/functions/orders-data
 // Canonical orders source: service role, absolute price classification.
 // Used by GIENIU intent handlers for "ile dziś zamówień" and similar queries.
+import { bustUrl } from '../utils/cacheBust'
 
 export interface OrderRow {
   external_order_id: string
@@ -41,15 +42,15 @@ export interface OrdersData {
 
 let _cache: OrdersData | null = null
 let _cacheTime = 0
-const CACHE_TTL = 2 * 60 * 1000
+const CACHE_TTL = 55 * 1000  // 55 s — just under 60 s auto-refresh interval
 
 export async function fetchOrdersData(): Promise<OrdersData | null> {
   const now = Date.now()
   if (_cache && now - _cacheTime < CACHE_TTL) return _cache
 
   try {
-    const res = await fetch('/.netlify/functions/orders-data', {
-      headers: { Accept: 'application/json' },
+    const res = await fetch(bustUrl('/.netlify/functions/orders-data'), {
+      headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
     })
     if (!res.ok) {
       console.warn('orders-data endpoint error:', res.status)

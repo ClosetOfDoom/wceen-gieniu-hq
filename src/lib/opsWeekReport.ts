@@ -1,5 +1,6 @@
 // Frontend helper for the ops-week-report backend function.
-// Provides types + a 2-minute cached fetch.
+// Provides types + a cached fetch (55 s — matches auto-refresh interval).
+import { bustUrl } from '../utils/cacheBust'
 
 export interface OpsWeekRange {
   week_start: string
@@ -133,10 +134,12 @@ export interface OpsWeekReport {
 let _cache: { report: OpsWeekReport; fetchedAt: number } | null = null
 
 export async function fetchOpsWeekReport(): Promise<OpsWeekReport> {
-  if (_cache && Date.now() - _cache.fetchedAt < 120_000) {
+  if (_cache && Date.now() - _cache.fetchedAt < 55_000) {
     return _cache.report
   }
-  const res = await fetch('/.netlify/functions/ops-week-report')
+  const res = await fetch(bustUrl('/.netlify/functions/ops-week-report'), {
+    headers: { 'Cache-Control': 'no-store' },
+  })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(`ops-week-report HTTP ${res.status}: ${text.slice(0, 200)}`)

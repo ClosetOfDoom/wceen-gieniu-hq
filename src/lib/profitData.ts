@@ -1,6 +1,7 @@
 // Frontend lib for profit-data backend endpoint.
-// Caches for 2 minutes — same TTL as ordersData.
+// Caches for 55 s — just under the 60 s auto-refresh interval.
 import type { ProfitSummary } from '../services/productMargins'
+import { bustUrl } from '../utils/cacheBust'
 
 export interface ProductBreakdownItem {
   productKey: string
@@ -49,12 +50,12 @@ export function mapProfitToSummary(pd: ProfitData): ProfitSummary {
 }
 
 let _cache: { data: ProfitData; ts: number } | null = null
-const CACHE_TTL = 2 * 60 * 1000
+const CACHE_TTL = 55 * 1000  // 55 s — just under 60 s auto-refresh interval
 
 export async function fetchProfitData(): Promise<ProfitData | null> {
   if (_cache && Date.now() - _cache.ts < CACHE_TTL) return _cache.data
   try {
-    const res = await fetch('/.netlify/functions/profit-data', {
+    const res = await fetch(bustUrl('/.netlify/functions/profit-data'), {
       headers: { 'Cache-Control': 'no-store' },
     })
     if (!res.ok) return null
