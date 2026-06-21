@@ -34,15 +34,15 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
     } else {
       fail('productMargins.ts: language_pack must have contributionMargin: 40')
     }
-    if (c.includes('jsu_course') && c.includes('contributionMargin:  null')) {
-      pass('productMargins.ts: jsu_course has contributionMargin null (configurable)')
+    if (c.includes('jsu_course') && c.includes('contributionMargin:') && c.includes('500')) {
+      pass('productMargins.ts: jsu_course has contributionMargin 500')
     } else {
-      fail('productMargins.ts: jsu_course must have contributionMargin: null (not yet configured)')
+      fail('productMargins.ts: jsu_course must have contributionMargin: 500 (JSU = price 549, margin 500)')
     }
-    if (c.includes('jzk_ai') && c.includes('contributionMargin:  null')) {
-      pass('productMargins.ts: jzk_ai has contributionMargin null (configurable)')
+    if (c.includes('jzk_ai') && c.includes('contributionMargin:') && c.includes('320')) {
+      pass('productMargins.ts: jzk_ai has contributionMargin 320')
     } else {
-      fail('productMargins.ts: jzk_ai must have contributionMargin: null (not yet configured)')
+      fail('productMargins.ts: jzk_ai must have contributionMargin: 320 (Językozak = price 347, margin 320)')
     }
     if (c.includes('UNKNOWN_MARGIN') || c.includes('unknown')) {
       pass('productMargins.ts: has UNKNOWN_MARGIN for unmapped products')
@@ -90,10 +90,10 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
     } else {
       fail('profit-data.js: language_pack (114 PLN) must have contributionMargin 40')
     }
-    if (c.includes('contributionMargin: null')) {
-      pass('profit-data.js: unknown/configurable products return contributionMargin null')
+    if (c.includes('contributionMargin: 500') && c.includes('contributionMargin: 320')) {
+      pass('profit-data.js: jsu_course = 500 PLN margin, jzk_ai = 320 PLN margin')
     } else {
-      fail('profit-data.js: jsu_course and jzk_ai must have contributionMargin: null (unmapped)')
+      fail('profit-data.js: jsu_course must have contributionMargin 500, jzk_ai must have 320')
     }
     if (c.includes('unknownRevenue')) {
       pass('profit-data.js: returns unknownRevenue field for unmapped products')

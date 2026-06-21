@@ -10,13 +10,14 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 }
 
-// ── Margin rules (matches src/services/productMargins.ts) ────────────────────
+// ── Margin rules (KEEP IN SYNC with src/services/productMargins.ts) ─────────
+// JSU: 549→500, Językozak: 347→320, Pamięciowy: 119→70, Językowy: 114→40
 
 const MARGIN_RULES = [
-  { amount: 119, productKey: 'memory_pack',   displayName: 'Pakiet pamięciowy', contributionMargin: 70  },
-  { amount: 114, productKey: 'language_pack',  displayName: 'Pakiet językowy',   contributionMargin: 40  },
-  { amount: 549, productKey: 'jsu_course',     displayName: 'Kurs Jak się uczyć', contributionMargin: null },
-  { amount: 347, productKey: 'jzk_ai',         displayName: 'Językozak AI',       contributionMargin: null },
+  { amount: 549, productKey: 'jsu_course',    displayName: 'Kurs Jak się uczyć', contributionMargin: 500 },
+  { amount: 347, productKey: 'jzk_ai',        displayName: 'Językozak AI',        contributionMargin: 320 },
+  { amount: 119, productKey: 'memory_pack',   displayName: 'Pakiet Pamięciowy',   contributionMargin: 70  },
+  { amount: 114, productKey: 'language_pack', displayName: 'Pakiet Językowy',     contributionMargin: 40  },
 ]
 
 function getMarginRule(amount) {
@@ -160,19 +161,8 @@ export const handler = async (event) => {
       continue
     }
 
-    if (rule.contributionMargin !== null) {
+    if (rule.contributionMargin != null) {
       knownMargin += rule.contributionMargin
-    } else {
-      // Product is known but margin is not configured
-      unknownRevenue     += amount
-      unknownOrdersCount++
-      unmappedOrders.push({
-        amount,
-        product_name_raw: extractProductNameRaw(row) ?? '—',
-        order_date:       extractOrderDate(row),
-        productKey:       rule.productKey,
-        note:             'margin not yet configured for this product',
-      })
     }
 
     if (!productAccum[rule.productKey]) {

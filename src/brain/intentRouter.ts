@@ -167,7 +167,7 @@ const INTENT_DEFS: { intent: IntentName; phrases: string[] }[] = [
 const PL_MARKERS = ['ile', 'jak', 'czy', 'co', 'czemu', 'kto', 'gdzie', 'dlaczego',
   'kiedy', 'jaki', 'jaka', 'jakie', 'nie', 'sie', 'jest', 'sa', 'byl', 'czy']
 
-function detectLanguage(message: string): 'en' | 'pl' | 'mixed' {
+export function detectLanguage(message: string): 'en' | 'pl' | 'mixed' {
   const hasPolishChars = /[ąćęłńóśźż]/i.test(message)
   const norm = normalizeQuery(message)
   const words = norm.split(/\s+/)
