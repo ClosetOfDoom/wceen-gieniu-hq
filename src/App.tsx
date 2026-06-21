@@ -39,7 +39,7 @@ import {
 } from './voice/tts'
 import { fetchGieniuCommand, type GieniuCommandContext } from './lib/gieniuCommand'
 import {
-  getSttLanguage, setSttLanguage, startListening, isSpeechRecognitionAvailable,
+  getSttLanguage, setSttLanguage, startListening,
   type SttLanguage, type SttResult,
 } from './voice/stt'
 
@@ -630,7 +630,7 @@ export default function App() {
   const [metaStats, setMetaStats]     = useState<MetaStatsToday>({ meta_purchases: 0, latestDate: '', isStale: false })
   const [status, setStatus]           = useState<DataStatus>('NO_DATA')
   const [loading, setLoading]         = useState(true)
-  const [adsLoading, setAdsLoading]   = useState(true)
+  const [, setAdsLoading]             = useState(true)
   const [runsLoading, setRunsLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
 

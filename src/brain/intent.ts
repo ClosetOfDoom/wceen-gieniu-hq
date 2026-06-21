@@ -18,7 +18,7 @@ import {
   buildJsuWeekReport, buildJsuWeekReportSpoken, buildJsuSalesAnswer, buildJsuSalesSpoken,
   buildJzkWeekReport, buildJzkWeekReportSpoken, buildJzkSalesAnswer, buildJzkSalesSpoken,
   buildTodayOrdersAnswer, buildTodayOrdersSpoken,
-  buildProfitAnswer, buildProfitSpoken,
+  buildProfitAnswer,
   // spoken text builders
   buildYesterdaySpoken, buildOpsBriefingSpoken, buildAdsDiagnosisSpoken,
   buildPeriodComparisonSpoken, buildWeekToDateSpoken, buildJsuWebinarSpoken,

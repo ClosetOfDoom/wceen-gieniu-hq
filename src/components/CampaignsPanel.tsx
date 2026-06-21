@@ -262,7 +262,6 @@ export function CampaignsPanel() {
   const isStale  = diagnosis.isStale
   const hasRows  = diagnosis.rowCount > 0
   const sourceMismatch = fetchResult?.sourceMismatch ?? false
-  const aggregateSpendExists = fetchResult?.aggregateMetaSpendExists ?? false
   const fetchError = fetchResult?.fetchError ?? null
 
   // Empty/error state type:

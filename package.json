@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "assert:voice": "node scripts/assert-gieniu-voice.mjs",
     "assert:tts": "node scripts/assert-tts.mjs",

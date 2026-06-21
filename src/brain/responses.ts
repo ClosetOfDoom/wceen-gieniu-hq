@@ -642,7 +642,7 @@ export function buildOpsBriefing(
 
 export function buildWorkflowInstructions(
   perf: DailyPerformance | null,
-  status: DataStatus,
+  _status: DataStatus,
   ads: MetaAdDaily[],
   metaStats: MetaStatsToday
 ): string {
@@ -1854,8 +1854,6 @@ function detectProductFromSessions(s: JsuFunnelSummary): ProductTag {
   return 'OTHER'
 }
 
-// suppress unused import warning — productFromQuery used in buildJsuWebinarSpoken
-const _ensureProductFromQueryImport = productFromQuery
 
 // ── Chart spec builders ───────────────────────────────────────────────────────
 
