@@ -1,4 +1,5 @@
 // Fetch helper for the gieniu-command Netlify function.
+import type { LlmMeta } from '../types'
 
 export interface GieniuCommandContext {
   todayKPIs: {
@@ -54,8 +55,11 @@ export interface GieniuCommandResult {
   speechText: string
   intent: string
   confidence: number
+  language?: 'en' | 'pl' | 'mixed'
   dataSourcesUsed: string[]
   warnings: string[]
+  llm?: LlmMeta
+  // Legacy flat fields — kept for backward compat; prefer llm.used / llm.active
   llmUsed?: boolean
   llmProvider?: string
 }

@@ -497,7 +497,7 @@ async function callOpenAI(userMessage, apiKey) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userMessage },
@@ -527,7 +527,7 @@ async function callAnthropic(userMessage, apiKey) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
         max_tokens: 600,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userMessage }],
@@ -587,6 +587,12 @@ exports.handler = async (event) => {
   const lang = language === 'pl' ? 'pl' : 'en'
   const ctx = context ?? {}
 
+  // LLM env vars — read early so deterministic paths can report llm.active
+  const llmProviderEnv = process.env.LLM_PROVIDER
+  const openaiKeyEnv   = process.env.OPENAI_API_KEY
+  const anthropicKeyEnv = process.env.ANTHROPIC_API_KEY
+  const llmActive = !!(llmProviderEnv && (openaiKeyEnv || anthropicKeyEnv))
+
   // 1 — Detect intent
   const { intent, confidence, matchedTerms } = detectIntent(message)
 
@@ -599,19 +605,17 @@ exports.handler = async (event) => {
         speechText: det.speech,
         intent,
         confidence,
+        language: lang,
         dataSourcesUsed: det.sources,
         warnings: det.warnings ?? [],
         llmUsed: false,
+        llm: { active: llmActive, provider: llmProviderEnv ?? null, used: false, model: null },
       })
     }
   }
 
   // 3 — LLM fallback
-  const llmProvider = process.env.LLM_PROVIDER
-  const openaiKey   = process.env.OPENAI_API_KEY
-  const anthropicKey = process.env.ANTHROPIC_API_KEY
-
-  if (!llmProvider || (!openaiKey && !anthropicKey)) {
+  if (!llmProviderEnv || (!openaiKeyEnv && !anthropicKeyEnv)) {
     const noLLMMsg = lang === 'pl'
       ? 'Mogę odpowiadać na komendy dashboardowe, ale AI konwersacyjna nie jest jeszcze podłączona. Skonfiguruj LLM_PROVIDER i klucz API w Netlify.'
       : 'I can answer operational dashboard commands, but conversational AI is not connected yet. Configure LLM_PROVIDER and API key in Netlify environment variables.'
@@ -620,10 +624,12 @@ exports.handler = async (event) => {
       speechText: lang === 'pl' ? 'Konwersacyjna AI nie jest podłączona.' : 'Conversational AI is not connected.',
       intent: intent === 'normal_chat' ? 'normal_chat' : intent,
       confidence,
+      language: lang,
       dataSourcesUsed: [],
       warnings: ['LLM not configured'],
       llmUsed: false,
       llmProvider: null,
+      llm: { active: false, provider: null, used: false, model: null },
     })
   }
 
@@ -634,16 +640,20 @@ exports.handler = async (event) => {
   try {
     let rawLLM
     let usedProvider
+    let usedModel
 
-    if (llmProvider === 'openai' && openaiKey) {
-      rawLLM = await callOpenAI(userMessage, openaiKey)
+    if (llmProviderEnv === 'openai' && openaiKeyEnv) {
+      rawLLM = await callOpenAI(userMessage, openaiKeyEnv)
       usedProvider = 'openai'
-    } else if (anthropicKey) {
-      rawLLM = await callAnthropic(userMessage, anthropicKey)
+      usedModel = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+    } else if (anthropicKeyEnv) {
+      rawLLM = await callAnthropic(userMessage, anthropicKeyEnv)
       usedProvider = 'anthropic'
-    } else if (openaiKey) {
-      rawLLM = await callOpenAI(userMessage, openaiKey)
+      usedModel = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
+    } else if (openaiKeyEnv) {
+      rawLLM = await callOpenAI(userMessage, openaiKeyEnv)
       usedProvider = 'openai'
+      usedModel = process.env.OPENAI_MODEL || 'gpt-4o-mini'
     } else {
       throw new Error('No API key available')
     }
@@ -655,10 +665,12 @@ exports.handler = async (event) => {
       speechText,
       intent,
       confidence,
+      language: lang,
       dataSourcesUsed: ['llm', ...(contextText.includes('Today KPIs') ? ['todayKPIs'] : [])],
       warnings: [],
       llmUsed: true,
       llmProvider: usedProvider,
+      llm: { active: true, provider: usedProvider, used: true, model: usedModel },
     })
   } catch (err) {
     const errMsg = lang === 'pl'
@@ -669,9 +681,11 @@ exports.handler = async (event) => {
       speechText: lang === 'pl' ? 'Błąd połączenia z AI.' : 'AI connection error.',
       intent,
       confidence,
+      language: lang,
       dataSourcesUsed: [],
       warnings: [`LLM error: ${String(err).slice(0, 100)}`],
       llmUsed: false,
+      llm: { active: llmActive, provider: llmProviderEnv ?? null, used: false, model: null },
     })
   }
 }

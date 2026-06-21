@@ -955,7 +955,9 @@ export default function App() {
       const cmdResult = await fetchGieniuCommand(query, ctx, voiceLanguage)
       setLastIntent(cmdResult.intent)
       setLastIntentConfidence(cmdResult.confidence)
-      if (cmdResult.warnings.includes('LLM not configured')) {
+      if (cmdResult.llm !== undefined) {
+        setLlmConnected(cmdResult.llm.active)
+      } else if (cmdResult.warnings.includes('LLM not configured')) {
         setLlmConnected(false)
       } else if (cmdResult.llmUsed) {
         setLlmConnected(true)

@@ -194,11 +194,16 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
       fail('gieniu-command.js must abort LLM fetch after 8 seconds to avoid Netlify timeout')
     }
 
-    // llmUsed flag
-    if (c.includes('llmUsed')) {
-      pass('gieniu-command.js returns llmUsed flag in response')
+    // llm metadata (nested object) — llmUsed kept as legacy flat field alongside llm.used
+    if (c.includes('llm:') && c.includes('used:') && c.includes('active:')) {
+      pass('gieniu-command.js returns llm: {active, provider, used, model} nested object')
     } else {
-      fail('gieniu-command.js must return llmUsed: boolean to let frontend show LLM status')
+      fail('gieniu-command.js must return llm: {active, provider, used, model} in response')
+    }
+    if (c.includes('llmUsed')) {
+      pass('gieniu-command.js still returns legacy llmUsed flag for backward compat')
+    } else {
+      fail('gieniu-command.js must keep llmUsed: boolean for backward compat')
     }
 
     // Cache-Control: no-store
