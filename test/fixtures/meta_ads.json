@@ -1,0 +1,38 @@
+[
+  {
+    "campaign_name": "JSU Main Retargeting",
+    "spend": 360.00,
+    "clicks": 1200,
+    "impressions": 45000,
+    "purchases": 5,
+    "date": "2024-06-21",
+    "inserted_at": "2024-06-21T23:00:00Z"
+  },
+  {
+    "campaign_name": "Pakiet Pamięciowy Awareness",
+    "spend": 80.00,
+    "clicks": 320,
+    "impressions": 12000,
+    "purchases": 1,
+    "date": "2024-06-21",
+    "inserted_at": "2024-06-21T23:00:00Z"
+  },
+  {
+    "campaign_name": "JZK Cold Traffic",
+    "spend": 40.00,
+    "clicks": 180,
+    "impressions": 8000,
+    "purchases": 0,
+    "date": "2024-06-21",
+    "inserted_at": "2024-06-21T23:00:00Z"
+  },
+  {
+    "campaign_name": "Brand Awareness",
+    "spend": 30.00,
+    "clicks": 100,
+    "impressions": 5000,
+    "purchases": 0,
+    "date": "2024-06-21",
+    "inserted_at": "2024-06-21T23:00:00Z"
+  }
+]

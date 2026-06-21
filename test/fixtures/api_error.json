@@ -1,0 +1,6 @@
+{
+  "error": {
+    "message": "JWT expired",
+    "code": 401
+  }
+}
