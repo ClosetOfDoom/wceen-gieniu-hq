@@ -11,6 +11,9 @@ export interface DailyPerformance {
   clicks: number
   link_clicks: number
   ads_count: number
+  // Added when v_daily_wix_meta_performance view gets migration add_meta_purchases_to_view.sql
+  meta_purchases?: number | null
+  meta_purchase_value?: number | null
 }
 
 export interface MetaAdDaily {
