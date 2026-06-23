@@ -14,7 +14,7 @@ export function TopAds({ ads, loading }: Props) {
   }
 
   const total = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
-  const totalPurchases = ads.reduce((s, a) => s + (a.purchases ?? 0), 0)
+  const totalPurchases = ads.reduce((s, a) => s + (a.meta_purchases ?? a.purchases ?? 0), 0)
 
   return (
     <div>
@@ -54,8 +54,8 @@ export function TopAds({ ads, loading }: Props) {
                   <td style={{ textAlign: 'right', color: 'var(--muted)' }}>
                     {ad.link_clicks ?? '—'}
                   </td>
-                  <td style={{ textAlign: 'right', color: (ad.purchases ?? 0) > 0 ? 'var(--teal)' : 'var(--muted2)' }}>
-                    {ad.purchases ?? 0}
+                  <td style={{ textAlign: 'right', color: (ad.meta_purchases ?? ad.purchases ?? 0) > 0 ? 'var(--teal)' : 'var(--muted2)' }}>
+                    {ad.meta_purchases ?? ad.purchases ?? 0}
                   </td>
                 </tr>
               )

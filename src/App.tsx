@@ -933,11 +933,11 @@ export default function App() {
         rates:  jsuSummary.rates,
       } : null,
       topCampaigns: ads.slice(0, 5).map(a => ({
-        name: a.campaign_name,
+        name: a.campaign_name ?? a.campaign_id ?? '?',
         spend: a.spend,
-        clicks: a.clicks,
-        impressions: a.impressions,
-        purchases: a.purchases,
+        clicks: a.clicks ?? 0,
+        impressions: a.impressions ?? 0,
+        purchases: a.meta_purchases ?? a.purchases ?? 0,
       })),
       currentRoute: section,
     }

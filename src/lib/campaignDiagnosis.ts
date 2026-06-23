@@ -101,14 +101,16 @@ export function buildCampaignDiagnosis(
   const isStale = usedDate !== '' && usedDate < (requestedDate || today)
 
   const totalSpend     = allRows.reduce((s, r) => s + (r.spend ?? 0), 0)
-  const totalPurchases = allRows.reduce((s, r) => s + (r.purchases ?? 0), 0)
+  const totalPurchases = allRows.reduce((s, r) => s + (r.meta_purchases ?? r.purchases ?? 0), 0)
 
   // Build all entries
   const allEntries: CampaignEntry[] = allRows.map(r => {
     const spend     = r.spend     ?? 0
-    const purchases = r.purchases ?? 0
-    const ctr = r.ctr ?? (r.link_clicks > 0 && r.impressions > 0 ? (r.link_clicks / r.impressions) * 100 : null)
-    const cpc = r.cpc ?? (r.link_clicks > 0 && spend > 0 ? spend / r.link_clicks : null)
+    const purchases = r.meta_purchases ?? r.purchases ?? 0
+    const lc  = r.link_clicks ?? 0
+    const imp = r.impressions ?? 0
+    const ctr = r.ctr ?? (lc > 0 && imp > 0 ? (lc / imp) * 100 : null)
+    const cpc = r.cpc ?? (lc > 0 && spend > 0 ? spend / lc : null)
     const metaCpa    = purchases > 0 ? spend / purchases : null
     const spendShare = totalSpend > 0 ? spend / totalSpend : 0
     const purchaseShare = totalPurchases > 0 ? purchases / totalPurchases : 0

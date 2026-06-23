@@ -15,6 +15,11 @@ import { yesterdayWaw, thisWeekStartWaw, lastWeekStartWaw, lastWeekEndWaw } from
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** DB column is meta_purchases; older rows may have purchases. Always use this accessor. */
+function adPurchases(a: MetaAdDaily): number {
+  return a.meta_purchases ?? a.purchases ?? 0
+}
+
 function fmt(n: number | null | undefined, decimals = 0, suffix = ''): string {
   if (n == null) return '—'
   return n.toFixed(decimals) + suffix
@@ -683,16 +688,16 @@ export function buildWorkflowInstructions(
 
   // 3. Ads check
   if (ads.length > 0) {
-    const zeroBurners = ads.filter(a => (a.spend ?? 0) > 10 && (a.purchases ?? 0) === 0)
-    const withPurchases = ads.filter(a => (a.purchases ?? 0) > 0)
-    const winner = withPurchases.sort((a, b) => (a.spend / a.purchases!) - (b.spend / b.purchases!))[0]
+    const zeroBurners = ads.filter(a => (a.spend ?? 0) > 10 && adPurchases(a) === 0)
+    const withPurchases = ads.filter(a => adPurchases(a) > 0)
+    const winner = withPurchases.sort((a, b) => a.spend / adPurchases(a) - b.spend / adPurchases(b))[0]
 
     if (zeroBurners.length > 0) {
       lines.push(`3. BUDGET BURN: ${zeroBurners.length} campaign(s) spending with zero Meta purchases.`)
       lines.push(`   Burning: ${zeroBurners.map(a => `"${a.campaign_name ?? a.campaign_id}" (${fmtPln(a.spend)})`).join(', ')}`)
       lines.push('   → Pause these campaigns immediately and review creatives.')
     } else if (winner) {
-      lines.push(`3. CAMPAIGNS: Winner — "${winner.campaign_name ?? winner.campaign_id}" (CPA: ${fmtPln(winner.spend / winner.purchases!)}).`)
+      lines.push(`3. CAMPAIGNS: Winner — "${winner.campaign_name ?? winner.campaign_id}" (CPA: ${fmtPln(winner.spend / adPurchases(winner))}).`)
       lines.push('   → Consider scaling budget on winner. Review underperformers.')
     } else {
       lines.push('3. CAMPAIGNS: All campaigns running — no purchases attributed yet.')
@@ -1081,7 +1086,7 @@ export function buildAdsDiagnosis(
 
   // ── Campaign-level data available ─────────────────────────────────────────
   const totalSpend     = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
-  const totalPurchases = ads.reduce((s, a) => s + (a.purchases ?? 0), 0)
+  const totalPurchases = ads.reduce((s, a) => s + adPurchases(a), 0)
 
   const adsDate = ads[0]?.date ?? ''
   const today   = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
@@ -1099,29 +1104,31 @@ export function buildAdsDiagnosis(
   for (const ad of ads) {
     const name     = ad.campaign_name ?? ad.campaign_id ?? '?'
     const spendPct = totalSpend > 0 ? ((ad.spend / totalSpend) * 100).toFixed(0) : '?'
-    const metaCpa  = ad.spend > 0 && ad.purchases > 0 ? ad.spend / ad.purchases : null
-    const purchStr = ad.purchases > 0
-      ? `${ad.purchases} purchases  CPA: ${fmtPln(metaCpa)}`
+    const adPurch = adPurchases(ad)
+    const metaCpa  = ad.spend > 0 && adPurch > 0 ? ad.spend / adPurch : null
+    const purchStr = adPurch > 0
+      ? `${adPurch} purchases  CPA: ${fmtPln(metaCpa)}`
       : '0 purchases'
-    // Compute CTR and CPC if not stored
-    const ctr = ad.ctr ?? (ad.link_clicks > 0 && ad.impressions > 0 ? (ad.link_clicks / ad.impressions) * 100 : null)
-    const cpc = ad.cpc ?? (ad.link_clicks > 0 ? ad.spend / ad.link_clicks : null)
+    const lc  = ad.link_clicks ?? 0
+    const imp = ad.impressions ?? 0
+    const ctr = ad.ctr ?? (lc > 0 && imp > 0 ? (lc / imp) * 100 : null)
+    const cpc = ad.cpc ?? (lc > 0 ? ad.spend / lc : null)
     lines.push(`  "${name}"`)
-    lines.push(`    spend: ${fmtPln(ad.spend)} (${spendPct}%)  ${purchStr}  clicks: ${ad.link_clicks ?? 0}${ctr != null ? `  CTR: ${ctr.toFixed(1)}%` : ''}${cpc != null ? `  CPC: ${fmtPln(cpc)}` : ''}`)
+    lines.push(`    spend: ${fmtPln(ad.spend)} (${spendPct}%)  ${purchStr}  clicks: ${lc}${ctr != null ? `  CTR: ${ctr.toFixed(1)}%` : ''}${cpc != null ? `  CPC: ${fmtPln(cpc)}` : ''}`)
   }
   lines.push(`  Total: ${fmtPln(totalSpend)} spend  ${totalPurchases} purchases`)
   lines.push('')
 
   // ── Winner / Watch ────────────────────────────────────────────────────────
-  const withPurchases = ads.filter(a => (a.purchases ?? 0) > 0 && (a.spend ?? 0) > 0)
-  const zeroBurners   = ads.filter(a => (a.spend ?? 0) > 10 && (a.purchases ?? 0) === 0)
+  const withPurchases = ads.filter(a => adPurchases(a) > 0 && (a.spend ?? 0) > 0)
+  const zeroBurners   = ads.filter(a => (a.spend ?? 0) > 10 && adPurchases(a) === 0)
 
   if (withPurchases.length > 0) {
-    const best = withPurchases.reduce((prev, curr) => {
-      return (curr.spend / curr.purchases) < (prev.spend / prev.purchases) ? curr : prev
-    })
-    const bestCpa = best.spend / best.purchases
-    lines.push(`Winner: "${best.campaign_name ?? best.campaign_id}" — Meta CPA ${fmtPln(bestCpa)}, ${best.purchases} purchases.`)
+    const best = withPurchases.reduce((prev, curr) =>
+      curr.spend / adPurchases(curr) < prev.spend / adPurchases(prev) ? curr : prev
+    )
+    const bestCpa = best.spend / adPurchases(best)
+    lines.push(`Winner: "${best.campaign_name ?? best.campaign_id}" — Meta CPA ${fmtPln(bestCpa)}, ${adPurchases(best)} purchases.`)
   }
 
   if (zeroBurners.length > 0) {
@@ -1130,10 +1137,10 @@ export function buildAdsDiagnosis(
 
   // Worst (highest CPA)
   if (withPurchases.length > 1) {
-    const worst = withPurchases.reduce((prev, curr) => {
-      return (curr.spend / curr.purchases) > (prev.spend / prev.purchases) ? curr : prev
-    })
-    const worstCpa = worst.spend / worst.purchases
+    const worst = withPurchases.reduce((prev, curr) =>
+      curr.spend / adPurchases(curr) > prev.spend / adPurchases(prev) ? curr : prev
+    )
+    const worstCpa = worst.spend / adPurchases(worst)
     lines.push(`Most expensive: "${worst.campaign_name ?? worst.campaign_id}" — Meta CPA ${fmtPln(worstCpa)}.`)
   }
 
@@ -1280,8 +1287,8 @@ export function buildAdsDiagnosisSpoken(
   const isStaleAds = adsDate !== '' && adsDate < today
 
   const totalSpend    = ads.reduce((s, a) => s + (a.spend ?? 0), 0)
-  const zeroBurners   = ads.filter(a => (a.spend ?? 0) > 10 && (a.purchases ?? 0) === 0)
-  const withPurchases = ads.filter(a => (a.purchases ?? 0) > 0)
+  const zeroBurners   = ads.filter(a => (a.spend ?? 0) > 10 && adPurchases(a) === 0)
+  const withPurchases = ads.filter(a => adPurchases(a) > 0)
   const parts: string[] = []
 
   if (isStaleAds) {
@@ -1289,12 +1296,12 @@ export function buildAdsDiagnosisSpoken(
   }
 
   if (withPurchases.length > 0) {
-    const best    = withPurchases.reduce((a, b) => (a.spend / a.purchases!) < (b.spend / b.purchases!) ? a : b)
-    const bestCpa = best.spend / best.purchases!
-    parts.push(`Best performer: "${best.campaign_name ?? best.campaign_id}" — ${best.purchases} purchases at ${bestCpa.toFixed(0)} zloty C P A.`)
+    const best    = withPurchases.reduce((a, b) => a.spend / adPurchases(a) < b.spend / adPurchases(b) ? a : b)
+    const bestCpa = best.spend / adPurchases(best)
+    parts.push(`Best performer: "${best.campaign_name ?? best.campaign_id}" — ${adPurchases(best)} purchases at ${bestCpa.toFixed(0)} zloty C P A.`)
     if (withPurchases.length > 1) {
-      const worst    = withPurchases.reduce((a, b) => (a.spend / a.purchases!) > (b.spend / b.purchases!) ? a : b)
-      const worstCpa = worst.spend / worst.purchases!
+      const worst    = withPurchases.reduce((a, b) => a.spend / adPurchases(a) > b.spend / adPurchases(b) ? a : b)
+      const worstCpa = worst.spend / adPurchases(worst)
       if (worst !== best) parts.push(`Worst C P A: "${worst.campaign_name ?? worst.campaign_id}" at ${worstCpa.toFixed(0)} zloty.`)
     }
   }
@@ -1927,8 +1934,8 @@ export function buildCampaignChart(ads: MetaAdDaily[]): InsightChartSpec | undef
     data:   ads.map(a => ({
       name:      (a.campaign_name ?? a.campaign_id ?? '?').slice(0, 22),
       spend:     Math.round(a.spend ?? 0),
-      cpa:       a.purchases > 0 ? Math.round(a.spend / a.purchases) : null,
-      purchases: a.purchases ?? 0,
+      cpa:       adPurchases(a) > 0 ? Math.round(a.spend / adPurchases(a)) : null,
+      purchases: adPurchases(a),
     })),
     series: [{ key: 'spend', label: 'Spend (PLN)', color: 'var(--teal)' }],
   }

@@ -15,16 +15,17 @@ export interface DailyPerformance {
 
 export interface MetaAdDaily {
   date: string
-  campaign_id: string
-  campaign_name: string
-  adset_id: string
-  ad_id: string
+  campaign_id?: string | null
+  campaign_name?: string | null
+  adset_id?: string | null
+  ad_id?: string | null
   spend: number
-  impressions: number
-  clicks: number
-  link_clicks: number
-  purchases: number
-  // May be present in DB via select('*'):
+  impressions?: number | null
+  clicks?: number | null
+  link_clicks?: number | null
+  // DB column is meta_purchases (webhook naming). purchases kept for backward compat.
+  meta_purchases?: number | null
+  purchases?: number | null
   ctr?: number | null
   cpc?: number | null
   cpm?: number | null
@@ -140,11 +141,14 @@ export async function fetchMetaStatsToday(): Promise<MetaStatsToday> {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
 
   const [{ data: todayRows }, { data: latestRow }] = await Promise.all([
-    supabase.from('meta_ads_daily').select('purchases').eq('date', today),
+    supabase.from('meta_ads_daily').select('meta_purchases,purchases').eq('date', today),
     supabase.from('meta_ads_daily').select('date').order('date', { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  const meta_purchases = (todayRows ?? []).reduce((s, r) => s + ((r as MetaAdDaily).purchases ?? 0), 0)
+  const meta_purchases = (todayRows ?? []).reduce((s, r) => {
+    const row = r as MetaAdDaily
+    return s + (row.meta_purchases ?? row.purchases ?? 0)
+  }, 0)
   const latestDate = (latestRow as { date?: string } | null)?.date ?? ''
   const isStale = latestDate !== '' && latestDate < today
 
