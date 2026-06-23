@@ -247,10 +247,16 @@ export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
       aggregateSpendTotal: number
       sourceMismatch: boolean
       sourceMismatchExplanation: string | null
+      errors?: { meta_ads_daily?: string | null; v_daily_wix_meta_performance?: string | null }
     }
     if (!json.ok) {
       console.warn('campaign-data returned ok=false')
       return { ...empty, fetchError: 'Backend returned ok: false' }
+    }
+    // Surface a silent DB error (e.g. column not found in meta_ads_daily)
+    const dbError = json.errors?.meta_ads_daily ?? null
+    if (dbError) {
+      console.warn('campaign-data meta_ads_daily error:', dbError)
     }
     return {
       rows:                      json.rows ?? [],
@@ -261,7 +267,7 @@ export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
       aggregateSpendTotal:       json.aggregateSpendTotal ?? 0,
       sourceMismatch:            json.sourceMismatch ?? false,
       sourceMismatchExplanation: json.sourceMismatchExplanation ?? null,
-      fetchError:                null,
+      fetchError:                (json.rows ?? []).length === 0 && dbError ? dbError : null,
     }
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e)

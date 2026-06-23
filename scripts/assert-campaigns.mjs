@@ -16,6 +16,19 @@ let errors = 0
 function fail(msg) { console.error('  FAIL', msg); errors++ }
 function pass(msg) { console.log('  pass', msg) }
 
+// 0. campaign-data.js uses select:'*' — NOT explicit column list that breaks on missing columns
+const campaignFnPath = join(rootDir, 'netlify/functions/campaign-data.js')
+if (!existsSync(campaignFnPath)) {
+  fail('netlify/functions/campaign-data.js does not exist')
+} else {
+  const c = readFileSync(campaignFnPath, 'utf8')
+  if (c.includes("select: '*'")) {
+    pass("campaign-data.js uses select:'*' (not explicit column list that breaks on missing columns)")
+  } else {
+    fail("campaign-data.js must use select:'*' — explicit column list causes HTTP 400 when optional columns (ctr/cpc/adset_id) are absent from the table")
+  }
+}
+
 // 1. campaignDiagnosis.ts exists and queries meta_ads_daily
 const diagPath = join(rootDir, 'src/lib/campaignDiagnosis.ts')
 if (!existsSync(diagPath)) {

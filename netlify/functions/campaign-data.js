@@ -72,9 +72,10 @@ export const handler = async (event) => {
   // ── Fetch today's campaign rows from meta_ads_daily ───────────────────────
 
   const todayRes = await tryGet(supabaseUrl, serviceKey, 'meta_ads_daily', {
-    select: 'date,campaign_id,campaign_name,adset_id,ad_id,spend,impressions,clicks,link_clicks,purchases,ctr,cpc,cpm,meta_purchase_value',
+    select: '*',
     date:   `eq.${today}`,
     order:  'spend.desc',
+    limit:  '200',
   })
 
   let rows = todayRes.data ?? []
@@ -93,9 +94,10 @@ export const handler = async (event) => {
     if (latestDateRes.ok && latestDateRes.data.length > 0) {
       const latestDate = latestDateRes.data[0].date
       const latestRowsRes = await tryGet(supabaseUrl, serviceKey, 'meta_ads_daily', {
-        select: 'date,campaign_id,campaign_name,adset_id,ad_id,spend,impressions,clicks,link_clicks,purchases,ctr,cpc,cpm,meta_purchase_value',
+        select: '*',
         date:   `eq.${latestDate}`,
         order:  'spend.desc',
+        limit:  '200',
       })
       if (latestRowsRes.ok) {
         rows = latestRowsRes.data ?? []
