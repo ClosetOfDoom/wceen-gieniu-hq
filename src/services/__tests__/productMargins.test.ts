@@ -176,3 +176,41 @@ describe('UNKNOWN_MARGIN sentinel', () => {
     expect(UNKNOWN_MARGIN.needsMapping).toBe(true)
   })
 })
+
+describe('JSU/PP collision guard', () => {
+  // "Jak się uczyć" appears as a *bonus item* inside the PP bundle name.
+  // It must NOT be classified as JSU — it's PP at 119 PLN / margin 70 PLN.
+  const PP_BUNDLE_NAME = 'Pakiet Pamięciowy – Pamięć + bonusy (14 audycji + Jak się uczyć + 7 warunków)'
+  const PP_TRENING_NAME = 'Pamięć. Trening Interaktywny: Ebook + Druk'
+  const JSU_REAL_NAME = 'Kurs online Jak się uczyć'
+  const JSU_SHORT = 'Kurs Jak się uczyć'
+
+  it('PP bundle name (contains "Jak się uczyć" as bonus) → memory_pack by name', () => {
+    expect(matchMarginByName(PP_BUNDLE_NAME)?.productKey).toBe('memory_pack')
+  })
+
+  it('PP bundle name does NOT match jsu_course by name', () => {
+    expect(matchMarginByName(PP_BUNDLE_NAME)?.productKey).not.toBe('jsu_course')
+  })
+
+  it('PP Trening Interaktywny variant → memory_pack by name', () => {
+    expect(matchMarginByName(PP_TRENING_NAME)?.productKey).toBe('memory_pack')
+  })
+
+  it('"Kurs online Jak się uczyć" → jsu_course by name', () => {
+    expect(matchMarginByName(JSU_REAL_NAME)?.productKey).toBe('jsu_course')
+  })
+
+  it('"Kurs Jak się uczyć" → jsu_course by name', () => {
+    expect(matchMarginByName(JSU_SHORT)?.productKey).toBe('jsu_course')
+  })
+
+  it('price 119 always wins over any name → memory_pack', () => {
+    expect(matchMargin(PP_BUNDLE_NAME, 119)?.productKey).toBe('memory_pack')
+    expect(matchMargin(JSU_REAL_NAME, 119)?.productKey).toBe('memory_pack')
+  })
+
+  it('price 549 always wins → jsu_course', () => {
+    expect(matchMargin(PP_BUNDLE_NAME, 549)?.productKey).toBe('jsu_course')
+  })
+})

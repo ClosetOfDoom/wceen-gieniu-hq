@@ -70,6 +70,12 @@ export interface GieniuCommandContext {
     cpc: number | null
     cpm: number | null
   } | null
+  todayByProduct?: {
+    jsu_course:   { count: number; revenue: number }
+    jzk_language: { count: number; revenue: number }
+    memory_pack:  { count: number; revenue: number }
+    unknown:      { count: number }
+  } | null
   currentRoute?: string
 }
 

@@ -26,7 +26,9 @@ export const PRODUCT_MARGINS: ProductMargin[] = [
     priceExpected:       549,
     contributionMargin:  500,
     needsMapping:        false,
-    namePattern:         /jak\s+si[eę]\s+uczy[cć]|kurs\s+jak|jsu/i,
+    // IMPORTANT: must NOT match "Jak się uczyć" appearing as a bonus in PP product names.
+    // Require "kurs" before the phrase, or standalone "jsu" acronym.
+    namePattern:         /kurs\s+(?:online\s+)?jak\s+si[eę]\s+uczy[cć]|kurs\s+jak|jsu/i,
   },
   {
     // Językozak BEFORE Pakiet Językowy — /j[eę]zyko/ would match both

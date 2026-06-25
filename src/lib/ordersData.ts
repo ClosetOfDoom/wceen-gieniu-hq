@@ -36,6 +36,12 @@ export interface OrdersData {
     unknown:      { count: number }
     price_warnings: number
   }
+  today_classified: {
+    jsu_course:   { count: number; revenue: number }
+    jzk_language: { count: number; revenue: number }
+    memory_pack:  { count: number; revenue: number }
+    unknown:      { count: number }
+  }
   latest_20_orders: OrderRow[]
   error?: string
 }

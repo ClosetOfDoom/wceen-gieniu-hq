@@ -969,6 +969,7 @@ export default function App() {
           cpm:         totalImpressions > 0 ? totalSpend / totalImpressions * 1000 : null,
         }
       })(),
+      todayByProduct: ordersData?.today_classified ?? null,
       currentRoute: section,
     }
   }

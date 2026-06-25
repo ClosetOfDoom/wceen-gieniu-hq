@@ -143,6 +143,18 @@ const INTENT_DEFS = [
     ],
   },
   {
+    intent: 'sales_by_product',
+    phrases: [
+      'co sprzedalismy', 'co sprzedalismy dzis', 'co dzis sprzedalismy', 'jakie produkty dzis',
+      'ile jsu', 'ile kursow', 'ile pakietow', 'ile pamieciowych', 'ile jezykowych',
+      'ile jezykozakow', 'ile pp', 'ile pl', 'ile jzk',
+      'sales by product', 'what did we sell', 'what did we sell today', 'products sold today',
+      'how many courses today', 'how many jsu', 'how many memory packs', 'jsu today',
+      'sprzedajemy kursy', 'czy sprzedajemy jsu', 'jakie produkty', 'product breakdown',
+      'co sie sprzedalo', 'sales breakdown', 'rozkład sprzedaży', 'sprzedaz per produkt',
+    ],
+  },
+  {
     intent: 'meta_efficiency',
     phrases: [
       'ctr', 'cpc', 'cpm', 'click through rate', 'cost per click', 'cost per mille',
@@ -350,6 +362,79 @@ function buildCampaignsAnswer(ctx, lang) {
     sources: ['topCampaigns'],
     warnings: [],
   }
+}
+
+function buildSalesByProductAnswer(ctx, lang) {
+  const tbp = ctx.todayByProduct
+  if (!tbp) {
+    const msg = lang === 'pl'
+      ? 'Obawiam się, że rozkład sprzedaży per produkt nie jest dziś dostępny, sir. Dane zamówień nie zostały załadowane.'
+      : "I'm afraid today's product breakdown is unavailable, sir. Orders data was not loaded."
+    return { text: msg, speech: msg, sources: [], warnings: ['no todayByProduct'] }
+  }
+
+  const jsu    = tbp.jsu_course   ?? { count: 0, revenue: 0 }
+  const jzk    = tbp.jzk_language ?? { count: 0, revenue: 0 }
+  const mem    = tbp.memory_pack   ?? { count: 0, revenue: 0 }
+  const unk    = tbp.unknown       ?? { count: 0 }
+  const total  = jsu.count + jzk.count + mem.count + unk.count
+
+  if (total === 0) {
+    const msg = lang === 'pl'
+      ? 'Nie odnotowano dziś żadnej sprzedaży, sir. Czyste konto — dzień jeszcze trwa.'
+      : 'No sales recorded today, sir. The ledger remains pristine — the day is not yet done.'
+    return { text: msg, speech: msg, sources: ['todayByProduct'], warnings: [] }
+  }
+
+  const lines = []
+  const hasSales = (p) => p.count > 0
+
+  if (lang === 'pl') {
+    lines.push('— SPRZEDAŻ DZIŚ PER PRODUKT —', '')
+    if (hasSales(mem)) lines.push(`Pakiet Pamięciowy:    ${mem.count} szt. × 119 zł = ${fmt(mem.revenue)} zł`)
+    if (hasSales(jsu)) lines.push(`Kurs Jak się uczyć:   ${jsu.count} szt. × 549 zł = ${fmt(jsu.revenue)} zł`)
+    if (hasSales(jzk)) lines.push(`Językozak / Językowy: ${jzk.count} szt. = ${fmt(jzk.revenue)} zł`)
+    if (hasSales(unk)) lines.push(`Niezmapowane:         ${unk.count} szt.`)
+    lines.push('')
+    lines.push(`Łącznie: ${total} sprzedaży`)
+  } else {
+    lines.push('— TODAY\'S SALES BY PRODUCT —', '')
+    if (hasSales(mem)) lines.push(`Pakiet Pamięciowy:    ${mem.count} × 119 PLN = ${fmt(mem.revenue)} PLN`)
+    if (hasSales(jsu)) lines.push(`Kurs Jak się uczyć:   ${jsu.count} × 549 PLN = ${fmt(jsu.revenue)} PLN`)
+    if (hasSales(jzk)) lines.push(`Językozak / Language: ${jzk.count} units = ${fmt(jzk.revenue)} PLN`)
+    if (hasSales(unk)) lines.push(`Unmapped:             ${unk.count} units`)
+    lines.push('')
+    lines.push(`Total: ${total} sales`)
+  }
+
+  // Verdict / recommendation
+  const hasJsu = jsu.count > 0
+  const hasMem = mem.count > 0
+  let verdict = ''
+  if (hasJsu && hasMem) {
+    verdict = lang === 'pl'
+      ? `Ośmielę się zasugerować, sir: ${jsu.count} kurs JSU to dobry znak — rozważ sekwencję email upsell do ${mem.count} nabywców PP, którzy kursu nie kupili.`
+      : `I would venture to suggest, sir: ${jsu.count} JSU course${jsu.count > 1 ? 's' : ''} is an encouraging sign — consider dispatching the upsell sequence to the ${mem.count} PP buyer${mem.count > 1 ? 's' : ''} who have not yet converted.`
+  } else if (hasMem && !hasJsu) {
+    verdict = lang === 'pl'
+      ? `Ośmielę się zasugerować, sir: ${mem.count} Pakiet${mem.count > 1 ? 'ów' : ''} Pamięciowy${mem.count > 1 ? '' : 'y'} — żadnego JSU. Sekwencja upsell do webinaru czwartkowego powinna być aktywna.`
+      : `I would venture to suggest, sir: ${mem.count} Memory Pack${mem.count > 1 ? 's' : ''}, zero JSU courses. The upsell sequence toward Thursday's webinar should be live and running.`
+  } else if (hasJsu && !hasMem) {
+    verdict = lang === 'pl'
+      ? `Ośmielę się zasugerować, sir: same kursy JSU bez sprzedaży PP — sprawdź czy zimna kampania działa i dowozi nowych nabywców do lejka.`
+      : `I would venture to suggest, sir: JSU sales without PP — verify the cold traffic campaign is active and feeding fresh buyers into the funnel.`
+  }
+  if (verdict) lines.push('', verdict)
+
+  const speechParts = []
+  if (hasSales(mem)) speechParts.push(lang === 'pl' ? `${mem.count} Pakiet${mem.count > 1 ? 'y' : ''} Pamięciow${mem.count > 1 ? 'e' : 'y'}` : `${mem.count} Memory Pack${mem.count > 1 ? 's' : ''}`)
+  if (hasSales(jsu)) speechParts.push(lang === 'pl' ? `${jsu.count} kurs${jsu.count > 1 ? 'y' : ''} JSU` : `${jsu.count} JSU course${jsu.count > 1 ? 's' : ''}`)
+  if (hasSales(jzk)) speechParts.push(lang === 'pl' ? `${jzk.count} Językozak` : `${jzk.count} Językozak`)
+  const speech = lang === 'pl'
+    ? `Dziś sprzedaliśmy, sir: ${speechParts.join(', ')}. Łącznie ${total}.`
+    : `Today's sales, sir: ${speechParts.join(', ')}. ${total} total.`
+
+  return { text: lines.join('\n'), speech, sources: ['todayByProduct'], warnings: [] }
 }
 
 function buildEfficiencyAnswer(ctx, lang) {
@@ -751,6 +836,7 @@ function buildDeterministicAnswer(intent, context, lang) {
     case 'today_vs_yesterday':   return buildTodayVsYesterdayAnswer(context, lang)
     case 'week_summary':         return buildWeekSummaryAnswer(context, lang)
     case 'last_7_days':          return buildLast7Answer(context, lang)
+    case 'sales_by_product':     return buildSalesByProductAnswer(context, lang)
     case 'meta_efficiency':      return buildEfficiencyAnswer(context, lang)
     default:                     return null
   }
@@ -815,6 +901,24 @@ function buildContextText(context) {
   } else if (jsu) {
     lines.push('')
     lines.push('JSU Funnel Data: NOT AVAILABLE (no sync data)')
+  }
+
+  const tbp = context.todayByProduct
+  if (tbp) {
+    lines.push('')
+    lines.push('--- Today\'s Sales by Product (canonical, from orders table) ---')
+    const jsu = tbp.jsu_course   ?? { count: 0, revenue: 0 }
+    const jzk = tbp.jzk_language ?? { count: 0, revenue: 0 }
+    const mem = tbp.memory_pack   ?? { count: 0, revenue: 0 }
+    const unk = tbp.unknown       ?? { count: 0 }
+    lines.push(`  Pakiet Pamięciowy (PP 119 PLN, margin 70 PLN):  ${mem.count} sold, revenue ${fmt(mem.revenue)} PLN`)
+    lines.push(`  Kurs Jak się uczyć (JSU 549 PLN, margin 500 PLN): ${jsu.count} sold, revenue ${fmt(jsu.revenue)} PLN`)
+    lines.push(`  Językozak / Pakiet Językowy:                     ${jzk.count} sold, revenue ${fmt(jzk.revenue)} PLN`)
+    lines.push(`  Unknown/unmapped:                                 ${unk.count} sold`)
+    lines.push(`  NOTE: These are Wix orders, classified by price rule. Wix is ground truth.`)
+  } else {
+    lines.push('')
+    lines.push('Today\'s Sales by Product: NOT AVAILABLE (orders data not loaded)')
   }
 
   if (campaigns && campaigns.length > 0) {

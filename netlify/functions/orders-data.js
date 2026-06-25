@@ -93,7 +93,9 @@ function normalizeText(s) {
     .trim()
 }
 
-const JSU_NAME_PATTERNS  = ['jak sie uczyc', 'kurs jak sie', 'jsu', 'nauka uczenia', 'jak sie uczys']
+// 'jak sie uczyc' removed — too broad; it would match PP bundle names where
+// "Jak się uczyć" appears only as a bonus item, not the product itself.
+const JSU_NAME_PATTERNS  = ['kurs jak sie uczyc', 'kurs jak', 'jsu', 'nauka uczenia', 'jak sie uczys']
 const JZK_MAIN_PATTERNS  = ['jezykozak', 'jzk', 'nauka jezykow', 'nauka jezyk']
 const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy']
 const MEMORY_PATTERNS    = ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']
@@ -241,6 +243,12 @@ export const handler = async (event) => {
   let unknownCount = 0
   let priceWarnings = 0
 
+  // Today-specific per-product breakdown
+  let jsuTodayCount = 0, jsuTodayRevenue = 0
+  let jzkTodayCount = 0, jzkTodayRevenue = 0
+  let memoryTodayCount = 0, memoryTodayRevenue = 0
+  let unknownTodayCount = 0
+
   const latest20 = []
 
   // Sort descending by date
@@ -259,6 +267,11 @@ export const handler = async (event) => {
     if (d === today) {
       todayCount++
       todayRevenue += amt
+      // Per-product breakdown for today
+      if (cls.classification === 'JSU_COURSE')        { jsuTodayCount++;    jsuTodayRevenue    += amt }
+      else if (cls.classification === 'JZK_LANGUAGE') { jzkTodayCount++;    jzkTodayRevenue    += amt }
+      else if (cls.classification === 'MEMORY_PACK')  { memoryTodayCount++; memoryTodayRevenue += amt }
+      else                                             { unknownTodayCount++ }
     }
     if (d >= weekStart) {
       weekCount++
@@ -309,6 +322,12 @@ export const handler = async (event) => {
         memory_pack:  { count: memoryCount, revenue: memoryRevenue },
         unknown:      { count: unknownCount },
         price_warnings: priceWarnings,
+      },
+      today_classified: {
+        jsu_course:   { count: jsuTodayCount,    revenue: jsuTodayRevenue    },
+        jzk_language: { count: jzkTodayCount,    revenue: jzkTodayRevenue    },
+        memory_pack:  { count: memoryTodayCount, revenue: memoryTodayRevenue },
+        unknown:      { count: unknownTodayCount },
       },
       latest_20_orders: latest20,
     }),
