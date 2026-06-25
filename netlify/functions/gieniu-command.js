@@ -142,6 +142,17 @@ const INTENT_DEFS = [
       '7 days', 'seven days', 'last 7 days',
     ],
   },
+  {
+    intent: 'meta_efficiency',
+    phrases: [
+      'ctr', 'cpc', 'cpm', 'click through rate', 'cost per click', 'cost per mille',
+      "what's the ctr", 'what is the ctr', 'whats the ctr',
+      "what's the cpc", 'what is the cpc', 'whats the cpc',
+      'koszt klikniecia', 'wskaznik klikalnosci', 'efektywnosc reklam',
+      'jak klikalny', 'ile kosztuje klikniecie', 'click rate',
+      'ad efficiency', 'campaign efficiency', 'meta efficiency',
+    ],
+  },
 ]
 
 function detectIntent(message) {
@@ -324,7 +335,14 @@ function buildCampaignsAnswer(ctx, lang) {
     return { text: msg, speech: msg, sources: [], warnings: ['no campaign data'] }
   }
   const sorted = [...campaigns].sort((a, b) => b.spend - a.spend)
-  const lines = sorted.slice(0, 5).map(c => `${c.name}: ${fmt(c.spend)} PLN spend | ${c.clicks} clicks | ${c.purchases} purchases`)
+  const lines = sorted.slice(0, 5).map(c => {
+    const imp   = c.impressions ?? 0
+    const cl    = c.clicks ?? 0
+    const lcl   = c.link_clicks ?? cl
+    const ctr   = imp > 0 ? (lcl / imp * 100).toFixed(2) + '%' : '—'
+    const cpc   = cl  > 0 ? fmt(c.spend / cl) + ' PLN' : '—'
+    return `${c.name}: spend ${fmt(c.spend)} | clicks ${cl} | CTR ${ctr} | CPC ${cpc} | purchases ${c.purchases}`
+  })
   const topName = sorted[0]?.name ?? '—'
   return {
     text: (lang === 'pl' ? 'Top kampanie wg wydatków:\n' : 'Top campaigns by spend:\n') + lines.join('\n'),
@@ -332,6 +350,100 @@ function buildCampaignsAnswer(ctx, lang) {
     sources: ['topCampaigns'],
     warnings: [],
   }
+}
+
+function buildEfficiencyAnswer(ctx, lang) {
+  // Prefer ctx.metaEfficiency (pre-computed from all ads), fall back to summing topCampaigns
+  let clicks, linkClicks, impressions, spend, ctr, cpc, cpm
+  const eff = ctx.metaEfficiency
+  if (eff && (eff.clicks > 0 || eff.impressions > 0)) {
+    clicks      = eff.clicks ?? 0
+    linkClicks  = eff.link_clicks ?? clicks
+    impressions = eff.impressions ?? 0
+    spend       = eff.spend ?? 0
+    ctr         = eff.ctr   ?? (impressions > 0 ? linkClicks / impressions * 100 : null)
+    cpc         = eff.cpc   ?? (clicks > 0 ? spend / clicks : null)
+    cpm         = eff.cpm   ?? (impressions > 0 ? spend / impressions * 1000 : null)
+  } else {
+    const campaigns = ctx.topCampaigns ?? []
+    if (campaigns.length === 0) {
+      const msg = lang === 'pl'
+        ? 'Brak danych kampanii — CTR/CPC/CPM niedostępne.'
+        : 'No campaign data — CTR/CPC/CPM unavailable. Check Meta Ads sync.'
+      return { text: msg, speech: msg, sources: [], warnings: ['no efficiency data'] }
+    }
+    clicks      = campaigns.reduce((s, c) => s + (c.clicks ?? 0), 0)
+    linkClicks  = campaigns.reduce((s, c) => s + (c.link_clicks ?? c.clicks ?? 0), 0)
+    impressions = campaigns.reduce((s, c) => s + (c.impressions ?? 0), 0)
+    spend       = campaigns.reduce((s, c) => s + (c.spend ?? 0), 0)
+    ctr         = impressions > 0 ? linkClicks / impressions * 100 : null
+    cpc         = clicks > 0 ? spend / clicks : null
+    cpm         = impressions > 0 ? spend / impressions * 1000 : null
+  }
+
+  if (impressions === 0 && clicks === 0) {
+    const msg = lang === 'pl'
+      ? 'Brak danych o wyświetleniach i kliknięciach — CTR/CPC/CPM niedostępne. Sprawdź synchronizację Meta Ads.'
+      : 'No impressions or clicks data — CTR/CPC/CPM unavailable. Check Meta Ads sync in Automation.'
+    return { text: msg, speech: msg, sources: [], warnings: ['no impressions/clicks'] }
+  }
+
+  const ctrStr = ctr  != null ? ctr.toFixed(2)  + '%'     : '—'
+  const cpcStr = cpc  != null ? fmt(cpc) + ' PLN'          : '—'
+  const cpmStr = cpm  != null ? fmt(cpm) + ' PLN'          : '—'
+
+  const verdict = ctr != null
+    ? (ctr >= 2
+        ? (lang === 'pl' ? `CTR ${ctrStr} — dobry wynik (benchmark 1-2%).` : `CTR at ${ctrStr} — solid (benchmark 1-2%).`)
+        : ctr >= 1
+          ? (lang === 'pl' ? `CTR ${ctrStr} — przeciętny. Warto przetestować nowe kreacje.` : `CTR at ${ctrStr} — average. Test new creatives.`)
+          : (lang === 'pl' ? `CTR ${ctrStr} — poniżej benchmarku. Kreacje wymagają uwagi.` : `CTR at ${ctrStr} — below benchmark. Creatives need review.`))
+    : ''
+
+  // Per-campaign breakdown
+  const campaigns = ctx.topCampaigns ?? []
+  const perCampaign = [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 5).map(c => {
+    const imp  = c.impressions ?? 0
+    const cl   = c.clicks ?? 0
+    const lcl  = c.link_clicks ?? cl
+    const cCtr = imp > 0 ? (lcl / imp * 100).toFixed(2) + '%' : '—'
+    const cCpc = cl  > 0 ? fmt(c.spend / cl) + ' PLN' : '—'
+    return `  ${c.name}: CTR ${cCtr} | CPC ${cCpc} | ${cl} clicks / ${imp} impr.`
+  })
+
+  if (lang === 'pl') {
+    const lines = [
+      '— EFEKTYWNOŚĆ META ADS (DZIŚ) —', '',
+      `CTR (link clicks / wyświetlenia): ${ctrStr}`,
+      `CPC (koszt kliknięcia):           ${cpcStr}`,
+      `CPM (koszt 1000 wyświetleń):      ${cpmStr}`,
+      '',
+      `Łącznie: ${clicks} kliknięć | ${impressions} wyświetleń | ${fmt(spend)} PLN wydatków`,
+    ]
+    if (perCampaign.length > 0) {
+      lines.push('', 'Per kampania:')
+      lines.push(...perCampaign)
+    }
+    if (verdict) lines.push('', verdict)
+    const speech = `CTR: ${ctrStr}. CPC: ${cpcStr}. CPM: ${cpmStr}. ${verdict}`
+    return { text: lines.join('\n'), speech, sources: ['metaEfficiency', 'topCampaigns'], warnings: [] }
+  }
+
+  const lines = [
+    '— META ADS EFFICIENCY (TODAY) —', '',
+    `CTR (link clicks / impressions): ${ctrStr}`,
+    `CPC (cost per click):            ${cpcStr}`,
+    `CPM (cost per 1000 impressions): ${cpmStr}`,
+    '',
+    `Totals: ${clicks} clicks | ${impressions} impressions | ${fmt(spend)} PLN spend`,
+  ]
+  if (perCampaign.length > 0) {
+    lines.push('', 'Per campaign:')
+    lines.push(...perCampaign)
+  }
+  if (verdict) lines.push('', verdict)
+  const speech = `CTR: ${ctrStr}. CPC: ${cpcStr}. CPM: ${cpmStr}. ${verdict}`
+  return { text: lines.join('\n'), speech, sources: ['metaEfficiency', 'topCampaigns'], warnings: [] }
 }
 
 function buildJsuFunnelAnswer(ctx, lang) {
@@ -639,6 +751,7 @@ function buildDeterministicAnswer(intent, context, lang) {
     case 'today_vs_yesterday':   return buildTodayVsYesterdayAnswer(context, lang)
     case 'week_summary':         return buildWeekSummaryAnswer(context, lang)
     case 'last_7_days':          return buildLast7Answer(context, lang)
+    case 'meta_efficiency':      return buildEfficiencyAnswer(context, lang)
     default:                     return null
   }
 }
@@ -706,10 +819,24 @@ function buildContextText(context) {
 
   if (campaigns && campaigns.length > 0) {
     lines.push('')
-    lines.push('--- Top Campaigns (by spend) ---')
+    lines.push('--- Top Campaigns (by spend, with efficiency metrics) ---')
     ;[...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 5).forEach(c => {
-      lines.push(`${c.name}: ${fmt(c.spend)} PLN spend | ${c.clicks} clicks | ${c.purchases} purchases`)
+      const imp  = c.impressions ?? 0
+      const cl   = c.clicks ?? 0
+      const lcl  = c.link_clicks ?? cl
+      const ctr  = imp > 0 ? (lcl / imp * 100).toFixed(2) + '%' : 'N/A'
+      const cpc  = cl  > 0 ? fmt(c.spend / cl) + ' PLN' : 'N/A'
+      const cpm  = imp > 0 ? fmt(c.spend / imp * 1000) + ' PLN' : 'N/A'
+      lines.push(`  ${c.name}: spend ${fmt(c.spend)} PLN | clicks ${cl} | impr. ${imp} | CTR ${ctr} | CPC ${cpc} | CPM ${cpm} | purchases ${c.purchases}`)
     })
+    // Aggregate efficiency across all loaded campaigns
+    const eff = context.metaEfficiency
+    if (eff && (eff.impressions > 0 || eff.clicks > 0)) {
+      const aCtr = eff.ctr  != null ? eff.ctr.toFixed(2) + '%' : (eff.impressions > 0 ? ((eff.link_clicks ?? eff.clicks) / eff.impressions * 100).toFixed(2) + '%' : 'N/A')
+      const aCpc = eff.cpc  != null ? fmt(eff.cpc) + ' PLN' : (eff.clicks > 0 ? fmt(eff.spend / eff.clicks) + ' PLN' : 'N/A')
+      const aCpm = eff.cpm  != null ? fmt(eff.cpm) + ' PLN' : (eff.impressions > 0 ? fmt(eff.spend / eff.impressions * 1000) + ' PLN' : 'N/A')
+      lines.push(`  [AGGREGATE ALL CAMPAIGNS] CTR ${aCtr} | CPC ${aCpc} | CPM ${aCpm} | total clicks ${eff.clicks} | impr. ${eff.impressions}`)
+    }
   }
 
   const trend = context.recentTrend ?? []

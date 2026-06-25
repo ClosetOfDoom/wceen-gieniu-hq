@@ -108,7 +108,7 @@ button:disabled {
     order: -1;
     overflow: visible;
     height: auto;
-    min-height: 300px;
+    min-height: 280px;
     max-height: none;
     border-left: none;
     border-bottom: 2px solid var(--border-gold);
@@ -121,9 +121,9 @@ button:disabled {
     width: 100%;
   }
 
-  /* Cards are full-width with tighter padding on mobile */
+  /* Cards tighter on mobile */
   .card {
-    padding: 16px 14px;
+    padding: 14px 12px;
     border-radius: 4px;
   }
 
@@ -141,11 +141,53 @@ button:disabled {
     text-align: right;
     opacity: 0.5;
   }
+
+  /* Main content: tighter padding on mobile */
+  .hud-main > div[style*="padding"] {
+    padding: 16px 14px !important;
+    gap: 18px !important;
+  }
+
+  /* KPI grid: 2 columns on mobile */
+  .kpi-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px !important;
+  }
+
+  /* KPI cards: tighter padding + larger value font on mobile */
+  .kpi-card {
+    padding: 14px 14px !important;
+    min-width: 0 !important;
+    flex: unset !important;
+  }
+  .kpi-card .kpi-value {
+    font-size: clamp(1.4rem, 5vw, 2.0rem) !important;
+  }
+
+  /* GIENIU panel header section tight on mobile */
+  .gieniu-header-mobile {
+    padding: 10px 12px !important;
+  }
+
+  /* Prompt chips wrap to 2 per row on mobile */
+  .prompt-chips-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}
+
+/* Small mobile (≤390px) — extra tightening */
+@media (max-width: 390px) {
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px !important;
+  }
 }
 
 /* Small mobile (≤430px) — extra tightening */
 @media (max-width: 430px) {
-  .hud-right { min-height: 260px; }
+  .hud-right { min-height: 250px; }
   .card { padding: 12px 10px; }
 }
 

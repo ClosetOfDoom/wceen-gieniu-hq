@@ -42,13 +42,14 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
 
   return (
     <div
+      className="kpi-card"
       style={{
         background: 'var(--surface)',
         border: `1px solid ${borderColor}`,
         borderRadius: '4px',
         padding: '20px 24px',
-        minWidth: '150px',
-        flex: '1 1 150px',
+        minWidth: '140px',
+        flex: '1 1 140px',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -74,7 +75,7 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
       }}>
         {label}
       </div>
-      <div style={{
+      <div className="kpi-value" style={{
         fontSize: 'clamp(2.0rem, 3vw, 2.8rem)',
         fontWeight: 700,
         color: valueColor,

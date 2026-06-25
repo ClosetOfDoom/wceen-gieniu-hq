@@ -57,9 +57,19 @@ export interface GieniuCommandContext {
     name: string
     spend: number
     clicks: number
+    link_clicks: number
     impressions: number
     purchases: number
   }[]
+  metaEfficiency?: {
+    clicks: number
+    link_clicks: number
+    impressions: number
+    spend: number
+    ctr: number | null
+    cpc: number | null
+    cpm: number | null
+  } | null
   currentRoute?: string
 }
 

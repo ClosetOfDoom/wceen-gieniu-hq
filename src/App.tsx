@@ -71,6 +71,10 @@ function fmtRoas(n: number | null | undefined): string {
   if (n == null) return '—'
   return n.toFixed(2) + 'x'
 }
+function fmtPct(n: number | null | undefined, decimals = 2): string {
+  if (n == null) return '—'
+  return n.toFixed(decimals) + '%'
+}
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
@@ -946,9 +950,25 @@ export default function App() {
         name: a.campaign_name ?? a.campaign_id ?? '?',
         spend: a.spend,
         clicks: a.clicks ?? 0,
+        link_clicks: a.link_clicks ?? 0,
         impressions: a.impressions ?? 0,
         purchases: a.meta_purchases ?? a.purchases ?? 0,
       })),
+      metaEfficiency: (() => {
+        const totalClicks      = ads.reduce((s, a) => s + (a.clicks ?? 0), 0)
+        const totalLinkClicks  = ads.reduce((s, a) => s + (a.link_clicks ?? 0), 0)
+        const totalImpressions = ads.reduce((s, a) => s + (a.impressions ?? 0), 0)
+        const totalSpend       = ads.reduce((s, a) => s + a.spend, 0)
+        return {
+          clicks:      totalClicks,
+          link_clicks: totalLinkClicks,
+          impressions: totalImpressions,
+          spend:       totalSpend,
+          ctr:         totalImpressions > 0 ? totalLinkClicks / totalImpressions * 100 : null,
+          cpc:         totalClicks > 0      ? totalSpend / totalClicks : null,
+          cpm:         totalImpressions > 0 ? totalSpend / totalImpressions * 1000 : null,
+        }
+      })(),
       currentRoute: section,
     }
   }
@@ -1232,7 +1252,7 @@ export default function App() {
                     </div>
                   )}
                   {/* Row 1: core metrics + profit */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                  <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                     <KPICard label="Wix Orders" value={fmtNum(displayPerf?.wix_orders)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
                     <KPICard label="Wix Revenue" value={fmtPln(displayPerf?.wix_revenue)} accent sublabel={perfIsStale ? trend[0]?.date : undefined} />
                     <KPICard label="Ad Spend" value={fmtPln(displayPerf?.meta_spend)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
@@ -1249,7 +1269,7 @@ export default function App() {
                   </div>
 
                   {/* Row 2: margin detail + warnings */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
+                  <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
                     <KPICard
                       label="Margin Before Ads"
                       value={profitSummary ? fmtPln(profitSummary.marginBeforeAds) : '—'}
@@ -1281,6 +1301,26 @@ export default function App() {
                     />
                     <KPICard label="Meta Attr." value={fmtNum(metaStats.meta_purchases)} dim sublabel="Meta-reported purchases" />
                   </div>
+
+                  {/* Row 3: Meta ad efficiency metrics */}
+                  {ads.length > 0 && (() => {
+                    const totalClicks      = ads.reduce((s, a) => s + (a.clicks ?? 0), 0)
+                    const totalLinkClicks  = ads.reduce((s, a) => s + (a.link_clicks ?? 0), 0)
+                    const totalImpressions = ads.reduce((s, a) => s + (a.impressions ?? 0), 0)
+                    const totalSpend       = ads.reduce((s, a) => s + a.spend, 0)
+                    const ctr  = totalImpressions > 0 ? totalLinkClicks / totalImpressions * 100 : null
+                    const cpc  = totalClicks > 0      ? totalSpend / totalClicks : null
+                    const cpm  = totalImpressions > 0 ? totalSpend / totalImpressions * 1000 : null
+                    return (
+                      <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
+                        <KPICard label="CTR" value={fmtPct(ctr)} sublabel="Link clicks / impressions" />
+                        <KPICard label="CPC" value={fmtPln(cpc)} sublabel="Spend / clicks" />
+                        <KPICard label="CPM" value={fmtPln(cpm)} sublabel="Spend / 1 000 impr." />
+                        <KPICard label="Total Clicks" value={fmtNum(totalClicks)} dim sublabel="All Meta campaigns" />
+                        <KPICard label="Impressions" value={fmtNum(totalImpressions)} dim sublabel="All Meta campaigns" />
+                      </div>
+                    )
+                  })()}
 
                   {/* Profit data warnings */}
                   {profitMismatch && (
