@@ -46,7 +46,7 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const VOICE_UNLOCK_KEY = 'gieniu_voice_unlocked_v1'
-const OPENING_TEXT = "Lifidi, GIENIU HQ is awake. I'm watching revenue, Meta, Wix, webinars, and operational leaks. Ask me what's moving, what's wasting money, or what needs your attention first."
+const OPENING_TEXT = "Do usług, sir. Jeden gest, a przystąpię do raportu operacyjnego."
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -299,6 +299,7 @@ function RightPanel({
   lastQuery,
   voiceUnlocked,
   onStartGeorgeVoice,
+  onWake,
   onQuery,
   speaking,
   thinking,
@@ -328,6 +329,7 @@ function RightPanel({
   lastQuery?: string
   voiceUnlocked?: boolean
   onStartGeorgeVoice?: () => void
+  onWake?: () => void
   onQuery: (query: string) => void
   speaking: boolean
   thinking: boolean
@@ -412,16 +414,29 @@ function RightPanel({
             {chart && <InsightChart spec={chart} />}
 
             {/* Voice controls */}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: chart ? '10px' : '0' }}>
-              {!voiceUnlocked ? (
+            {!voiceUnlocked ? (
+              <div style={{ marginTop: chart ? '14px' : '4px' }}>
                 <button
-                  className="btn-sm"
-                  onClick={onStartGeorgeVoice}
-                  style={{ borderColor: 'var(--gold)', color: 'var(--gold)', fontWeight: 700, padding: '6px 14px' }}
+                  onClick={onWake ?? onStartGeorgeVoice}
+                  style={{
+                    display: 'block', width: '100%',
+                    background: 'transparent',
+                    border: '1.5px solid var(--gold)', borderRadius: '4px',
+                    color: 'var(--gold)', fontFamily: 'var(--font-serif)',
+                    fontSize: '1.05rem', fontWeight: 700,
+                    padding: '14px 0', cursor: 'pointer',
+                    letterSpacing: '0.05em',
+                  }}
                 >
-                  ▶ Start voice
+                  🎙 Wake GIENIU
                 </button>
-              ) : speaking ? (
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', marginTop: '6px', textAlign: 'center' }}>
+                  One tap · unlocks voice &amp; mic
+                </div>
+              </div>
+            ) : (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: chart ? '10px' : '0' }}>
+              {speaking ? (
                 <button
                   className="btn-sm"
                   onClick={onSpeak}
@@ -461,6 +476,7 @@ function RightPanel({
                 </span>
               )}
             </div>
+            )}
 
             {/* Browser TTS language selector + voice info — shown when fallback is active */}
             {ttsFallbackActive && (
@@ -689,9 +705,12 @@ export default function App() {
   const [browserVoiceInfo, setBrowserVoiceInfo]   = useState<{ name: string; lang: string } | null>(null)
   const [lastQuery, setLastQuery]         = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null)
-  const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const ttsSessionRef  = useRef(0)
+  const recognitionRef    = useRef<any>(null)
+  const debounceRef       = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const ttsSessionRef     = useRef(0)
+  // Tracks voiceUnlocked synchronously so speakAnswer sees the latest value
+  // even when called immediately after setVoiceUnlocked(true) in the same tick.
+  const voiceUnlockedRef  = useRef(sessionStorage.getItem(VOICE_UNLOCK_KEY) === '1')
 
   // PWA install
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -783,6 +802,8 @@ export default function App() {
     setBrowserVoiceInfo(sel ? { name: sel.name, lang: sel.lang } : null)
   }, [])
 
+  useEffect(() => { voiceUnlockedRef.current = voiceUnlocked }, [voiceUnlocked])
+
   useEffect(() => {
     refreshVoiceInfo()
     window.speechSynthesis?.addEventListener('voiceschanged', refreshVoiceInfo)
@@ -849,7 +870,7 @@ export default function App() {
     setTtsError('')
     // eslint-disable-next-line no-console
     console.log('GIENIU spokenText', gr.spokenText.slice(0, 100))
-    if (muted || !voiceUnlocked || !gr.spokenText.trim()) return
+    if (muted || !voiceUnlockedRef.current || !gr.spokenText.trim()) return
     setSpeaking(true)
     const result = await speak(gr.spokenText)
     if (ttsSessionRef.current !== session) return
@@ -1037,6 +1058,19 @@ export default function App() {
       // eslint-disable-next-line no-console
       console.log('GIENIU TTS error detail', result.error)
     }
+  }
+
+  // ── Wake GIENIU: one tap → unlock voice + morning brief + mic ────────────────
+
+  async function handleWakeAndBrief() {
+    prewarmAudio()
+    setTtsError('')
+    sessionStorage.setItem(VOICE_UNLOCK_KEY, '1')
+    setVoiceUnlocked(true)
+    voiceUnlockedRef.current = true  // update ref immediately so speakAnswer sees it
+    await handleIntentQuery('morning brief')
+    // After brief is delivered, activate mic for hands-free follow-up
+    if (!listening) handleMic()
   }
 
   // ── Retry ElevenLabs ─────────────────────────────────────────────────────────
@@ -1422,6 +1456,7 @@ export default function App() {
         lastQuery={lastQuery}
         voiceUnlocked={voiceUnlocked}
         onStartGeorgeVoice={handleStartGeorgeVoice}
+        onWake={handleWakeAndBrief}
         onQuery={handleIntentQuery}
         speaking={speaking}
         thinking={thinking}

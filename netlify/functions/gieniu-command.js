@@ -143,6 +143,15 @@ const INTENT_DEFS = [
     ],
   },
   {
+    intent: 'morning_brief',
+    phrases: [
+      'morning brief', 'morning briefing', 'daily brief', 'daily briefing',
+      'wake gieniu', 'obudz gieniu', 'start briefing', 'give me a brief',
+      'brief me', 'what happened today', 'summary', 'give me the summary',
+      'co sie dzieje', 'podsumuj dzien', 'poranny brief', 'poranne podsumowanie',
+    ],
+  },
+  {
     intent: 'sales_by_product',
     phrases: [
       'co sprzedalismy', 'co sprzedalismy dzis', 'co dzis sprzedalismy', 'jakie produkty dzis',
@@ -362,6 +371,173 @@ function buildCampaignsAnswer(ctx, lang) {
     sources: ['topCampaigns'],
     warnings: [],
   }
+}
+
+function buildMorningBriefAnswer(ctx, lang) {
+  const kpi    = ctx.todayKPIs
+  const trend  = ctx.recentTrend ?? []
+  const tbp    = ctx.todayByProduct
+  const today  = ctx.dataHealth?.today ?? ''
+  const yDate  = today ? prevDay(today) : null
+  const yRow   = (yDate ? trend.find(r => r.date === yDate) : null) ?? trend[1] ?? null
+
+  if (!kpi && trend.length === 0) {
+    const msg = lang === 'pl'
+      ? 'Obawiam się, sir, że dane nie są jeszcze dostępne. Proszę zainicjować ponownie za chwilę.'
+      : "I'm afraid the data is not yet available, sir. Kindly initialise again in a moment."
+    return { text: msg, speech: msg, sources: [], warnings: ['no data'] }
+  }
+
+  const orders  = kpi?.wix_orders  ?? 0
+  const revenue = kpi?.wix_revenue  ?? 0
+  const spend   = kpi?.meta_spend   ?? 0
+  const cpa     = kpi?.real_cpa
+  const roas    = kpi?.real_roas
+  const yOrders = yRow?.wix_orders  ?? null
+  const yRev    = yRow?.wix_revenue ?? null
+  const revDelta   = yRev    != null ? revenue - yRev    : null
+  const orderDelta = yOrders != null ? orders  - yOrders : null
+  const jsuCount = tbp?.jsu_course?.count   ?? 0
+  const memCount = tbp?.memory_pack?.count  ?? 0
+  const jzkCount = tbp?.jzk_language?.count ?? 0
+
+  // Week trend: last 7 rows from trend (skip today = index 0)
+  const weekRows = trend.filter(r => r.date !== today).slice(0, 7)
+  const weekTotalRev    = weekRows.reduce((s, r) => s + (r.wix_revenue ?? 0), 0)
+  const weekTotalOrders = weekRows.reduce((s, r) => s + (r.wix_orders  ?? 0), 0)
+  const weekSpend       = weekRows.reduce((s, r) => s + (r.meta_spend  ?? 0), 0)
+  const cpaRows         = weekRows.filter(r => r.real_cpa != null)
+  const weekAvgCpa      = cpaRows.length > 0 ? cpaRows.reduce((s, r) => s + (r.real_cpa ?? 0), 0) / cpaRows.length : null
+  const hasWeekData     = weekRows.length >= 2
+
+  // Red flags
+  const redFlags = []
+  if (cpa != null && cpa > 50) redFlags.push(lang === 'pl' ? `Real CPA ${fmt(cpa)} PLN — przekracza próg 50 PLN` : `Real CPA ${fmt(cpa)} PLN — exceeds the 50 PLN alert threshold`)
+  if (spend > 0 && orders === 0) redFlags.push(lang === 'pl' ? 'Budżet Meta aktywny, zero zamówień Wix' : 'Meta spend active, zero Wix orders')
+  if (roas != null && roas < 2 && spend > 50) redFlags.push(lang === 'pl' ? `ROAS ${fmt(roas)}x — poniżej progu opłacalności` : `ROAS ${fmt(roas)}x — below breakeven`)
+  if (memCount > 0 && jsuCount === 0 && memCount >= 3) redFlags.push(lang === 'pl' ? `${memCount} nabywców PP — brak konwersji na JSU. Sprawdź sekwencję upsell.` : `${memCount} PP buyers with zero JSU conversions. Check upsell sequence.`)
+
+  // Recommendation
+  let rec
+  if (cpa != null && cpa > 50) {
+    rec = lang === 'pl'
+      ? 'Ośmielę się zasugerować, sir: przejrzyj kampanie z najwyższym CPA i rozważ wyłączenie słabych kreacji.'
+      : 'I would venture to suggest, sir: review high-CPA campaigns and consider pausing the weakest creatives.'
+  } else if (spend > 0 && orders === 0) {
+    rec = lang === 'pl'
+      ? 'Ośmielę się zasugerować, sir: sprawdź stronę docelową — budżet pracuje, konwersje nie nadchodzą.'
+      : 'I would venture to suggest, sir: inspect the landing page — budget is flowing, but conversions are absent.'
+  } else if (memCount > 0 && jsuCount === 0) {
+    rec = lang === 'pl'
+      ? `Ośmielę się zasugerować, sir: ${memCount} nabywców PP bez JSU — upewnij się, że sekwencja upsell na webinar czwartkowy jest aktywna.`
+      : `I would venture to suggest, sir: ${memCount} PP buyer${memCount > 1 ? 's' : ''} without JSU — confirm the Thursday webinar upsell sequence is live.`
+  } else if (jsuCount > 0) {
+    rec = lang === 'pl'
+      ? `Ośmielę się zasugerować, sir: ${jsuCount} kurs JSU — sprawdź, czy sekwencja wysokoticketowa WSZTP została uruchomiona.`
+      : `I would venture to suggest, sir: ${jsuCount} JSU course${jsuCount > 1 ? 's' : ''} — confirm the WSZTP high-ticket sequence has been dispatched.`
+  } else if (revDelta != null && revDelta < -100) {
+    rec = lang === 'pl'
+      ? 'Ośmielę się zasugerować, sir: dzień za słabszy od wczoraj — sprawdź, czy kampanie są w fazie uczenia, bądź wymagają korekty.'
+      : 'I would venture to suggest, sir: today trails yesterday — check whether campaigns are in the learning phase or require adjustment.'
+  } else {
+    rec = lang === 'pl'
+      ? 'Ośmielę się zasugerować, sir: monitoruj CPA i revenue co godzinę — dzień jeszcze w toku, sir.'
+      : 'I would venture to suggest, sir: monitor CPA and revenue hourly — the day is still in progress, sir.'
+  }
+
+  // Persona opening (one sharp line, context-dependent)
+  let opening
+  if (lang === 'pl') {
+    if (orders > 4 && (cpa == null || cpa < 40)) {
+      opening = 'Liczby mówią same za siebie, sir — z przyjemnością je przedstawię.'
+    } else if (spend > 0 && orders === 0) {
+      opening = 'Budżet pracuje, sir, lecz sprzedaż jeszcze milczy. Rzecz do natychmiastowej uwagi.'
+    } else if (cpa != null && cpa > 60) {
+      opening = 'Sytuacja wymaga spokoju i precyzji, sir. Oto raport.'
+    } else {
+      opening = 'Do usług, sir. Oto poranny raport operacyjny GIENIU HQ.'
+    }
+  } else {
+    if (orders > 4 && (cpa == null || cpa < 40)) {
+      opening = 'The numbers are rather agreeable this morning, sir. Allow me to present them.'
+    } else if (spend > 0 && orders === 0) {
+      opening = 'The budget is active, sir, yet the orders have not arrived. A matter requiring immediate attention.'
+    } else if (cpa != null && cpa > 60) {
+      opening = 'The situation calls for calm precision, sir. Here is the brief.'
+    } else {
+      opening = 'At your service, sir. The morning operational brief from GIENIU HQ.'
+    }
+  }
+
+  if (lang === 'pl') {
+    const lines = ['— PORANNY BRIEF GIENIA —', '', opening, '']
+    lines.push(`Dziś (${today || '?'}):`)
+    lines.push(`  Zamówienia: ${orders}  |  Przychód: ${fmt(revenue)} PLN  |  Wydatki Meta: ${fmt(spend)} PLN`)
+    if (cpa != null) lines.push(`  Real CPA: ${fmt(cpa)} PLN  |  ROAS: ${roas != null ? fmt(roas) + 'x' : '—'}`)
+    if (revDelta != null || orderDelta != null) {
+      lines.push('')
+      lines.push(`vs Wczoraj (${yRow?.date ?? '?'}):`)
+      if (orderDelta != null) lines.push(`  Zamówienia: ${sign(orderDelta)}${orderDelta}`)
+      if (revDelta   != null) lines.push(`  Przychód:   ${sign(revDelta)}${fmt(revDelta)} PLN`)
+    }
+    if (hasWeekData) {
+      const weekLine = `Ostatnie ${weekRows.length} dni: ${fmt(weekTotalRev)} PLN revenue, ${weekTotalOrders} zamówień${weekAvgCpa != null ? `, śr. CPA ${fmt(weekAvgCpa)} PLN` : ''}.`
+      lines.push('', weekLine)
+    }
+    if (tbp) {
+      lines.push('')
+      lines.push('Sprzedaż per produkt (dziś):')
+      if (memCount > 0) lines.push(`  Pakiet Pamięciowy: ${memCount}`)
+      if (jsuCount > 0) lines.push(`  Kurs Jak się uczyć: ${jsuCount}`)
+      if (jzkCount > 0) lines.push(`  Językozak/Językowy: ${jzkCount}`)
+      if (memCount + jsuCount + jzkCount === 0) lines.push('  Brak sprzedaży.')
+    }
+    if (redFlags.length > 0) {
+      lines.push('')
+      lines.push('🚨 Uwaga:')
+      redFlags.forEach(f => lines.push(`  ⚠ ${f}`))
+    }
+    lines.push('', rec)
+    const sp = [opening, `Dziś ${orders} zamówień, ${fmt(revenue, 0)} złotych przychodu`]
+    if (revDelta != null) sp.push(`${revDelta >= 0 ? 'plus' : 'minus'} ${fmt(Math.abs(revDelta), 0)} vs wczoraj`)
+    if (redFlags.length > 0) sp.push(redFlags[0])
+    const speech = sp.join('. ') + '. ' + rec
+    return { text: lines.join('\n'), speech, sources: ['todayKPIs', 'recentTrend', 'todayByProduct'], warnings: [] }
+  }
+
+  const lines = ['— MORNING BRIEF —', '', opening, '']
+  lines.push(`Today (${today || '?'}):`)
+  lines.push(`  Orders: ${orders}  |  Revenue: ${fmt(revenue)} PLN  |  Meta spend: ${fmt(spend)} PLN`)
+  if (cpa != null) lines.push(`  Real CPA: ${fmt(cpa)} PLN  |  ROAS: ${roas != null ? fmt(roas) + 'x' : '—'}`)
+  if (revDelta != null || orderDelta != null) {
+    lines.push('')
+    lines.push(`vs Yesterday (${yRow?.date ?? '?'}):`)
+    if (orderDelta != null) lines.push(`  Orders:  ${sign(orderDelta)}${orderDelta}`)
+    if (revDelta   != null) lines.push(`  Revenue: ${sign(revDelta)}${fmt(revDelta)} PLN`)
+  }
+  if (hasWeekData) {
+    const weekLine = `Last ${weekRows.length} days: ${fmt(weekTotalRev)} PLN revenue, ${weekTotalOrders} orders${weekAvgCpa != null ? `, avg CPA ${fmt(weekAvgCpa)} PLN` : ''}.`
+    lines.push('', weekLine)
+  }
+  if (tbp) {
+    lines.push('')
+    lines.push('Sales by product (today):')
+    if (memCount > 0) lines.push(`  Pakiet Pamięciowy: ${memCount}`)
+    if (jsuCount > 0) lines.push(`  Kurs Jak się uczyć: ${jsuCount}`)
+    if (jzkCount > 0) lines.push(`  Językozak/Language Pack: ${jzkCount}`)
+    if (memCount + jsuCount + jzkCount === 0) lines.push('  No sales yet.')
+  }
+  if (redFlags.length > 0) {
+    lines.push('')
+    lines.push('🚨 Alert:')
+    redFlags.forEach(f => lines.push(`  ⚠ ${f}`))
+  }
+  lines.push('', rec)
+  const sp = [opening, `Today: ${orders} order${orders !== 1 ? 's' : ''}, ${fmt(revenue, 0)} PLN revenue`]
+  if (revDelta != null) sp.push(`${revDelta >= 0 ? 'up' : 'down'} ${fmt(Math.abs(revDelta), 0)} vs yesterday`)
+  if (redFlags.length > 0) sp.push(redFlags[0])
+  const speech = sp.join('. ') + '. ' + rec
+  return { text: lines.join('\n'), speech, sources: ['todayKPIs', 'recentTrend', 'todayByProduct'], warnings: [] }
 }
 
 function buildSalesByProductAnswer(ctx, lang) {
@@ -838,6 +1014,7 @@ function buildDeterministicAnswer(intent, context, lang) {
     case 'last_7_days':          return buildLast7Answer(context, lang)
     case 'sales_by_product':     return buildSalesByProductAnswer(context, lang)
     case 'meta_efficiency':      return buildEfficiencyAnswer(context, lang)
+    case 'morning_brief':        return buildMorningBriefAnswer(context, lang)
     default:                     return null
   }
 }
