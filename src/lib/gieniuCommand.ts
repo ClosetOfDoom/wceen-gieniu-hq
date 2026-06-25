@@ -1,6 +1,17 @@
 // Fetch helper for the gieniu-command Netlify function.
 import type { LlmMeta } from '../types'
 
+export interface TrendRow {
+  date: string
+  meta_spend: number
+  wix_orders: number
+  wix_revenue: number
+  real_cpa: number | null
+  real_roas: number | null
+  meta_purchases?: number | null
+  meta_purchase_value?: number | null
+}
+
 export interface GieniuCommandContext {
   todayKPIs: {
     wix_orders?: number | null
@@ -10,6 +21,8 @@ export interface GieniuCommandContext {
     real_roas?: number | null
     date?: string | null
   } | null
+  /** Last 7 days from v_daily_wix_meta_performance, newest-first */
+  recentTrend?: TrendRow[]
   profitData: {
     ok: boolean
     marginBeforeAds?: number

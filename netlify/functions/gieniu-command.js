@@ -115,10 +115,31 @@ const INTENT_DEFS = [
     ],
   },
   {
-    intent: 'pipeline',
+    intent: 'today_vs_yesterday',
     phrases: [
-      'compare today vs yesterday', 'porownaj dzis do wczoraj', 'how was yesterday',
-      'week so far', 'compare days', 'weekly trend', 'tydzien podsumowanie',
+      'vs yesterday', 'vs wczoraj', 'today vs', 'dzisiaj vs', 'compare today', 'today against yesterday',
+      'porownaj dzisiaj', 'porownaj dzis', 'compare days', 'today vs yesterday',
+    ],
+  },
+  {
+    intent: 'yesterday',
+    phrases: [
+      'how was yesterday', 'yesterday', 'wczoraj', 'jak bylo wczoraj', 'jak wczoraj',
+      'wyniki wczoraj', 'co bylo wczoraj', 'jakie revenue wczoraj', 'what happened yesterday',
+    ],
+  },
+  {
+    intent: 'week_summary',
+    phrases: [
+      'week so far', 'this week', 'ten tydzien', 'jak idzie tydzien', 'week to date', 'wtd',
+      'weekly trend', 'tydzien podsumowanie', 'podsumowanie tygodnia',
+    ],
+  },
+  {
+    intent: 'last_7_days',
+    phrases: [
+      'last 7', 'last seven', 'past 7', 'past seven', 'ostatnie 7', 'ostatnich 7',
+      '7 days', 'seven days', 'last 7 days',
     ],
   },
 ]
@@ -370,6 +391,240 @@ function buildRedFlagsAnswer(ctx, lang) {
   }
 }
 
+// ── Helpers for historical builders ───────────────────────────────────────────
+
+function prevDay(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00Z')
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
+function sign(n) { return n >= 0 ? '+' : '' }
+
+// ── Historical data builders ───────────────────────────────────────────────────
+
+function buildYesterdayAnswer(ctx, lang) {
+  const trend = ctx.recentTrend ?? []
+  if (trend.length === 0) {
+    const msg = lang === 'pl'
+      ? 'Brak danych historycznych — recentTrend nie został załadowany.'
+      : 'No historical data available — recentTrend was not loaded.'
+    return { text: msg, speech: msg, sources: [], warnings: ['no recentTrend'] }
+  }
+  const today   = ctx.dataHealth?.today ?? ''
+  const yDate   = today ? prevDay(today) : null
+  const row     = (yDate ? trend.find(r => r.date === yDate) : null) ?? trend[1] ?? null
+
+  if (!row) {
+    const msg = lang === 'pl'
+      ? `Brak danych za wczoraj (${yDate ?? '?'}). Dostępne daty: ${trend.map(r => r.date).join(', ')}.`
+      : `No data for yesterday (${yDate ?? '?'}). Available dates: ${trend.map(r => r.date).join(', ')}.`
+    return { text: msg, speech: msg, sources: ['recentTrend'], warnings: ['no yesterday row'] }
+  }
+
+  const orders    = row.wix_orders   ?? 0
+  const revenue   = row.wix_revenue  ?? 0
+  const spend     = row.meta_spend   ?? 0
+  const cpa       = row.real_cpa
+  const roas      = row.real_roas
+  const purchases = row.meta_purchases ?? 0
+
+  const verdict = spend > 0 && orders === 0
+    ? (lang === 'pl' ? 'Reklamy działały, ale bez sprzedaży.' : 'Spend went out, nothing came back.')
+    : roas != null && roas >= 3
+      ? (lang === 'pl' ? `Dobry dzień — ROAS ${fmt(roas)}x.` : `Good day — ROAS at ${fmt(roas)}x.`)
+      : roas != null && roas < 2
+        ? (lang === 'pl' ? 'Słabe ROAS — reklamy nie zwróciły kosztów.' : 'Weak ROAS — ads underperformed.')
+        : orders > 0
+          ? (lang === 'pl' ? 'Solidny dzień operacyjny.' : 'Solid operational day.')
+          : (lang === 'pl' ? 'Brak danych sprzedażowych.' : 'No sales data.')
+
+  if (lang === 'pl') {
+    const lines = [
+      `— WCZORAJ ${row.date} —`, '',
+      `Zamówienia: ${orders}`,
+      `Przychód: ${fmt(revenue)} PLN`,
+      `Wydatki Meta: ${fmt(spend)} PLN`,
+    ]
+    if (cpa  != null) lines.push(`Real CPA: ${fmt(cpa)} PLN`)
+    if (roas != null) lines.push(`Real ROAS: ${fmt(roas)}x`)
+    if (purchases > 0) lines.push(`Meta zakupy: ${purchases}`)
+    lines.push('', verdict)
+    const speech = `Wczoraj, ${row.date}: ${orders} zamówień, ${fmt(revenue, 0)} złotych przychodu, ${fmt(spend, 0)} złotych wydatków.${roas != null ? ` ROAS ${fmt(roas)}x.` : ''}`
+    return { text: lines.join('\n'), speech, sources: ['recentTrend'], warnings: [] }
+  }
+
+  const lines = [
+    `— YESTERDAY ${row.date} —`, '',
+    `Orders: ${orders}`,
+    `Revenue: ${fmt(revenue)} PLN`,
+    `Meta spend: ${fmt(spend)} PLN`,
+  ]
+  if (cpa  != null) lines.push(`Real CPA: ${fmt(cpa)} PLN`)
+  if (roas != null) lines.push(`Real ROAS: ${fmt(roas)}x`)
+  if (purchases > 0) lines.push(`Meta purchases: ${purchases}`)
+  lines.push('', verdict)
+  const speech = `Yesterday, ${row.date}: ${orders} orders, ${fmt(revenue, 0)} PLN revenue, ${fmt(spend, 0)} PLN spend.${roas != null ? ` ROAS ${fmt(roas)}x.` : ''}`
+  return { text: lines.join('\n'), speech, sources: ['recentTrend'], warnings: [] }
+}
+
+function buildTodayVsYesterdayAnswer(ctx, lang) {
+  const trend   = ctx.recentTrend ?? []
+  const today   = ctx.dataHealth?.today ?? ''
+  const yDate   = today ? prevDay(today) : null
+
+  // Today: prefer todayKPIs (freshest), fall back to trend[0]
+  const todayKpi = ctx.todayKPIs
+  const todayRow = todayKpi
+    ? { date: todayKpi.date ?? today, wix_orders: todayKpi.wix_orders ?? 0, wix_revenue: todayKpi.wix_revenue ?? 0, meta_spend: todayKpi.meta_spend ?? 0, real_cpa: todayKpi.real_cpa ?? null, real_roas: todayKpi.real_roas ?? null }
+    : (trend[0] ?? null)
+  const yRow = (yDate ? trend.find(r => r.date === yDate) : null) ?? trend[1] ?? null
+
+  if (!todayRow || !yRow) {
+    const msg = lang === 'pl'
+      ? `Brak danych do porównania. Dostępne daty: ${trend.map(r => r.date).join(', ') || 'brak'}.`
+      : `Cannot compare — missing data. Available dates: ${trend.map(r => r.date).join(', ') || 'none'}.`
+    return { text: msg, speech: msg, sources: [], warnings: ['insufficient trend data'] }
+  }
+
+  const todayOrders  = todayRow.wix_orders  ?? 0
+  const yOrders      = yRow.wix_orders      ?? 0
+  const todayRevenue = todayRow.wix_revenue  ?? 0
+  const yRevenue     = yRow.wix_revenue      ?? 0
+  const todaySpend   = todayRow.meta_spend   ?? 0
+  const ySpend       = yRow.meta_spend       ?? 0
+  const revDelta     = todayRevenue - yRevenue
+  const orderDelta   = todayOrders  - yOrders
+  const spendDelta   = todaySpend   - ySpend
+  const revPct       = yRevenue > 0 ? (revDelta / yRevenue * 100) : null
+
+  const verdict = revDelta > 0
+    ? (lang === 'pl' ? 'Dzisiaj lepiej niż wczoraj. Dobry trend, Lifidi.' : 'Today is ahead of yesterday. Good trend, Lifidi.')
+    : revDelta < 0
+      ? (lang === 'pl' ? 'Dziś poniżej wczoraj. Dzień jeszcze trwa — sprawdź kampanie.' : 'Today is behind yesterday. Day not over — check campaigns.')
+      : (lang === 'pl' ? 'Identycznie jak wczoraj.' : 'Identical to yesterday.')
+
+  if (lang === 'pl') {
+    const lines = [
+      `— DZIŚ vs WCZORAJ —`, '',
+      `                Wczoraj (${yRow.date})     Dziś (${todayRow.date ?? today})`,
+      `Zamówienia:     ${yOrders}                  ${todayOrders}   (${sign(orderDelta)}${orderDelta})`,
+      `Przychód:       ${fmt(yRevenue)} PLN         ${fmt(todayRevenue)} PLN   (${sign(revDelta)}${fmt(revDelta)}${revPct != null ? `, ${sign(revPct)}${revPct.toFixed(0)}%` : ''})`,
+      `Wydatki Meta:   ${fmt(ySpend)} PLN           ${fmt(todaySpend)} PLN   (${sign(spendDelta)}${fmt(spendDelta)})`,
+    ]
+    if (todayRow.real_roas != null && yRow.real_roas != null) {
+      const rd = (todayRow.real_roas ?? 0) - (yRow.real_roas ?? 0)
+      lines.push(`ROAS:           ${fmt(yRow.real_roas)}x                ${fmt(todayRow.real_roas)}x   (${sign(rd)}${fmt(rd)})`)
+    }
+    lines.push('', verdict)
+    const speech = `Dziś vs wczoraj. Przychód: ${fmt(todayRevenue, 0)} vs ${fmt(yRevenue, 0)} złotych (${sign(revDelta)}${fmt(revDelta, 0)} PLN). Zamówienia: ${todayOrders} vs ${yOrders}.`
+    return { text: lines.join('\n'), speech, sources: ['todayKPIs', 'recentTrend'], warnings: [] }
+  }
+
+  const lines = [
+    `— TODAY vs YESTERDAY —`, '',
+    `                Yesterday (${yRow.date})   Today (${todayRow.date ?? today})`,
+    `Orders:         ${yOrders}                   ${todayOrders}   (${sign(orderDelta)}${orderDelta})`,
+    `Revenue:        ${fmt(yRevenue)} PLN          ${fmt(todayRevenue)} PLN   (${sign(revDelta)}${fmt(revDelta)}${revPct != null ? `, ${sign(revPct)}${revPct.toFixed(0)}%` : ''})`,
+    `Meta spend:     ${fmt(ySpend)} PLN            ${fmt(todaySpend)} PLN   (${sign(spendDelta)}${fmt(spendDelta)})`,
+  ]
+  if (todayRow.real_roas != null && yRow.real_roas != null) {
+    const rd = (todayRow.real_roas ?? 0) - (yRow.real_roas ?? 0)
+    lines.push(`ROAS:           ${fmt(yRow.real_roas)}x                 ${fmt(todayRow.real_roas)}x   (${sign(rd)}${fmt(rd)})`)
+  }
+  lines.push('', verdict)
+  const speech = `Today vs yesterday. Revenue: ${fmt(todayRevenue, 0)} vs ${fmt(yRevenue, 0)} PLN (${sign(revDelta)}${fmt(revDelta, 0)}). Orders: ${todayOrders} vs ${yOrders}.`
+  return { text: lines.join('\n'), speech, sources: ['todayKPIs', 'recentTrend'], warnings: [] }
+}
+
+function buildWeekSummaryAnswer(ctx, lang) {
+  const trend = ctx.recentTrend ?? []
+  if (trend.length === 0) {
+    const msg = lang === 'pl' ? 'Brak danych historycznych.' : 'No historical data available.'
+    return { text: msg, speech: msg, sources: [], warnings: ['no recentTrend'] }
+  }
+  const today     = ctx.dataHealth?.today ?? (trend[0]?.date ?? '')
+  const todayD    = new Date(today + 'T12:00:00Z')
+  const dow       = todayD.getUTCDay()
+  const daysBack  = dow === 0 ? 6 : dow - 1
+  const weekStart = new Date(todayD)
+  weekStart.setUTCDate(todayD.getUTCDate() - daysBack)
+  const weekStartStr = weekStart.toISOString().slice(0, 10)
+
+  const rows = trend.filter(r => r.date >= weekStartStr).sort((a, b) => a.date < b.date ? -1 : 1)
+  if (rows.length === 0) {
+    const msg = lang === 'pl' ? 'Brak danych z tego tygodnia jeszcze.' : 'No data for this week yet.'
+    return { text: msg, speech: msg, sources: ['recentTrend'], warnings: ['no this-week rows'] }
+  }
+
+  const totalOrders  = rows.reduce((s, r) => s + (r.wix_orders  ?? 0), 0)
+  const totalRevenue = rows.reduce((s, r) => s + (r.wix_revenue ?? 0), 0)
+  const totalSpend   = rows.reduce((s, r) => s + (r.meta_spend  ?? 0), 0)
+  const wtdCPA       = totalSpend > 0 && totalOrders > 0 ? totalSpend / totalOrders : null
+  const wtdROAS      = totalSpend > 0 ? totalRevenue / totalSpend : null
+
+  if (lang === 'pl') {
+    const lines = [
+      `— TEN TYDZIEŃ (${rows.length} dni, od ${weekStartStr}) —`, '',
+      `Zamówienia łącznie: ${totalOrders}`,
+      `Przychód łącznie: ${fmt(totalRevenue)} PLN`,
+      `Wydatki Meta łącznie: ${fmt(totalSpend)} PLN`,
+    ]
+    if (wtdCPA)  lines.push(`WTD CPA: ${fmt(wtdCPA)} PLN`)
+    if (wtdROAS) lines.push(`WTD ROAS: ${fmt(wtdROAS)}x`)
+    lines.push('', `${rows.length} ${rows.length === 1 ? 'dzień' : 'dni'} z danymi: ${rows.map(r => r.date).join(', ')}.`)
+    const speech = `Ten tydzień: ${totalOrders} zamówień, ${fmt(totalRevenue, 0)} złotych przychodu, ${fmt(totalSpend, 0)} złotych wydatków.${wtdROAS != null ? ` ROAS ${fmt(wtdROAS)}x.` : ''}`
+    return { text: lines.join('\n'), speech, sources: ['recentTrend'], warnings: [] }
+  }
+
+  const lines = [
+    `— THIS WEEK (${rows.length} day${rows.length > 1 ? 's' : ''}, since ${weekStartStr}) —`, '',
+    `Total orders: ${totalOrders}`,
+    `Total revenue: ${fmt(totalRevenue)} PLN`,
+    `Total Meta spend: ${fmt(totalSpend)} PLN`,
+  ]
+  if (wtdCPA)  lines.push(`WTD CPA: ${fmt(wtdCPA)} PLN`)
+  if (wtdROAS) lines.push(`WTD ROAS: ${fmt(wtdROAS)}x`)
+  lines.push('', `${rows.length} day${rows.length > 1 ? 's' : ''} with data: ${rows.map(r => r.date).join(', ')}.`)
+  const speech = `This week: ${totalOrders} orders, ${fmt(totalRevenue, 0)} PLN revenue, ${fmt(totalSpend, 0)} PLN spend.${wtdROAS != null ? ` ROAS ${fmt(wtdROAS)}x.` : ''}`
+  return { text: lines.join('\n'), speech, sources: ['recentTrend'], warnings: [] }
+}
+
+function buildLast7Answer(ctx, lang) {
+  const trend = ctx.recentTrend ?? []
+  if (trend.length === 0) {
+    const msg = lang === 'pl' ? 'Brak danych historycznych.' : 'No historical data available.'
+    return { text: msg, speech: msg, sources: [], warnings: ['no recentTrend'] }
+  }
+  const rows = [...trend].sort((a, b) => a.date < b.date ? -1 : 1)
+
+  const totalOrders  = rows.reduce((s, r) => s + (r.wix_orders  ?? 0), 0)
+  const totalRevenue = rows.reduce((s, r) => s + (r.wix_revenue ?? 0), 0)
+  const totalSpend   = rows.reduce((s, r) => s + (r.meta_spend  ?? 0), 0)
+  const avgCPA       = totalSpend > 0 && totalOrders > 0 ? totalSpend / totalOrders : null
+  const avgROAS      = totalSpend > 0 ? totalRevenue / totalSpend : null
+
+  const label = lang === 'pl' ? 'OSTATNIE 7 DNI' : 'LAST 7 DAYS'
+  const lines = [
+    `— ${label} (${rows[0]?.date} → ${rows[rows.length - 1]?.date}) —`, '',
+    lang === 'pl' ? `Łączne zamówienia: ${totalOrders}` : `Total orders: ${totalOrders}`,
+    lang === 'pl' ? `Łączny przychód: ${fmt(totalRevenue)} PLN` : `Total revenue: ${fmt(totalRevenue)} PLN`,
+    lang === 'pl' ? `Łączne wydatki Meta: ${fmt(totalSpend)} PLN` : `Total Meta spend: ${fmt(totalSpend)} PLN`,
+  ]
+  if (avgCPA)  lines.push(lang === 'pl' ? `Średnie CPA: ${fmt(avgCPA)} PLN` : `Average CPA: ${fmt(avgCPA)} PLN`)
+  if (avgROAS) lines.push(lang === 'pl' ? `Średnie ROAS: ${fmt(avgROAS)}x` : `Average ROAS: ${fmt(avgROAS)}x`)
+  lines.push('')
+  rows.forEach(r => {
+    const cpaStr  = r.real_cpa  != null ? `  CPA: ${fmt(r.real_cpa)}`   : ''
+    const roasStr = r.real_roas != null ? `  ROAS: ${fmt(r.real_roas)}x` : ''
+    lines.push(`  ${r.date}: ${r.wix_orders ?? 0} orders | ${fmt(r.wix_revenue ?? 0)} PLN | spend ${fmt(r.meta_spend ?? 0)}${cpaStr}${roasStr}`)
+  })
+  const speech = lang === 'pl'
+    ? `Ostatnie 7 dni: ${totalOrders} zamówień łącznie, ${fmt(totalRevenue, 0)} złotych przychodu, ${fmt(totalSpend, 0)} złotych wydatków.${avgROAS != null ? ` Średnie ROAS ${fmt(avgROAS)}x.` : ''}`
+    : `Last 7 days: ${totalOrders} total orders, ${fmt(totalRevenue, 0)} PLN revenue, ${fmt(totalSpend, 0)} PLN spend.${avgROAS != null ? ` Average ROAS ${fmt(avgROAS)}x.` : ''}`
+  return { text: lines.join('\n'), speech, sources: ['recentTrend'], warnings: [] }
+}
+
 function buildDeterministicAnswer(intent, context, lang) {
   switch (intent) {
     case 'revenue_today':        return buildRevenueAnswer(context, lang)
@@ -380,6 +635,10 @@ function buildDeterministicAnswer(intent, context, lang) {
     case 'campaigns_today':      return buildCampaignsAnswer(context, lang)
     case 'jsu_funnel':           return buildJsuFunnelAnswer(context, lang)
     case 'red_flags':            return buildRedFlagsAnswer(context, lang)
+    case 'yesterday':            return buildYesterdayAnswer(context, lang)
+    case 'today_vs_yesterday':   return buildTodayVsYesterdayAnswer(context, lang)
+    case 'week_summary':         return buildWeekSummaryAnswer(context, lang)
+    case 'last_7_days':          return buildLast7Answer(context, lang)
     default:                     return null
   }
 }
@@ -450,6 +709,18 @@ function buildContextText(context) {
     lines.push('--- Top Campaigns (by spend) ---')
     ;[...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 5).forEach(c => {
       lines.push(`${c.name}: ${fmt(c.spend)} PLN spend | ${c.clicks} clicks | ${c.purchases} purchases`)
+    })
+  }
+
+  const trend = context.recentTrend ?? []
+  if (trend.length > 0) {
+    lines.push('')
+    lines.push('--- Recent Performance (last 7 days, v_daily_wix_meta_performance) ---')
+    ;[...trend].sort((a, b) => b.date > a.date ? 1 : -1).forEach(r => {
+      const cpaStr  = r.real_cpa  != null ? `  CPA: ${fmt(r.real_cpa)} PLN` : ''
+      const roasStr = r.real_roas != null ? `  ROAS: ${fmt(r.real_roas)}x` : ''
+      const purchStr = (r.meta_purchases ?? 0) > 0 ? `  meta_purchases: ${r.meta_purchases}` : ''
+      lines.push(`  ${r.date}: ${r.wix_orders ?? 0} orders | ${fmt(r.wix_revenue ?? 0)} PLN revenue | spend ${fmt(r.meta_spend ?? 0)} PLN${cpaStr}${roasStr}${purchStr}`)
     })
   }
 

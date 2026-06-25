@@ -932,6 +932,16 @@ export default function App() {
         totals: jsuSummary.totals,
         rates:  jsuSummary.rates,
       } : null,
+      recentTrend: trend.map(r => ({
+        date: r.date,
+        meta_spend: r.meta_spend,
+        wix_orders: r.wix_orders,
+        wix_revenue: r.wix_revenue,
+        real_cpa: r.real_cpa,
+        real_roas: r.real_roas,
+        meta_purchases: r.meta_purchases ?? null,
+        meta_purchase_value: r.meta_purchase_value ?? null,
+      })),
       topCampaigns: ads.slice(0, 5).map(a => ({
         name: a.campaign_name ?? a.campaign_id ?? '?',
         spend: a.spend,
