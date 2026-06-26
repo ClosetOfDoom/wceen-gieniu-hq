@@ -271,6 +271,8 @@ const CHIPS = [
 
 function getTtsErrorMessage(err: string): string {
   if (!err) return ''
+  if (err === 'no-pl-voice')
+    return 'Brak głosu PL w systemie — tekst dostępny, głos niedostępny. Zainstaluj głos polski lub przełącz na EN.'
   if (/NotAllowedError|play\(\) failed|autoplay|interrupted/i.test(err))
     return 'Browser blocked autoplay — click "Start voice" once to unlock.'
   if (/missing_api_key/i.test(err))
@@ -316,6 +318,7 @@ function RightPanel({
   onVoiceLanguageChange,
   browserVoiceInfo,
   englishVoiceCount,
+  polishVoiceCount,
   onResetVoiceState,
   sttLanguage,
   onSttLanguageChange,
@@ -346,6 +349,7 @@ function RightPanel({
   onVoiceLanguageChange: (lang: 'en' | 'pl') => void
   browserVoiceInfo: { name: string; lang: string } | null
   englishVoiceCount: number
+  polishVoiceCount: number
   onResetVoiceState: () => void
   sttLanguage: SttLanguage
   onSttLanguageChange: (lang: SttLanguage) => void
@@ -434,6 +438,11 @@ function RightPanel({
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', marginTop: '6px', textAlign: 'center' }}>
                   One tap · unlocks voice &amp; mic
                 </div>
+                {voiceLanguage === 'pl' && polishVoiceCount === 0 && (
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--orange)', marginTop: '8px', lineHeight: 1.5, padding: '6px 8px', background: 'rgba(251,146,60,0.08)', borderRadius: '3px', border: '1px solid rgba(251,146,60,0.25)' }}>
+                    ⚠ Brak głosu PL — tekst będzie widoczny, głos niedostępny.
+                  </div>
+                )}
               </div>
             ) : (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: chart ? '10px' : '0' }}>
@@ -515,6 +524,11 @@ function RightPanel({
                 {voiceLanguage === 'en' && englishVoiceCount === 0 && (
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.63rem', color: 'var(--orange)', lineHeight: 1.4 }}>
                     No English browser voice found. Install an English Windows/browser voice or use ElevenLabs.
+                  </div>
+                )}
+                {voiceLanguage === 'pl' && polishVoiceCount === 0 && (
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.63rem', color: 'var(--orange)', lineHeight: 1.4 }}>
+                    Brak głosu PL — tekst dostępny, głos niedostępny. Zainstaluj głos polski lub przełącz na EN.
                   </div>
                 )}
               </div>
@@ -1098,18 +1112,26 @@ export default function App() {
     }
   }
 
-  // ── Voice language change ─────────────────────────────────────────────────────
+  // ── Language change — single source of truth for TTS + STT + content ─────────
+  // One selector controls all three simultaneously: voice language, STT recognition,
+  // and the language passed to gieniu-command for response generation.
 
   function handleVoiceLanguageChange(lang: 'en' | 'pl') {
     saveVoiceLanguage(lang)
     setVoiceLanguage_(lang)
+    // Always keep STT in sync — SttLanguage uses BCP-47 codes
+    const sttLang: SttLanguage = lang === 'pl' ? 'pl-PL' : 'en-US'
+    setSttLanguage(sttLang)
+    setSttLanguage_(sttLang)
   }
-
-  // ── STT language change ───────────────────────────────────────────────────────
 
   function handleSttLanguageChange(lang: SttLanguage) {
     setSttLanguage(lang)
     setSttLanguage_(lang)
+    // Keep TTS voice language in sync
+    const voiceLang: 'en' | 'pl' = lang === 'pl-PL' ? 'pl' : 'en'
+    saveVoiceLanguage(voiceLang)
+    setVoiceLanguage_(voiceLang)
   }
 
   // ── Reset all voice state ─────────────────────────────────────────────────────
@@ -1474,6 +1496,7 @@ export default function App() {
         onVoiceLanguageChange={handleVoiceLanguageChange}
         browserVoiceInfo={browserVoiceInfo}
         englishVoiceCount={englishVoiceCount}
+        polishVoiceCount={polishVoiceCount}
         onResetVoiceState={handleResetVoiceState}
         sttLanguage={sttLanguage}
         onSttLanguageChange={handleSttLanguageChange}

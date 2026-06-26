@@ -17,9 +17,11 @@ export function getVoiceLanguage(): 'en' | 'pl' {
   try {
     const v = localStorage.getItem(LS_VOICE_LANG)
     if (v === 'en' || v === 'pl') return v
-    localStorage.setItem(LS_VOICE_LANG, 'en')
-    return 'en'
-  } catch { return 'en' }
+    // Default: detect from browser language; fallback 'pl' — WCEEN is Polish
+    const auto: 'en' | 'pl' = (navigator.language ?? '').toLowerCase().startsWith('en') ? 'en' : 'pl'
+    localStorage.setItem(LS_VOICE_LANG, auto)
+    return auto
+  } catch { return 'pl' }
 }
 
 export function saveVoiceLanguage(lang: 'en' | 'pl'): void {
@@ -116,8 +118,14 @@ export function resetVoiceState(): void {
       LS_ELEVEN_REASON, 'gieniuVoiceRate', 'gieniuVoicePitch']) {
       localStorage.removeItem(k)
     }
-    localStorage.setItem(LS_VOICE_LANG, 'en')
+    // Default after reset: browser-detected language, fallback 'pl'
+    const auto: 'en' | 'pl' = (navigator.language ?? '').toLowerCase().startsWith('en') ? 'en' : 'pl'
+    localStorage.setItem(LS_VOICE_LANG, auto)
   } catch { /* non-fatal */ }
+}
+
+export function hasVoiceForLanguage(lang: 'en' | 'pl'): boolean {
+  return getAvailableVoices(lang).length > 0
 }
 
 // ── Module-level audio state ──────────────────────────────────────────────────
@@ -198,9 +206,17 @@ async function speakBrowser(text: string, language: 'en' | 'pl'): Promise<TTSRes
     })
   }
 
+  const voice = selectBrowserVoice(language)
+
+  // Refuse to read PL text with a non-PL voice — better silence than wrong language
+  if (!voice && language === 'pl') {
+    // eslint-disable-next-line no-console
+    console.warn('GIENIU TTS: no Polish voice found — refusing to speak PL with EN voice')
+    return { ok: false, provider: 'browser', error: 'no-pl-voice' }
+  }
+
   const utt = new SpeechSynthesisUtterance(text)
   utt.lang  = language === 'en' ? 'en-US' : 'pl-PL'
-  const voice = selectBrowserVoice(language)
   if (voice) utt.voice = voice
   currentUtterance = utt
 
