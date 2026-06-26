@@ -17,11 +17,9 @@ export function getVoiceLanguage(): 'en' | 'pl' {
   try {
     const v = localStorage.getItem(LS_VOICE_LANG)
     if (v === 'en' || v === 'pl') return v
-    // Default: detect from browser language; fallback 'pl' — WCEEN is Polish
-    const auto: 'en' | 'pl' = (navigator.language ?? '').toLowerCase().startsWith('en') ? 'en' : 'pl'
-    localStorage.setItem(LS_VOICE_LANG, auto)
-    return auto
-  } catch { return 'pl' }
+    localStorage.setItem(LS_VOICE_LANG, 'en')
+    return 'en'
+  } catch { return 'en' }
 }
 
 export function saveVoiceLanguage(lang: 'en' | 'pl'): void {
@@ -118,9 +116,7 @@ export function resetVoiceState(): void {
       LS_ELEVEN_REASON, 'gieniuVoiceRate', 'gieniuVoicePitch']) {
       localStorage.removeItem(k)
     }
-    // Default after reset: browser-detected language, fallback 'pl'
-    const auto: 'en' | 'pl' = (navigator.language ?? '').toLowerCase().startsWith('en') ? 'en' : 'pl'
-    localStorage.setItem(LS_VOICE_LANG, auto)
+    localStorage.setItem(LS_VOICE_LANG, 'en')
   } catch { /* non-fatal */ }
 }
 
@@ -246,7 +242,10 @@ async function speakBrowser(text: string, language: 'en' | 'pl'): Promise<TTSRes
 export async function speak(text: string): Promise<TTSResult> {
   stopAudio()
 
-  const language = getVoiceLanguage()
+  const settingLang = getVoiceLanguage()
+  // Safety: text containing Polish characters must use PL voice — never read PL with EN phonetics
+  const hasPolishChars = /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/.test(text)
+  const language: 'en' | 'pl' = hasPolishChars ? 'pl' : settingLang
 
   // If ElevenLabs is paused from a prior quota/auth error, go straight to browser TTS
   if (isElevenLabsPaused()) {

@@ -45,8 +45,11 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const VOICE_UNLOCK_KEY = 'gieniu_voice_unlocked_v1'
-const OPENING_TEXT = "Do usług, sir. Jeden gest, a przystąpię do raportu operacyjnego."
+const OPENING_TEXT_EN = "At your service, sir. One gesture and I shall commence the operational report."
+const OPENING_TEXT_PL = "Do usług, sir. Jeden gest, a przystąpię do raportu operacyjnego."
+function getOpeningText(lang: 'en' | 'pl'): string {
+  return lang === 'pl' ? OPENING_TEXT_PL : OPENING_TEXT_EN
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -697,7 +700,7 @@ export default function App() {
   const [ttsError, setTtsError]           = useState('')
   const [ttsFallbackActive, setTtsFallbackActive] = useState(() => isElevenLabsPaused())
   const [ttsLastElevenError, setTtsLastElevenError] = useState('')
-  const [voiceUnlocked, setVoiceUnlocked] = useState(() => sessionStorage.getItem(VOICE_UNLOCK_KEY) === '1')
+  const [voiceUnlocked, setVoiceUnlocked] = useState(false)
   const [voiceLanguage, setVoiceLanguage_] = useState<'en' | 'pl'>(getVoiceLanguage)
 
   // Intent gateway diagnostics
@@ -725,7 +728,7 @@ export default function App() {
   const ttsSessionRef     = useRef(0)
   // Tracks voiceUnlocked synchronously so speakAnswer sees the latest value
   // even when called immediately after setVoiceUnlocked(true) in the same tick.
-  const voiceUnlockedRef  = useRef(sessionStorage.getItem(VOICE_UNLOCK_KEY) === '1')
+  const voiceUnlockedRef  = useRef(false)
 
   // PWA install
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -819,6 +822,12 @@ export default function App() {
 
   useEffect(() => { voiceUnlockedRef.current = voiceUnlocked }, [voiceUnlocked])
 
+  // When language changes before Wake, update the opening text in the response pane
+  useEffect(() => {
+    setResponse(prev => (prev === OPENING_TEXT_EN || prev === OPENING_TEXT_PL) ? getOpeningText(voiceLanguage) : prev)
+    setResponseSpoken(prev => (prev === OPENING_TEXT_EN || prev === OPENING_TEXT_PL) ? getOpeningText(voiceLanguage) : prev)
+  }, [voiceLanguage])
+
   useEffect(() => {
     refreshVoiceInfo()
     window.speechSynthesis?.addEventListener('voiceschanged', refreshVoiceInfo)
@@ -843,27 +852,10 @@ export default function App() {
   // ── Opening greeting ─────────────────────────────────────────────────────────
 
   useEffect(() => {
-    setResponse(OPENING_TEXT)
-    setResponseSpoken(OPENING_TEXT)
-    if (sessionStorage.getItem(VOICE_UNLOCK_KEY) !== '1') return
-    const t = setTimeout(async () => {
-      setSpeaking(true)
-      const result = await speak(OPENING_TEXT)
-      setSpeaking(false)
-      if (result.ok && result.provider === 'browser') {
-        setTtsFallbackActive(true)
-        if (result.error) setTtsLastElevenError(result.error)
-      } else if (!result.ok && !result.aborted) {
-        // eslint-disable-next-line no-console
-        console.log('GIENIU TTS error detail', result.error)
-        if (result.provider === 'elevenlabs') setTtsLastElevenError(result.error ?? '')
-        setTtsError(result.error ?? 'unknown error')
-      } else if (result.ok) {
-        // eslint-disable-next-line no-console
-        console.log('GIENIU opening line spoken')
-      }
-    }, 900)
-    return () => clearTimeout(t)
+    const openingText = getOpeningText(getVoiceLanguage())
+    setResponse(openingText)
+    setResponseSpoken(openingText)
+    // Voice unlocks only on explicit Wake tap — never auto-speak on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -918,10 +910,9 @@ export default function App() {
       if (res.ok && res.provider === 'browser') {
         setTtsFallbackActive(true)
         if (res.error) setTtsLastElevenError(res.error)
-        if (!voiceUnlocked) { sessionStorage.setItem(VOICE_UNLOCK_KEY, '1'); setVoiceUnlocked(true) }
+        if (!voiceUnlocked) setVoiceUnlocked(true)
       } else if (res.ok) {
         if (!voiceUnlocked) {
-          sessionStorage.setItem(VOICE_UNLOCK_KEY, '1')
           setVoiceUnlocked(true)
           // eslint-disable-next-line no-console
           console.log('GIENIU voice unlocked', true)
@@ -1048,10 +1039,10 @@ export default function App() {
     // eslint-disable-next-line no-console
     console.log('GIENIU Start voice — endpoint: /.netlify/functions/gieniu-tts')
     // When browser TTS is active, use a concise language-appropriate test phrase
-    // so the English voice speaks English (not the Polish OPENING_TEXT).
+    // so the voice language matches the text language.
     const testText = isElevenLabsPaused()
       ? (voiceLanguage === 'pl' ? 'Głos Gieniu jest aktywny.' : 'Gieniu voice is active.')
-      : (responseSpoken || response || OPENING_TEXT)
+      : (responseSpoken || response || getOpeningText(voiceLanguage))
     const session = ++ttsSessionRef.current
     setSpeaking(true)
     const result = await speak(testText)
@@ -1060,10 +1051,8 @@ export default function App() {
     if (result.ok && result.provider === 'browser') {
       setTtsFallbackActive(true)
       if (result.error) setTtsLastElevenError(result.error)
-      sessionStorage.setItem(VOICE_UNLOCK_KEY, '1')
       setVoiceUnlocked(true)
     } else if (result.ok) {
-      sessionStorage.setItem(VOICE_UNLOCK_KEY, '1')
       setVoiceUnlocked(true)
       // eslint-disable-next-line no-console
       console.log('GIENIU voice unlocked', true)
@@ -1080,7 +1069,6 @@ export default function App() {
   async function handleWakeAndBrief() {
     prewarmAudio()
     setTtsError('')
-    sessionStorage.setItem(VOICE_UNLOCK_KEY, '1')
     setVoiceUnlocked(true)
     voiceUnlockedRef.current = true  // update ref immediately so speakAnswer sees it
     await handleIntentQuery('morning brief')
@@ -1097,7 +1085,7 @@ export default function App() {
     prewarmAudio()
     const session = ++ttsSessionRef.current
     setSpeaking(true)
-    const result = await speak(responseSpoken || response || OPENING_TEXT)
+    const result = await speak(responseSpoken || response || getOpeningText(voiceLanguage))
     if (ttsSessionRef.current !== session) return
     setSpeaking(false)
     if (result.ok && result.provider === 'browser') {
