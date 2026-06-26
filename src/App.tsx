@@ -8,6 +8,7 @@ import { RevenueTrendChart } from './components/RevenueTrendChart'
 import { InsightChart } from './components/InsightChart'
 import { CampaignsPanel } from './components/CampaignsPanel'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
+import { GoldenOrb } from './components/GoldenOrb'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday,
@@ -448,46 +449,49 @@ function RightPanel({
                 )}
               </div>
             ) : (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: chart ? '10px' : '0' }}>
-              {speaking ? (
-                <button
-                  className="btn-sm"
-                  onClick={onSpeak}
-                  style={{ borderColor: 'var(--teal)', color: 'var(--teal)' }}
-                >
-                  ⏹ Stop speaking
-                </button>
-              ) : (
-                <button className="btn-sm" onClick={onSpeak}>
-                  ▶ Speak again
-                </button>
-              )}
+            <div style={{ marginTop: chart ? '10px' : '4px' }}>
+              {/* Golden orb — replaces the "Speaking…" text indicator */}
+              <GoldenOrb state={speaking ? 'speaking' : thinking ? 'thinking' : 'idle'} />
 
-              {/* Browser TTS fallback status — calm, non-blocking */}
-              {ttsFallbackActive && !ttsError && (
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted)', lineHeight: 1.4 }}>
-                  Browser TTS active
-                </span>
-              )}
+              {/* Controls row below the orb */}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: '4px' }}>
+                {speaking ? (
+                  <button
+                    className="btn-sm"
+                    onClick={onSpeak}
+                    style={{ borderColor: 'var(--teal)', color: 'var(--teal)' }}
+                  >
+                    ⏹ Stop
+                  </button>
+                ) : (
+                  <button className="btn-sm" onClick={onSpeak}>
+                    ▶ Speak again
+                  </button>
+                )}
 
-              {/* Retry ElevenLabs button — shown when fallback is active */}
-              {ttsFallbackActive && (
-                <button
-                  className="btn-sm"
-                  onClick={onRetryElevenLabs}
-                  style={{ fontSize: '0.65rem', padding: '4px 10px', borderColor: 'var(--muted2)', color: 'var(--muted2)' }}
-                  title="Try ElevenLabs again — if quota still exhausted, will stay on Browser TTS"
-                >
-                  Try ElevenLabs again
-                </button>
-              )}
+                {ttsFallbackActive && !ttsError && (
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted)', lineHeight: 1.4 }}>
+                    Browser TTS
+                  </span>
+                )}
 
-              {/* Only show error for non-quota, non-fallback issues */}
-              {ttsError && !ttsFallbackActive && (
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--orange)', lineHeight: 1.4, maxWidth: '220px' }}>
-                  {getTtsErrorMessage(ttsError)}
-                </span>
-              )}
+                {ttsFallbackActive && (
+                  <button
+                    className="btn-sm"
+                    onClick={onRetryElevenLabs}
+                    style={{ fontSize: '0.65rem', padding: '4px 10px', borderColor: 'var(--muted2)', color: 'var(--muted2)' }}
+                    title="Try ElevenLabs again — if quota still exhausted, will stay on Browser TTS"
+                  >
+                    Try ElevenLabs again
+                  </button>
+                )}
+
+                {ttsError && !ttsFallbackActive && (
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--orange)', lineHeight: 1.4, maxWidth: '220px' }}>
+                    {getTtsErrorMessage(ttsError)}
+                  </span>
+                )}
+              </div>
             </div>
             )}
 

@@ -131,6 +131,12 @@ let currentFetchAbort: AbortController | null = null
 let currentUtterance: SpeechSynthesisUtterance | null = null
 
 let _warmCtx: AudioContext | null = null
+let _analyser: AnalyserNode | null = null
+
+/** Returns the live AnalyserNode when ElevenLabs audio is playing, null otherwise. */
+export function getAudioAnalyser(): AnalyserNode | null {
+  return _analyser
+}
 
 export function prewarmAudio(): void {
   try {
@@ -157,6 +163,7 @@ export function stopAudio(): void {
     window.speechSynthesis?.cancel()
   } catch { /* non-fatal */ }
   currentUtterance = null
+  _analyser = null
   // eslint-disable-next-line no-console
   console.log('GIENIU interrupted')
 }
@@ -279,9 +286,25 @@ export async function speak(text: string): Promise<TTSResult> {
       const audio = new Audio(url)
       currentAudio = audio
 
+      // Connect to Web Audio analyser for real-time amplitude (GoldenOrb visualization)
+      try {
+        const ctx = _warmCtx
+        if (ctx && ctx.state !== 'closed') {
+          if (ctx.state === 'suspended') void ctx.resume()
+          const src = ctx.createMediaElementSource(audio)
+          const an  = ctx.createAnalyser()
+          an.fftSize = 128
+          an.smoothingTimeConstant = 0.75
+          src.connect(an)
+          an.connect(ctx.destination)
+          _analyser = an
+        }
+      } catch { _analyser = null }
+
       audio.onended = () => {
         URL.revokeObjectURL(url)
         if (currentAudio === audio) currentAudio = null
+        _analyser = null
       }
 
       try {
