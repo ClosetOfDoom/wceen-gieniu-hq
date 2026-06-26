@@ -59,12 +59,21 @@ export function RevenueTrendChart({ rows, loading }: Props) {
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', minHeight: 160 }}>
       <defs>
         <linearGradient id="gRevGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="#c9a96e" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#c9a96e" stopOpacity="0" />
+          <stop offset="0%"   stopColor="#ee9d00" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#ee9d00" stopOpacity="0" />
         </linearGradient>
         <clipPath id="chartClip">
           <rect x={pad.left} y={pad.top} width={chartW} height={chartH} />
         </clipPath>
+        <filter id="gold-glow" x="-20%" y="-60%" width="140%" height="220%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+          <feFlood floodColor="#ee9d00" floodOpacity="0.6" result="color" />
+          <feComposite in="color" in2="blur" operator="in" result="glow" />
+          <feMerge>
+            <feMergeNode in="glow" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
 
       {/* Grid lines */}
@@ -93,14 +102,16 @@ export function RevenueTrendChart({ rows, loading }: Props) {
         clipPath="url(#chartClip)"
       />
 
-      {/* Revenue solid line */}
+      {/* Revenue solid line — gold glow + draw animation */}
       <polyline
+        className="chart-line-draw"
         points={revLine}
         fill="none"
         stroke="var(--gold)"
         strokeWidth="2.5"
         strokeLinejoin="round"
         clipPath="url(#chartClip)"
+        filter="url(#gold-glow)"
       />
 
       {/* Dots on revenue */}

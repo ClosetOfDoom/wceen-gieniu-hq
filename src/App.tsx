@@ -386,7 +386,7 @@ function RightPanel({
           )}
           {thinking && !listening && (
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', animation: 'pulse-mic 1.2s infinite' }} />
+              <span className="rune-thinking" style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)' }} />
               Thinking...
             </div>
           )}
@@ -407,7 +407,7 @@ function RightPanel({
               </div>
             )}
 
-            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', lineHeight: 1.85, color: 'var(--text)', margin: 0, marginBottom: chart ? '8px' : '14px' }}>
+            <pre key={response} className="gieniu-response-text" style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', lineHeight: 1.85, color: 'var(--text)', margin: 0, marginBottom: chart ? '8px' : '14px' }}>
               {response}
             </pre>
 
@@ -417,6 +417,7 @@ function RightPanel({
             {!voiceUnlocked ? (
               <div style={{ marginTop: chart ? '14px' : '4px' }}>
                 <button
+                  className="wake-btn-illuminate"
                   onClick={onWake ?? onStartGeorgeVoice}
                   style={{
                     display: 'block', width: '100%',
@@ -1376,7 +1377,7 @@ export default function App() {
                 </>
               )}
 
-              <div className="card">
+              <div className="panel-illuminate card">
                 <div className="section-title section-title-gold" style={{ marginBottom: '10px' }}>Revenue Trend — 7 Days</div>
                 <RevenueTrendChart rows={trend} loading={loading} />
                 <div style={{ marginTop: '8px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
@@ -1389,14 +1390,14 @@ export default function App() {
 
           {/* ── CAMPAIGNS ─────────────────────────────────────────── */}
           {section === 'campaigns' && (
-            <div className="card">
+            <div className="panel-illuminate card">
               <CampaignsPanel />
             </div>
           )}
 
           {/* ── WEBINARS ──────────────────────────────────────────── */}
           {section === 'webinars' && (
-            <div className="card">
+            <div className="panel-illuminate card">
               <WebinarFunnelPanel
                 summary={jsuSummary}
                 participants={jsuParticipants}
@@ -1410,7 +1411,7 @@ export default function App() {
 
           {/* ── AUTOMATION ────────────────────────────────────────── */}
           {section === 'automation' && (
-            <div className="card">
+            <div className="panel-illuminate card">
               <div className="section-title section-title-gold">Automation Runs</div>
               <AutomationRuns runs={runs} loading={runsLoading} />
             </div>

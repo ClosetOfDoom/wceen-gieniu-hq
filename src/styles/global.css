@@ -12,10 +12,12 @@
   --surface2:     #162035;
   --surface3:     #1c2b45;
   --border:       #26375a;
-  --border-gold:  #7a6030;
-  --gold:         #c9a96e;
-  --gold-bright:  #e4c17b;
-  --gold-dim:     #4a3a1a;
+  --border-gold:  #906830;
+  --gold:         #ee9d00;
+  --gold-bright:  #f5b500;
+  --gold-dim:     #5a4010;
+  --glow-gold:    rgba(238,157,0,0.35);
+  --glow-gold-sm: rgba(238,157,0,0.18);
   --teal:         #2dd4bf;
   --teal-dim:     #0d4a44;
   --emerald:      #4ade80;
@@ -29,7 +31,7 @@
   --orange:       #fb923c;
 
   /* Typography */
-  --font-serif: 'Cinzel', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --font-serif: 'Cormorant Garamond', 'Cinzel', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
   --font-sans:  -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono:  'JetBrains Mono', 'Fira Mono', 'Cascadia Code', 'Consolas', monospace;
 }
@@ -37,6 +39,10 @@
 html, body {
   height: 100%;
   background: var(--bg);
+  background-image:
+    radial-gradient(ellipse at 50% 0%, rgba(238,157,0,0.04) 0%, transparent 55%),
+    radial-gradient(ellipse at 0% 100%, rgba(45,212,191,0.03) 0%, transparent 45%),
+    radial-gradient(ellipse at 100% 50%, rgba(238,157,0,0.025) 0%, transparent 40%);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 18px;
@@ -193,10 +199,11 @@ button:disabled {
 
 .hud-sidebar {
   overflow-y: auto;
-  border-right: 1px solid var(--border);
+  border-right: 2px solid var(--border-gold);
   background: var(--bg2);
   display: flex;
   flex-direction: column;
+  box-shadow: 2px 0 12px rgba(238,157,0,0.08);
 }
 
 .hud-main {
@@ -208,10 +215,12 @@ button:disabled {
 
 .hud-right {
   overflow: hidden;
-  border-left: 1px solid var(--border);
+  border-left: 2px solid var(--border-gold);
   background: var(--bg2);
   display: flex;
   flex-direction: column;
+  border-top: 3px solid var(--gold);
+  box-shadow: -2px 0 16px rgba(238,157,0,0.1), inset 0 0 30px rgba(238,157,0,0.02);
 }
 
 /* ── Heraldic card ─────────────────────────────────────────────────────────── */
@@ -222,6 +231,10 @@ button:disabled {
   border-radius: 6px;
   padding: 28px 32px;
   position: relative;
+  transition: box-shadow 0.3s ease;
+}
+.card:hover {
+  box-shadow: 0 0 18px var(--glow-gold-sm), 0 2px 8px rgba(0,0,0,0.3);
 }
 
 .card::before {
@@ -237,7 +250,7 @@ button:disabled {
 
 .card-gold {
   border-color: var(--border-gold);
-  box-shadow: 0 0 0 1px rgba(201,169,110,0.12) inset;
+  box-shadow: 0 0 0 1px rgba(238,157,0,0.15) inset, 0 0 12px var(--glow-gold-sm);
 }
 
 /* ── Section headers ──────────────────────────────────────────────────────── */
@@ -708,5 +721,100 @@ button:disabled {
   /* Add bottom padding to scrollable main so content doesn't hide under nav */
   .hud-main > div:last-child {
     padding-bottom: 20px;
+  }
+}
+
+/* ── Magic Cybernetics Keyframes ────────────────────────────────────────────── */
+
+@keyframes illuminate {
+  0%   { opacity: 0; box-shadow: none; }
+  40%  { opacity: 0.6; box-shadow: 0 0 8px var(--glow-gold-sm); }
+  100% { opacity: 1; box-shadow: 0 0 18px var(--glow-gold-sm); }
+}
+
+@keyframes rune-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 var(--glow-gold-sm), 0 0 4px var(--glow-gold-sm);
+    opacity: 0.7;
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(238,157,0,0.08), 0 0 14px var(--glow-gold);
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes kpi-reveal {
+  0%   { opacity: 0; transform: translateY(4px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes animate-draw {
+  from { stroke-dashoffset: 2000; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes typewriter-reveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0% 0 0); }
+}
+
+/* ── New classes: magic cybernetics UI ──────────────────────────────────────── */
+
+/* Panel entrance — illuminate sequence */
+.panel-illuminate {
+  animation: illuminate 0.6s ease-out both;
+}
+
+/* Rune thinking indicator */
+.rune-thinking {
+  animation: rune-pulse 1.4s ease-in-out infinite;
+  border-radius: 50%;
+}
+
+/* Wake GIENIU button — pulsing gold glow */
+.wake-btn-illuminate {
+  animation: rune-pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 0 0 var(--glow-gold-sm);
+  transition: box-shadow 0.3s ease, opacity 0.15s;
+}
+.wake-btn-illuminate:hover:not(:disabled) {
+  animation: none;
+  box-shadow: 0 0 24px var(--glow-gold), 0 0 48px rgba(238,157,0,0.15);
+  opacity: 0.92;
+}
+
+/* GIENIU response text — typewriter reveal */
+.gieniu-response-text {
+  display: block;
+  overflow: hidden;
+  animation: typewriter-reveal 1.2s steps(80, end) both;
+}
+
+/* SVG chart line draw animation */
+.chart-line-draw {
+  stroke-dasharray: 2000;
+  stroke-dashoffset: 2000;
+  animation: animate-draw 1.2s ease-out 0.2s forwards;
+}
+
+/* ── prefers-reduced-motion ─────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-illuminate,
+  .rune-thinking,
+  .wake-btn-illuminate,
+  .gieniu-response-text,
+  .chart-line-draw,
+  .btn-mic.listening {
+    animation: none !important;
+    transition: none !important;
+  }
+  .wake-btn-illuminate {
+    box-shadow: 0 0 8px var(--glow-gold-sm);
   }
 }
