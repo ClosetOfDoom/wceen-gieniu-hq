@@ -5,7 +5,7 @@
 }
 
 :root {
-  /* Palette — deep navy / gold — matched to Stanley's owl colourway */
+  /* Palette — deep navy / gold — matched to Stanley's duck colourway */
   --bg:           #0b1e29;
   --bg2:          #0d2030;
   --surface:      #122636;
@@ -34,6 +34,50 @@
   --font-serif: 'Cormorant Garamond', 'Cinzel', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
   --font-sans:  -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono:  'JetBrains Mono', 'Fira Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+/* ── Light theme — warm cream / parchment ─────────────────────────────────── */
+
+[data-theme="light"] {
+  --bg:           #f5f0e6;
+  --bg2:          #ede8dc;
+  --surface:      #fdfaf4;
+  --surface2:     #f2ede3;
+  --surface3:     #e8e2d6;
+  --border:       #d2c9b2;
+  --border-gold:  #b8920e;
+  --gold:         #ee9d00;
+  --gold-bright:  #d4870a;
+  --gold-dim:     #c9a460;
+  --glow-gold:    rgba(238,157,0,0.55);
+  --glow-gold-sm: rgba(238,157,0,0.32);
+  --teal:         #0b8578;
+  --teal-dim:     #c0f0e9;
+  --emerald:      #16a34a;
+  --emerald-dim:  #dcfce7;
+  --text:         #0b1e29;
+  --text2:        #1d3a4e;
+  --muted:        #4a6070;
+  --muted2:       #7a8fa0;
+  --amber:        #d97706;
+  --red:          #dc2626;
+  --orange:       #ea580c;
+}
+
+[data-theme="light"] body {
+  background-image:
+    radial-gradient(ellipse at 50% 0%,   rgba(238,157,0,0.10) 0%, transparent 55%),
+    radial-gradient(ellipse at 0% 100%,  rgba(11,30,41,0.05)  0%, transparent 45%),
+    radial-gradient(ellipse at 100% 50%, rgba(238,157,0,0.06) 0%, transparent 40%),
+    radial-gradient(ellipse at 50% 100%, rgba(240,234,220,0.9) 0%, transparent 70%);
+}
+
+/* Dark panel island — for legacy components with hardcoded dark colours */
+[data-theme="light"] .dark-panel {
+  background: #0d2030;
+  border-radius: 6px;
+  padding: 16px;
+  margin: -4px;
 }
 
 html, body {
@@ -205,6 +249,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   box-shadow: 2px 0 12px rgba(238,157,0,0.08);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
 .hud-main {
@@ -212,6 +257,7 @@ button:disabled {
   background: var(--bg);
   display: flex;
   flex-direction: column;
+  transition: background-color 0.25s ease;
 }
 
 .hud-right {
@@ -222,6 +268,7 @@ button:disabled {
   flex-direction: column;
   border-top: 3px solid var(--gold);
   box-shadow: -2px 0 16px rgba(238,157,0,0.1), inset 0 0 30px rgba(238,157,0,0.02);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
 /* ── Heraldic card ─────────────────────────────────────────────────────────── */
@@ -232,7 +279,7 @@ button:disabled {
   border-radius: 6px;
   padding: 28px 32px;
   position: relative;
-  transition: box-shadow 0.3s ease;
+  transition: box-shadow 0.3s ease, background-color 0.25s ease, border-color 0.25s ease;
 }
 .card:hover {
   box-shadow: 0 0 18px var(--glow-gold-sm), 0 2px 8px rgba(0,0,0,0.3);

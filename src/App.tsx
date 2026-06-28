@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useTheme } from './hooks/useTheme'
 import { KPICard } from './components/KPICard'
 import { StatusBadge } from './components/StatusBadge'
 import { GieniuAvatar } from './components/GieniuAvatar'
@@ -194,13 +195,15 @@ function MobileNav({ active, onNavigate, jsuAlert }: {
 // ── Top bar ───────────────────────────────────────────────────────────────────
 
 function TopBar({
-  status, loading, lastRefresh, isStale, onRefresh,
+  status, loading, lastRefresh, isStale, onRefresh, theme, onToggleTheme,
 }: {
   status: DataStatus
   loading: boolean
   lastRefresh: Date | null
   isStale: boolean
   onRefresh: () => void
+  theme: 'dark' | 'light'
+  onToggleTheme: () => void
 }) {
   const [now, setNow] = useState(new Date())
   useEffect(() => {
@@ -251,6 +254,14 @@ function TopBar({
           )}
           <button className="btn-sm" onClick={onRefresh} disabled={loading}>
             {loading ? '…' : '↻ Refresh'}
+          </button>
+          <button
+            className="btn-sm"
+            onClick={onToggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            style={{ fontSize: '0.95rem', padding: '7px 10px', minWidth: '36px' }}
+          >
+            {theme === 'dark' ? '☀' : '🌙'}
           </button>
         </div>
       </div>
@@ -604,6 +615,7 @@ function RightPanel({
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const { theme, toggleTheme } = useTheme()
   const [section, setSection] = useState<NavSection>('command-center')
 
   // Dashboard data
@@ -1190,6 +1202,8 @@ export default function App() {
           lastRefresh={lastRefresh}
           isStale={metaStats.isStale}
           onRefresh={() => { loadData(); loadAds(); loadRuns(); loadJsuFunnel(); loadOrdersData(); loadProfitData() }}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
 
         <div style={{ flex: 1, padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: '28px', overflowY: 'auto' }}>
@@ -1317,14 +1331,16 @@ export default function App() {
           {/* ── WEBINARS ──────────────────────────────────────────── */}
           {section === 'webinars' && (
             <div className="panel-illuminate card">
-              <WebinarFunnelPanel
-                summary={jsuSummary}
-                participants={jsuParticipants}
-                participantsLoading={jsuParticipantsLoading}
-                loading={jsuLoading}
-                onCommand={handleJsuCommand}
-                gieniuResponse=""
-              />
+              <div className="dark-panel">
+                <WebinarFunnelPanel
+                  summary={jsuSummary}
+                  participants={jsuParticipants}
+                  participantsLoading={jsuParticipantsLoading}
+                  loading={jsuLoading}
+                  onCommand={handleJsuCommand}
+                  gieniuResponse=""
+                />
+              </div>
             </div>
           )}
 
