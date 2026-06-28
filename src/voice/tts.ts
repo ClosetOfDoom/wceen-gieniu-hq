@@ -1,5 +1,5 @@
 import { GIENIU_VOICE_ID, GIENIU_VOICE_NAME } from '../config/gieniuVoice'
-import { cleanForTTS, cleanForEnglishTTS, cleanForPolishTTS } from './textClean'
+import { cleanForTTS, cleanForEnglishTTS } from './textClean'
 
 console.log(`GIENIU voice: ${GIENIU_VOICE_NAME} ${GIENIU_VOICE_ID}`)
 
@@ -8,71 +8,33 @@ console.log(`GIENIU voice: ${GIENIU_VOICE_NAME} ${GIENIU_VOICE_ID}`)
 export const LS_TTS_PROVIDER   = 'gieniuTtsProvider'
 export const LS_ELEVEN_PAUSED  = 'gieniuElevenLabsPaused'
 export const LS_ELEVEN_REASON  = 'gieniuElevenLabsPausedReason'
-export const LS_VOICE_LANG     = 'gieniuVoiceLanguage'
 export const LS_VOICE_NAME     = 'gieniuVoiceName'
 
-// ── Language helpers ──────────────────────────────────────────────────────────
+// ── Voice selection (English only) ───────────────────────────────────────────
 
-export function getVoiceLanguage(): 'en' | 'pl' {
+export function getAvailableVoices(): SpeechSynthesisVoice[] {
   try {
-    const v = localStorage.getItem(LS_VOICE_LANG)
-    if (v === 'en' || v === 'pl') return v
-    localStorage.setItem(LS_VOICE_LANG, 'en')
-    return 'en'
-  } catch { return 'en' }
-}
-
-export function saveVoiceLanguage(lang: 'en' | 'pl'): void {
-  try {
-    localStorage.setItem(LS_VOICE_LANG, lang)
-    localStorage.removeItem(LS_VOICE_NAME)   // cached voice may not match new language
-  } catch { /* non-fatal */ }
-}
-
-// ── Voice selection ───────────────────────────────────────────────────────────
-
-export function getAvailableVoices(lang: 'en' | 'pl'): SpeechSynthesisVoice[] {
-  try {
-    const voices = window.speechSynthesis?.getVoices() ?? []
-    return voices.filter(v => v.lang.startsWith(lang))
+    return (window.speechSynthesis?.getVoices() ?? []).filter(v => v.lang.startsWith('en'))
   } catch { return [] }
 }
 
-export function selectBrowserVoice(language: 'en' | 'pl'): SpeechSynthesisVoice | null {
+export function selectBrowserVoice(): SpeechSynthesisVoice | null {
   try {
     const voices = window.speechSynthesis?.getVoices() ?? []
-    if (language === 'en') {
-      const englishVoices = voices.filter(v => v.lang.startsWith('en'))
-      // Check if cached voice is English
-      const cached = getCachedVoiceName()
-      if (cached) {
-        const cachedVoice = voices.find(v => v.name === cached)
-        if (cachedVoice && cachedVoice.lang.startsWith('en')) return cachedVoice
-        // Cached voice is not English — discard it
-        try { localStorage.removeItem(LS_VOICE_NAME) } catch { /* non-fatal */ }
-      }
-      // Priority: Google > Microsoft > en-US > any English
-      return (
-        englishVoices.find(v => /google/i.test(v.name)) ??
-        englishVoices.find(v => /microsoft/i.test(v.name)) ??
-        englishVoices.find(v => v.lang === 'en-US') ??
-        englishVoices[0] ??
-        null
-      )
-    } else {
-      const polishVoices = voices.filter(v => v.lang.startsWith('pl'))
-      const cached = getCachedVoiceName()
-      if (cached) {
-        const cachedVoice = voices.find(v => v.name === cached)
-        if (cachedVoice && cachedVoice.lang.startsWith('pl')) return cachedVoice
-        try { localStorage.removeItem(LS_VOICE_NAME) } catch { /* non-fatal */ }
-      }
-      return (
-        polishVoices.find(v => /google/i.test(v.name)) ??
-        polishVoices[0] ??
-        null
-      )
+    const enVoices = voices.filter(v => v.lang.startsWith('en'))
+    const cached = getCachedVoiceName()
+    if (cached) {
+      const cv = voices.find(v => v.name === cached)
+      if (cv && cv.lang.startsWith('en')) return cv
+      try { localStorage.removeItem(LS_VOICE_NAME) } catch { /* non-fatal */ }
     }
+    return (
+      enVoices.find(v => /google/i.test(v.name)) ??
+      enVoices.find(v => /microsoft/i.test(v.name)) ??
+      enVoices.find(v => v.lang === 'en-US') ??
+      enVoices[0] ??
+      null
+    )
   } catch { return null }
 }
 
@@ -80,8 +42,8 @@ function getCachedVoiceName(): string | null {
   try { return localStorage.getItem(LS_VOICE_NAME) } catch { return null }
 }
 
-export function getCurrentVoiceInfo(language: 'en' | 'pl'): { name: string; lang: string } | null {
-  const voice = selectBrowserVoice(language)
+export function getCurrentVoiceInfo(): { name: string; lang: string } | null {
+  const voice = selectBrowserVoice()
   if (!voice) return null
   return { name: voice.name, lang: voice.lang }
 }
@@ -108,20 +70,16 @@ function markElevenLabsPaused(reason: string): void {
   } catch { /* non-fatal */ }
 }
 
-// ── Voice state reset (clears all 7 voice keys, defaults to English) ──────────
+// ── Voice state reset ─────────────────────────────────────────────────────────
 
 export function resetVoiceState(): void {
   try {
-    for (const k of [LS_VOICE_NAME, LS_VOICE_LANG, LS_TTS_PROVIDER, LS_ELEVEN_PAUSED,
-      LS_ELEVEN_REASON, 'gieniuVoiceRate', 'gieniuVoicePitch']) {
+    for (const k of [LS_VOICE_NAME, LS_TTS_PROVIDER, LS_ELEVEN_PAUSED,
+      LS_ELEVEN_REASON, 'gieniuVoiceLang', 'gieniuVoiceLanguage',
+      'gieniuVoiceRate', 'gieniuVoicePitch', 'gieniuSttLanguage']) {
       localStorage.removeItem(k)
     }
-    localStorage.setItem(LS_VOICE_LANG, 'en')
   } catch { /* non-fatal */ }
-}
-
-export function hasVoiceForLanguage(lang: 'en' | 'pl'): boolean {
-  return getAvailableVoices(lang).length > 0
 }
 
 // ── Module-level audio state ──────────────────────────────────────────────────
@@ -192,7 +150,7 @@ function isQuotaOrAuthError(err: string): boolean {
 
 // ── Browser TTS ───────────────────────────────────────────────────────────────
 
-async function speakBrowser(text: string, language: 'en' | 'pl'): Promise<TTSResult> {
+async function speakBrowser(text: string): Promise<TTSResult> {
   const synth = window.speechSynthesis
   if (!synth) {
     return { ok: false, provider: 'browser', error: 'speechSynthesis not supported in this browser' }
@@ -209,22 +167,14 @@ async function speakBrowser(text: string, language: 'en' | 'pl'): Promise<TTSRes
     })
   }
 
-  const voice = selectBrowserVoice(language)
-
-  // Refuse to read PL text with a non-PL voice — better silence than wrong language
-  if (!voice && language === 'pl') {
-    // eslint-disable-next-line no-console
-    console.warn('GIENIU TTS: no Polish voice found — refusing to speak PL with EN voice')
-    return { ok: false, provider: 'browser', error: 'no-pl-voice' }
-  }
-
+  const voice = selectBrowserVoice()
   const utt = new SpeechSynthesisUtterance(text)
-  utt.lang  = language === 'en' ? 'en-US' : 'pl-PL'
+  utt.lang = 'en-US'
   if (voice) utt.voice = voice
   currentUtterance = utt
 
   // eslint-disable-next-line no-console
-  console.log(`GIENIU TTS browser (${language}): ${voice?.name ?? 'system default'} (${voice?.lang ?? utt.lang})`)
+  console.log(`GIENIU TTS browser: ${voice?.name ?? 'system default'} (${voice?.lang ?? utt.lang})`)
 
   return new Promise<TTSResult>(resolve => {
     utt.onend = () => {
@@ -249,17 +199,11 @@ async function speakBrowser(text: string, language: 'en' | 'pl'): Promise<TTSRes
 export async function speak(text: string): Promise<TTSResult> {
   stopAudio()
 
-  const settingLang = getVoiceLanguage()
-  // Safety: text containing Polish characters must use PL voice — never read PL with EN phonetics
-  const hasPolishChars = /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/.test(text)
-  const language: 'en' | 'pl' = hasPolishChars ? 'pl' : settingLang
-
   // If ElevenLabs is paused from a prior quota/auth error, go straight to browser TTS
   if (isElevenLabsPaused()) {
     // eslint-disable-next-line no-console
-    console.log(`GIENIU TTS: ElevenLabs paused — using browser TTS (${language}) directly`)
-    const browserText = language === 'pl' ? cleanForPolishTTS(text) : cleanForEnglishTTS(text)
-    return speakBrowser(browserText, language)
+    console.log('GIENIU TTS: ElevenLabs paused — using browser TTS directly')
+    return speakBrowser(cleanForEnglishTTS(text))
   }
 
   const elevenText = cleanForTTS(text)
@@ -354,8 +298,7 @@ export async function speak(text: string): Promise<TTSResult> {
         // eslint-disable-next-line no-console
         console.warn('GIENIU TTS quota/auth error — switching to browser TTS:', errorMsg)
         markElevenLabsPaused('quota_or_api_error')
-        const browserText = language === 'pl' ? cleanForPolishTTS(text) : cleanForEnglishTTS(text)
-        const browserResult = await speakBrowser(browserText, language)
+        const browserResult = await speakBrowser(cleanForEnglishTTS(text))
         return {
           ...browserResult,
           fallbackFrom: 'elevenlabs',

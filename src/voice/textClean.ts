@@ -1,9 +1,7 @@
 // Text cleaning before TTS.
 //
 // cleanForTTS        — ElevenLabs (George, English voice)
-// cleanForEnglishTTS — Browser English voice
-// cleanForPolishTTS  — Browser Polish voice
-// cleanForBrowserTTS — backward-compat alias for cleanForPolishTTS
+// cleanForEnglishTTS — Browser English voice (fallback)
 
 // ── Shared base (pure normalization, no language-specific transforms) ──────────
 
@@ -59,29 +57,3 @@ export function cleanForEnglishTTS(text: string): string {
     .trim()
 }
 
-// ── Browser Polish voice ──────────────────────────────────────────────────────
-// English metric labels → Polish equivalents for a Polish speech voice.
-
-export function cleanForPolishTTS(text: string): string {
-  return spellAbbrevs(cleanBase(text))
-    .replace(/\bPLN\b/g, 'P L N')
-    .replace(/\bROAS\b/g, 'R O A S')
-    .replace(/(\d+\.\d+)x\b/g, '$1 razy')
-    .replace(/(\d+)x\b/g, '$1 razy')
-    .replace(/\blink clicks?\b/gi, 'kliknięcia')
-    .replace(/\borders?\b/gi, 'zamówień')
-    .replace(/\brevenue\b/gi, 'przychód')
-    .replace(/\bspend\b/gi, 'wydatki')
-    .replace(/\bpurchases?\b/gi, 'zakupy')
-    .replace(/\bimpressions?\b/gi, 'wyświetlenia')
-    .replace(/\bcampaigns?\b/gi, 'kampania')
-    .replace(/\bconversions?\b/gi, 'konwersje')
-    .replace(/\bclicks?\b/gi, 'kliknięcia')
-    .replace(/\bstale\b/gi, 'nieaktualne')
-    .replace(/\bsource\b/gi, 'źródło')
-    .replace(/⚠/g, 'Uwaga:')
-    .trim()
-}
-
-// Backward-compat alias — existing call sites still work
-export const cleanForBrowserTTS = cleanForPolishTTS

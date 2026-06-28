@@ -19,14 +19,11 @@ interface Props {
   opsWeekLoading: boolean
   ttsLastElevenError?: string
   ttsFallbackActive?: boolean
-  ttsLanguage?: 'en' | 'pl'
   browserVoiceInfo?: { name: string; lang: string } | null
   englishVoiceCount?: number
-  polishVoiceCount?: number
   lastIntent?: string
   lastIntentConfidence?: number
   llmConnected?: boolean | null
-  sttLanguage?: string
   sttLastFinal?: string
   sttInterim?: string
   sttConfidence?: number | null
@@ -47,7 +44,7 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
   )
 }
 
-export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, ttsLanguage, browserVoiceInfo, englishVoiceCount, polishVoiceCount, lastIntent, lastIntentConfidence, llmConnected, sttLanguage, sttLastFinal, sttInterim, sttConfidence, sttStatus, sttRejectionReason, lastRefresh, profitDataDate, profitDataOrders }: Props) {
+export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, browserVoiceInfo, englishVoiceCount, lastIntent, lastIntentConfidence, llmConnected, sttLastFinal, sttInterim, sttConfidence, sttStatus, sttRejectionReason, lastRefresh, profitDataDate, profitDataOrders }: Props) {
   const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
   const [dataHealth, setDataHealth] = useState<DataHealthReport | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
@@ -142,17 +139,11 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
           {ttsLastElevenError && (
             <Row label="Last ElevenLabs error" value={ttsLastElevenError.slice(0, 80)} ok={false} />
           )}
-          {ttsLanguage != null && (
-            <Row label="Browser voice language" value={ttsLanguage === 'en' ? 'English (en)' : 'Polish (pl)'} />
-          )}
           {browserVoiceInfo && (
             <Row label="Browser voice" value={`${browserVoiceInfo.name} (${browserVoiceInfo.lang})`} />
           )}
           {englishVoiceCount != null && (
             <Row label="English voices available" value={String(englishVoiceCount)} ok={englishVoiceCount > 0} />
-          )}
-          {polishVoiceCount != null && (
-            <Row label="Polish voices available" value={String(polishVoiceCount)} ok={polishVoiceCount > 0} />
           )}
           <Row label="LLM Gateway"
             value={llmConnected === true ? 'connected' : llmConnected === false ? 'not connected' : 'unknown'}
@@ -167,7 +158,6 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
             value={typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) ? 'available' : 'not available'}
             ok={typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) ? true : false}
           />
-          {sttLanguage && <Row label="STT language" value={sttLanguage} />}
           {sttLastFinal && (
             <Row label="Last STT transcript"
               value={sttLastFinal.length > 50 ? sttLastFinal.slice(0, 50) + '…' : sttLastFinal}

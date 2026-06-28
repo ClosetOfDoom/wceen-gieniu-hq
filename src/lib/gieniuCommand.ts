@@ -98,7 +98,6 @@ const TIMEOUT_MS = 9000
 export async function fetchGieniuCommand(
   message: string,
   context: GieniuCommandContext,
-  language: 'en' | 'pl' = 'en',
 ): Promise<GieniuCommandResult> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
@@ -107,7 +106,7 @@ export async function fetchGieniuCommand(
     const res = await fetch('/.netlify/functions/gieniu-command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, context, language }),
+      body: JSON.stringify({ message, context }),
       signal: controller.signal,
     })
     if (!res.ok) {

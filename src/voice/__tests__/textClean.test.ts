@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanForTTS, cleanForEnglishTTS, cleanForPolishTTS } from '../textClean'
+import { cleanForTTS, cleanForEnglishTTS } from '../textClean'
 
 describe('cleanForTTS (ElevenLabs English — George)', () => {
   it('converts zł to PLN, then PLN to P L N', () => {
@@ -41,34 +41,8 @@ describe('cleanForEnglishTTS (browser EN)', () => {
   })
 })
 
-describe('cleanForPolishTTS (browser PL)', () => {
-  it('zł → PLN → P L N (not Polish zloty)', () => {
-    const r = cleanForPolishTTS('200 zł')
-    expect(r).toContain('P L N')
-    expect(r).not.toContain('Polish zloty')
-  })
-  it('ROAS → R O A S', () => {
-    expect(cleanForPolishTTS('ROAS 2x')).toContain('R O A S')
-  })
-  it('2x → 2 razy', () => {
-    expect(cleanForPolishTTS('2x lepiej')).toContain('2 razy')
-  })
-  it('orders → zamówień', () => {
-    expect(cleanForPolishTTS('5 orders')).toContain('zamówień')
-  })
-  it('revenue → przychód', () => {
-    expect(cleanForPolishTTS('revenue today')).toContain('przychód')
-  })
-  it('⚠ → Uwaga:', () => {
-    expect(cleanForPolishTTS('⚠ coś jest nie tak')).toContain('Uwaga:')
-  })
-})
-
 describe('cross-path — zł always converts to PLN first', () => {
   it('cleanForTTS: zł first becomes PLN then P L N', () => {
     expect(cleanForTTS('100 zł profit')).toContain('P L N')
-  })
-  it('cleanForPolishTTS: zł becomes PLN then P L N', () => {
-    expect(cleanForPolishTTS('100 zł')).toContain('P L N')
   })
 })

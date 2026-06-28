@@ -35,22 +35,17 @@ import {
 import { resolveIntent } from './brain/intent'
 import {
   speak, stopAudio, prewarmAudio, isElevenLabsPaused, resetElevenLabs,
-  saveVoiceLanguage, getVoiceLanguage, getAvailableVoices, selectBrowserVoice,
+  getAvailableVoices, selectBrowserVoice,
   resetVoiceState,
 } from './voice/tts'
 import { fetchGieniuCommand, type GieniuCommandContext } from './lib/gieniuCommand'
 import {
-  getSttLanguage, setSttLanguage, startListening,
-  type SttLanguage, type SttResult,
+  startListening, type SttResult,
 } from './voice/stt'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const OPENING_TEXT_EN = "At your service, sir. One gesture and I shall commence the operational report."
-const OPENING_TEXT_PL = "Do usług, sir. Jeden gest, a przystąpię do raportu operacyjnego."
-function getOpeningText(lang: 'en' | 'pl'): string {
-  return lang === 'pl' ? OPENING_TEXT_PL : OPENING_TEXT_EN
-}
+const OPENING_TEXT = "At your service, sir. One gesture and I shall commence the operational report."
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -318,14 +313,9 @@ function RightPanel({
   ttsError,
   ttsFallbackActive,
   onRetryElevenLabs,
-  voiceLanguage,
-  onVoiceLanguageChange,
   browserVoiceInfo,
   englishVoiceCount,
-  polishVoiceCount,
   onResetVoiceState,
-  sttLanguage,
-  onSttLanguageChange,
   sttStatus,
   sttConfidence,
   sttRejectionReason,
@@ -349,14 +339,9 @@ function RightPanel({
   ttsError: string
   ttsFallbackActive: boolean
   onRetryElevenLabs: () => void
-  voiceLanguage: 'en' | 'pl'
-  onVoiceLanguageChange: (lang: 'en' | 'pl') => void
   browserVoiceInfo: { name: string; lang: string } | null
   englishVoiceCount: number
-  polishVoiceCount: number
   onResetVoiceState: () => void
-  sttLanguage: SttLanguage
-  onSttLanguageChange: (lang: SttLanguage) => void
   sttStatus: 'idle' | 'accepted' | 'rejected'
   sttConfidence: number | null
   sttRejectionReason: string
@@ -442,11 +427,6 @@ function RightPanel({
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', marginTop: '6px', textAlign: 'center' }}>
                   One tap · unlocks voice &amp; mic
                 </div>
-                {voiceLanguage === 'pl' && polishVoiceCount === 0 && (
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--orange)', marginTop: '8px', lineHeight: 1.5, padding: '6px 8px', background: 'rgba(251,146,60,0.08)', borderRadius: '3px', border: '1px solid rgba(251,146,60,0.25)' }}>
-                    ⚠ Brak głosu PL — tekst będzie widoczny, głos niedostępny.
-                  </div>
-                )}
               </div>
             ) : (
             <div style={{ marginTop: chart ? '10px' : '4px' }}>
@@ -495,30 +475,15 @@ function RightPanel({
             </div>
             )}
 
-            {/* Browser TTS language selector + voice info — shown when fallback is active */}
+            {/* Browser voice info — shown when fallback is active */}
             {ttsFallbackActive && (
               <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--muted)' }}>Voice lang:</span>
-                  {(['en', 'pl'] as const).map(lang => (
-                    <button
-                      key={lang}
-                      className="btn-sm"
-                      onClick={() => onVoiceLanguageChange(lang)}
-                      style={{
-                        fontSize: '0.62rem', padding: '2px 8px',
-                        borderColor: voiceLanguage === lang ? 'var(--teal)' : 'var(--border)',
-                        color: voiceLanguage === lang ? 'var(--teal)' : 'var(--muted)',
-                      }}
-                    >
-                      {lang === 'en' ? 'English' : 'Polish'}
-                    </button>
-                  ))}
                   <button
                     className="btn-sm"
                     onClick={onResetVoiceState}
-                    style={{ fontSize: '0.62rem', padding: '2px 8px', color: 'var(--muted2)', borderColor: 'var(--border)', marginLeft: '4px' }}
-                    title="Clears all voice localStorage state and resets to English"
+                    style={{ fontSize: '0.62rem', padding: '2px 8px', color: 'var(--muted2)', borderColor: 'var(--border)' }}
+                    title="Clears all voice localStorage state"
                   >
                     Reset voice
                   </button>
@@ -528,14 +493,9 @@ function RightPanel({
                     {browserVoiceInfo.name} ({browserVoiceInfo.lang})
                   </div>
                 )}
-                {voiceLanguage === 'en' && englishVoiceCount === 0 && (
+                {englishVoiceCount === 0 && (
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.63rem', color: 'var(--orange)', lineHeight: 1.4 }}>
-                    No English browser voice found. Install an English Windows/browser voice or use ElevenLabs.
-                  </div>
-                )}
-                {voiceLanguage === 'pl' && polishVoiceCount === 0 && (
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.63rem', color: 'var(--orange)', lineHeight: 1.4 }}>
-                    Brak głosu PL — tekst dostępny, głos niedostępny. Zainstaluj głos polski lub przełącz na EN.
+                    No English browser voice found. Install an English voice or use ElevenLabs.
                   </div>
                 )}
               </div>
@@ -615,24 +575,6 @@ function RightPanel({
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: listening ? 'var(--teal)' : thinking ? 'var(--gold)' : speaking ? 'var(--teal)' : 'var(--muted2)' }}>
               {listening ? 'Listening...' : thinking ? 'Thinking...' : speaking ? 'Speaking...' : 'Tap to speak'}
             </div>
-            {/* STT language selector */}
-            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted)' }}>Mic:</span>
-              {(['en-US', 'pl-PL'] as const).map(lang => (
-                <button
-                  key={lang}
-                  className="btn-sm"
-                  onClick={() => onSttLanguageChange(lang)}
-                  style={{
-                    fontSize: '0.60rem', padding: '2px 7px',
-                    borderColor: sttLanguage === lang ? 'var(--teal)' : 'var(--border)',
-                    color: sttLanguage === lang ? 'var(--teal)' : 'var(--muted)',
-                  }}
-                >
-                  {lang === 'en-US' ? 'EN' : 'PL'}
-                </button>
-              ))}
-            </div>
             <button
               className={`btn-mute${muted ? ' muted' : ''}`}
               onClick={onMuteToggle}
@@ -705,15 +647,13 @@ export default function App() {
   const [ttsFallbackActive, setTtsFallbackActive] = useState(() => isElevenLabsPaused())
   const [ttsLastElevenError, setTtsLastElevenError] = useState('')
   const [voiceUnlocked, setVoiceUnlocked] = useState(false)
-  const [voiceLanguage, setVoiceLanguage_] = useState<'en' | 'pl'>(getVoiceLanguage)
 
   // Intent gateway diagnostics
   const [lastIntent, setLastIntent]               = useState('')
   const [lastIntentConfidence, setLastIntentConfidence] = useState(0)
   const [llmConnected, setLlmConnected]           = useState<boolean | null>(null)
 
-  // STT (speech-to-text) state — separate from TTS voice language
-  const [sttLanguage, setSttLanguage_]       = useState<SttLanguage>(getSttLanguage)
+  // STT (speech-to-text) state
   const [sttLastFinal, setSttLastFinal]       = useState('')
   const [sttInterim, setSttInterim]           = useState('')
   const [sttConfidence, setSttConfidence]     = useState<number | null>(null)
@@ -721,9 +661,8 @@ export default function App() {
   const [sttRejectionReason, setSttRejectionReason] = useState('')
   const [sttPrefillInput, setSttPrefillInput] = useState('')
 
-  // Browser voice info — refreshed when voices are loaded or language changes
+  // Browser voice info — refreshed when voices are loaded
   const [englishVoiceCount, setEnglishVoiceCount] = useState(0)
-  const [polishVoiceCount, setPolishVoiceCount]   = useState(0)
   const [browserVoiceInfo, setBrowserVoiceInfo]   = useState<{ name: string; lang: string } | null>(null)
   const [lastQuery, setLastQuery]         = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -817,26 +756,18 @@ export default function App() {
   }, [])
 
   const refreshVoiceInfo = useCallback(() => {
-    const lang = getVoiceLanguage()
-    setEnglishVoiceCount(getAvailableVoices('en').length)
-    setPolishVoiceCount(getAvailableVoices('pl').length)
-    const sel = selectBrowserVoice(lang)
+    setEnglishVoiceCount(getAvailableVoices().length)
+    const sel = selectBrowserVoice()
     setBrowserVoiceInfo(sel ? { name: sel.name, lang: sel.lang } : null)
   }, [])
 
   useEffect(() => { voiceUnlockedRef.current = voiceUnlocked }, [voiceUnlocked])
 
-  // When language changes before Wake, update the opening text in the response pane
-  useEffect(() => {
-    setResponse(prev => (prev === OPENING_TEXT_EN || prev === OPENING_TEXT_PL) ? getOpeningText(voiceLanguage) : prev)
-    setResponseSpoken(prev => (prev === OPENING_TEXT_EN || prev === OPENING_TEXT_PL) ? getOpeningText(voiceLanguage) : prev)
-  }, [voiceLanguage])
-
   useEffect(() => {
     refreshVoiceInfo()
     window.speechSynthesis?.addEventListener('voiceschanged', refreshVoiceInfo)
     return () => window.speechSynthesis?.removeEventListener('voiceschanged', refreshVoiceInfo)
-  }, [refreshVoiceInfo, voiceLanguage])
+  }, [refreshVoiceInfo])
 
   useEffect(() => {
     // eslint-disable-next-line no-console
@@ -856,9 +787,8 @@ export default function App() {
   // ── Opening greeting ─────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const openingText = getOpeningText(getVoiceLanguage())
-    setResponse(openingText)
-    setResponseSpoken(openingText)
+    setResponse(OPENING_TEXT)
+    setResponseSpoken(OPENING_TEXT)
     // Voice unlocks only on explicit Wake tap — never auto-speak on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -1014,7 +944,7 @@ export default function App() {
 
     try {
       const ctx = buildCommandContext()
-      const cmdResult = await fetchGieniuCommand(query, ctx, voiceLanguage)
+      const cmdResult = await fetchGieniuCommand(query, ctx)
       setLastIntent(cmdResult.intent)
       setLastIntentConfidence(cmdResult.confidence)
       if (cmdResult.llm !== undefined) {
@@ -1042,11 +972,9 @@ export default function App() {
     setTtsError('')
     // eslint-disable-next-line no-console
     console.log('GIENIU Start voice — endpoint: /.netlify/functions/gieniu-tts')
-    // When browser TTS is active, use a concise language-appropriate test phrase
-    // so the voice language matches the text language.
     const testText = isElevenLabsPaused()
-      ? (voiceLanguage === 'pl' ? 'Głos Gieniu jest aktywny.' : 'Gieniu voice is active.')
-      : (responseSpoken || response || getOpeningText(voiceLanguage))
+      ? 'Gieniu voice is active.'
+      : (responseSpoken || response || OPENING_TEXT)
     const session = ++ttsSessionRef.current
     setSpeaking(true)
     const result = await speak(testText)
@@ -1089,7 +1017,7 @@ export default function App() {
     prewarmAudio()
     const session = ++ttsSessionRef.current
     setSpeaking(true)
-    const result = await speak(responseSpoken || response || getOpeningText(voiceLanguage))
+    const result = await speak(responseSpoken || response || OPENING_TEXT)
     if (ttsSessionRef.current !== session) return
     setSpeaking(false)
     if (result.ok && result.provider === 'browser') {
@@ -1104,28 +1032,6 @@ export default function App() {
     }
   }
 
-  // ── Language change — single source of truth for TTS + STT + content ─────────
-  // One selector controls all three simultaneously: voice language, STT recognition,
-  // and the language passed to gieniu-command for response generation.
-
-  function handleVoiceLanguageChange(lang: 'en' | 'pl') {
-    saveVoiceLanguage(lang)
-    setVoiceLanguage_(lang)
-    // Always keep STT in sync — SttLanguage uses BCP-47 codes
-    const sttLang: SttLanguage = lang === 'pl' ? 'pl-PL' : 'en-US'
-    setSttLanguage(sttLang)
-    setSttLanguage_(sttLang)
-  }
-
-  function handleSttLanguageChange(lang: SttLanguage) {
-    setSttLanguage(lang)
-    setSttLanguage_(lang)
-    // Keep TTS voice language in sync
-    const voiceLang: 'en' | 'pl' = lang === 'pl-PL' ? 'pl' : 'en'
-    saveVoiceLanguage(voiceLang)
-    setVoiceLanguage_(voiceLang)
-  }
-
   // ── Reset all voice state ─────────────────────────────────────────────────────
 
   function handleResetVoiceState() {
@@ -1133,7 +1039,6 @@ export default function App() {
     setTtsFallbackActive(false)
     setTtsError('')
     setTtsLastElevenError('')
-    setVoiceLanguage_('en')
   }
 
   // ── PWA install ───────────────────────────────────────────────────────────────
@@ -1198,7 +1103,6 @@ export default function App() {
     setTranscript('')
 
     const controller = startListening({
-      language: sttLanguage,
       onInterim: (text) => {
         setSttInterim(text)
         setTranscript(text)
@@ -1443,14 +1347,11 @@ export default function App() {
               opsWeekLoading={opsWeekLoading}
               ttsLastElevenError={ttsLastElevenError}
               ttsFallbackActive={ttsFallbackActive}
-              ttsLanguage={voiceLanguage}
               browserVoiceInfo={browserVoiceInfo}
               englishVoiceCount={englishVoiceCount}
-              polishVoiceCount={polishVoiceCount}
               lastIntent={lastIntent}
               lastIntentConfidence={lastIntentConfidence}
               llmConnected={llmConnected}
-              sttLanguage={sttLanguage}
               sttLastFinal={sttLastFinal}
               sttInterim={sttInterim}
               sttConfidence={sttConfidence}
@@ -1484,14 +1385,9 @@ export default function App() {
         ttsError={ttsError}
         ttsFallbackActive={ttsFallbackActive}
         onRetryElevenLabs={handleRetryElevenLabs}
-        voiceLanguage={voiceLanguage}
-        onVoiceLanguageChange={handleVoiceLanguageChange}
         browserVoiceInfo={browserVoiceInfo}
         englishVoiceCount={englishVoiceCount}
-        polishVoiceCount={polishVoiceCount}
         onResetVoiceState={handleResetVoiceState}
-        sttLanguage={sttLanguage}
-        onSttLanguageChange={handleSttLanguageChange}
         sttStatus={sttStatus}
         sttConfidence={sttConfidence}
         sttRejectionReason={sttRejectionReason}
