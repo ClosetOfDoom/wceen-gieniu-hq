@@ -73,16 +73,16 @@ function SummaryCards({ d }: { d: CampaignDiagnosis }) {
     { label: 'Total Spend',  value: fmtPln(totals.spend), accent: false },
     { label: 'Meta Purchases', value: String(totals.purchases), accent: true },
     { label: 'Meta CPA',     value: fmtPln(totals.metaCpa), accent: false },
-    { label: 'Best Campaign',
+    { label: 'Best Ad',
       value: bestCampaign
-        ? `${bestCampaign.campaign_name.slice(0, 20)}${bestCampaign.campaign_name.length > 20 ? '…' : ''}`
+        ? `${bestCampaign.ad_name.slice(0, 20)}${bestCampaign.ad_name.length > 20 ? '…' : ''}`
         : '—',
       sub: bestCampaign ? `CPA ${(bestCampaign.metaCpa ?? 0).toFixed(0)} PLN` : '',
       accent: false,
     },
-    { label: 'Weakest Campaign',
+    { label: 'Weakest Ad',
       value: worstCampaign && worstCampaign !== bestCampaign
-        ? `${worstCampaign.campaign_name.slice(0, 20)}${worstCampaign.campaign_name.length > 20 ? '…' : ''}`
+        ? `${worstCampaign.ad_name.slice(0, 20)}${worstCampaign.ad_name.length > 20 ? '…' : ''}`
         : bestCampaign ? 'same as best' : '—',
       sub: worstCampaign && worstCampaign !== bestCampaign ? `CPA ${(worstCampaign.metaCpa ?? 0).toFixed(0)} PLN` : '',
       accent: false,
@@ -127,11 +127,11 @@ function SpendBarChart({ campaigns }: { campaigns: CampaignEntry[] }) {
         Spend Distribution
       </div>
       {campaigns.map(c => (
-        <div key={c.campaign_id + c.campaign_name} style={{ marginBottom: '8px' }}>
+        <div key={c.campaign_id + c.ad_name} style={{ marginBottom: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text2)',
               maxWidth: '55%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {c.campaign_name}
+              {c.ad_name}
             </span>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted)' }}>
               {c.spend.toFixed(0)} PLN
@@ -168,7 +168,7 @@ function CampaignTable({ campaigns }: { campaigns: CampaignEntry[] }) {
       <table className="data-table">
         <thead>
           <tr>
-            <th style={{ textAlign: 'left' }}>Campaign</th>
+            <th style={{ textAlign: 'left' }}>Ad / Creative</th>
             <th style={{ textAlign: 'right' }}>Spend PLN</th>
             <th style={{ textAlign: 'right' }}>Purch.</th>
             <th style={{ textAlign: 'right' }}>CPA</th>
@@ -180,9 +180,9 @@ function CampaignTable({ campaigns }: { campaigns: CampaignEntry[] }) {
         </thead>
         <tbody>
           {campaigns.map((c, i) => (
-            <tr key={c.campaign_id + i}>
+            <tr key={c.campaign_id + c.ad_name + i}>
               <td style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)' }}>
-                {c.campaign_name}
+                {c.ad_name}
               </td>
               <td style={{ textAlign: 'right', color: c.spendShare > 0.5 ? 'var(--orange)' : 'var(--text2)' }}>
                 {c.spend.toFixed(2)}

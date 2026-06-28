@@ -55,6 +55,7 @@ export interface GieniuCommandContext {
   } | null
   topCampaigns: {
     name: string
+    ad_name?: string
     spend: number
     clicks: number
     link_clicks: number

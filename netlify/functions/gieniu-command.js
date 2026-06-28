@@ -55,6 +55,9 @@ const INTENT_DEFS = [
       'why are campaigns not showing', 'campaigns not showing', 'campaign performance',
       'which campaigns', 'best campaign', 'top campaign', 'show me campaigns',
       'campaign data', 'what campaigns',
+      'which creative', 'which ad', 'creative breakdown', 'per ad', 'per creative',
+      'ad performance', 'which ad is burning', 'which creative is best',
+      'which creative is worst', 'ad breakdown', 'creative data',
     ],
   },
   {
@@ -96,6 +99,8 @@ const INTENT_DEFS = [
     phrases: [
       'creative recommendations', 'best ad creative', 'top performing ad',
       'which ad is best', 'creative performance',
+      'which creative is performing', 'best creative today', 'worst creative today',
+      'which ad to pause', 'which ad to scale', 'creative ranking',
     ],
   },
   {
@@ -300,22 +305,43 @@ function buildDataHealthAnswer(ctx) {
 function buildCampaignsAnswer(ctx) {
   const campaigns = ctx.topCampaigns ?? []
   if (campaigns.length === 0) {
-    const msg = 'No campaign data loaded. Check Meta Ads sync in the Automation tab.'
+    const msg = 'No ad/creative data loaded. Check Meta Ads sync in the Automation tab.'
     return { text: msg, speech: msg, sources: [], warnings: ['no campaign data'] }
   }
   const sorted = [...campaigns].sort((a, b) => b.spend - a.spend)
-  const lines = sorted.slice(0, 5).map(c => {
+  const totalSpend = sorted.reduce((s, c) => s + c.spend, 0)
+
+  const rows = sorted.slice(0, 10).map(c => {
+    const displayName = c.ad_name ?? c.name
     const imp   = c.impressions ?? 0
     const cl    = c.clicks ?? 0
     const lcl   = c.link_clicks ?? cl
     const ctr   = imp > 0 ? (lcl / imp * 100).toFixed(2) + '%' : '—'
     const cpc   = cl  > 0 ? fmt(c.spend / cl) + ' PLN' : '—'
-    return `${c.name}: spend ${fmt(c.spend)} | clicks ${cl} | CTR ${ctr} | CPC ${cpc} | purchases ${c.purchases}`
+    const metaCpa = c.purchases > 0 ? fmt(c.spend / c.purchases) + ' PLN' : 'no purch.'
+    const shareStr = totalSpend > 0 ? ` (${(c.spend / totalSpend * 100).toFixed(0)}%)` : ''
+    return `  ${displayName}: spend ${fmt(c.spend)} PLN${shareStr} | purch. ${c.purchases} | CPA ${metaCpa} | CTR ${ctr} | CPC ${cpc} | clicks ${cl}`
   })
-  const topName = sorted[0]?.name ?? '—'
+
+  const withPurchases = sorted.filter(c => c.purchases > 0)
+  const best  = withPurchases.length > 0 ? withPurchases.reduce((a, b) => (a.spend / a.purchases) < (b.spend / b.purchases) ? a : b) : null
+  const worst = withPurchases.length > 1 ? withPurchases.reduce((a, b) => (a.spend / a.purchases) > (b.spend / b.purchases) ? a : b) : null
+  const zeroPurchase = sorted.filter(c => c.purchases === 0 && c.spend > 5)
+
+  const lines = [`— ADS / CREATIVES TODAY (${sorted.length} ads) —`, '']
+  lines.push(...rows)
+  if (best)  lines.push('', `Best: "${best.ad_name ?? best.name}" — ${best.purchases} purchases, CPA ${fmt(best.spend / best.purchases)} PLN`)
+  if (worst && worst !== best) lines.push(`Weakest: "${worst.ad_name ?? worst.name}" — CPA ${fmt(worst.spend / worst.purchases)} PLN`)
+  if (zeroPurchase.length > 0) lines.push(`Zero purchases (spending): ${zeroPurchase.map(c => `"${c.ad_name ?? c.name}" ${fmt(c.spend)} PLN`).join(', ')}`)
+
+  const topName = sorted[0] ? (sorted[0].ad_name ?? sorted[0].name) : '—'
+  const speech = best
+    ? `${sorted.length} ads today. Best creative: "${best.ad_name ?? best.name}", ${best.purchases} purchases at ${fmt(best.spend / best.purchases, 0)} PLN CPA.`
+    : `${sorted.length} ads today. Top spender: "${topName}". No Meta purchases recorded yet.`
+
   return {
-    text: 'Top campaigns by spend:\n' + lines.join('\n'),
-    speech: `${campaigns.length} campaigns loaded. Top spender: ${topName}.`,
+    text: lines.join('\n'),
+    speech,
     sources: ['topCampaigns'],
     warnings: [],
   }
@@ -982,23 +1008,27 @@ function buildContextText(context) {
 
   if (campaigns && campaigns.length > 0) {
     lines.push('')
-    lines.push('--- Top Campaigns (by spend, with efficiency metrics) ---')
-    ;[...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 5).forEach(c => {
-      const imp  = c.impressions ?? 0
-      const cl   = c.clicks ?? 0
-      const lcl  = c.link_clicks ?? cl
-      const ctr  = imp > 0 ? (lcl / imp * 100).toFixed(2) + '%' : 'N/A'
-      const cpc  = cl  > 0 ? fmt(c.spend / cl) + ' PLN' : 'N/A'
-      const cpm  = imp > 0 ? fmt(c.spend / imp * 1000) + ' PLN' : 'N/A'
-      lines.push(`  ${c.name}: spend ${fmt(c.spend)} PLN | clicks ${cl} | impr. ${imp} | CTR ${ctr} | CPC ${cpc} | CPM ${cpm} | purchases ${c.purchases}`)
+    lines.push('--- Ads / Creatives (by spend, today) ---')
+    const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0)
+    ;[...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 10).forEach(c => {
+      const displayName = c.ad_name ?? c.name
+      const imp     = c.impressions ?? 0
+      const cl      = c.clicks ?? 0
+      const lcl     = c.link_clicks ?? cl
+      const ctr     = imp > 0 ? (lcl / imp * 100).toFixed(2) + '%' : 'N/A'
+      const cpc     = cl  > 0 ? fmt(c.spend / cl) + ' PLN' : 'N/A'
+      const cpm     = imp > 0 ? fmt(c.spend / imp * 1000) + ' PLN' : 'N/A'
+      const metaCpa = c.purchases > 0 ? fmt(c.spend / c.purchases) + ' PLN' : 'N/A'
+      const share   = totalSpend > 0 ? ` (${(c.spend / totalSpend * 100).toFixed(0)}% of spend)` : ''
+      lines.push(`  "${displayName}": spend ${fmt(c.spend)} PLN${share} | clicks ${cl} | impr. ${imp} | CTR ${ctr} | CPC ${cpc} | CPM ${cpm} | meta_purchases ${c.purchases} | meta_CPA ${metaCpa}`)
     })
-    // Aggregate efficiency across all loaded campaigns
+    // Aggregate efficiency across all loaded ads
     const eff = context.metaEfficiency
     if (eff && (eff.impressions > 0 || eff.clicks > 0)) {
       const aCtr = eff.ctr  != null ? eff.ctr.toFixed(2) + '%' : (eff.impressions > 0 ? ((eff.link_clicks ?? eff.clicks) / eff.impressions * 100).toFixed(2) + '%' : 'N/A')
       const aCpc = eff.cpc  != null ? fmt(eff.cpc) + ' PLN' : (eff.clicks > 0 ? fmt(eff.spend / eff.clicks) + ' PLN' : 'N/A')
       const aCpm = eff.cpm  != null ? fmt(eff.cpm) + ' PLN' : (eff.impressions > 0 ? fmt(eff.spend / eff.impressions * 1000) + ' PLN' : 'N/A')
-      lines.push(`  [AGGREGATE ALL CAMPAIGNS] CTR ${aCtr} | CPC ${aCpc} | CPM ${aCpm} | total clicks ${eff.clicks} | impr. ${eff.impressions}`)
+      lines.push(`  [AGGREGATE ALL ADS] CTR ${aCtr} | CPC ${aCpc} | CPM ${aCpm} | total clicks ${eff.clicks} | impr. ${eff.impressions}`)
     }
   }
 

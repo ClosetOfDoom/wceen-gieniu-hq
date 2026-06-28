@@ -907,8 +907,9 @@ export default function App() {
         meta_purchases: r.meta_purchases ?? null,
         meta_purchase_value: r.meta_purchase_value ?? null,
       })),
-      topCampaigns: ads.slice(0, 5).map(a => ({
+      topCampaigns: ads.slice(0, 10).map(a => ({
         name: a.campaign_name ?? a.campaign_id ?? '?',
+        ad_name: a.ad_name ?? undefined,
         spend: a.spend,
         clicks: a.clicks ?? 0,
         link_clicks: a.link_clicks ?? 0,

@@ -21,7 +21,9 @@ export interface MetaAdDaily {
   campaign_id?: string | null
   campaign_name?: string | null
   adset_id?: string | null
+  adset_name?: string | null
   ad_id?: string | null
+  ad_name?: string | null
   spend: number
   impressions?: number | null
   clicks?: number | null

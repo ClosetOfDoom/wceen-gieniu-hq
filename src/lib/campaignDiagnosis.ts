@@ -9,6 +9,7 @@ export type CampaignStatus = 'efficient' | 'expensive' | 'zero-attribution' | 'n
 export interface CampaignEntry {
   campaign_id: string
   campaign_name: string
+  ad_name: string        // ad_name when available, falls back to campaign_name
   date: string
   spend: number
   purchases: number
@@ -114,9 +115,12 @@ export function buildCampaignDiagnosis(
     const metaCpa    = purchases > 0 ? spend / purchases : null
     const spendShare = totalSpend > 0 ? spend / totalSpend : 0
     const purchaseShare = totalPurchases > 0 ? purchases / totalPurchases : 0
+    const campaignName = r.campaign_name ?? r.campaign_id ?? '?'
+    const adName = r.ad_name && r.ad_name !== r.campaign_name ? r.ad_name : campaignName
     return {
       campaign_id:        r.campaign_id    ?? '',
-      campaign_name:      r.campaign_name  ?? r.campaign_id ?? '?',
+      campaign_name:      campaignName,
+      ad_name:            adName,
       date:               r.date           ?? usedDate,
       spend,
       purchases,
@@ -128,7 +132,7 @@ export function buildCampaignDiagnosis(
       cpc,
       cpm:               r.cpm            ?? null,
       metaCpa,
-      scope:             classifyCampaignScope(r.campaign_name ?? ''),
+      scope:             classifyCampaignScope(r.ad_name ?? r.campaign_name ?? ''),
       status:            classifyStatus(spend, purchases, metaCpa, spendShare),
       spendShare,
       purchaseShare,
@@ -172,17 +176,17 @@ export function buildCampaignDiagnosis(
   } else {
     if (isStale) lines.push(`Today's Meta campaign rows are not in yet. Showing latest available data from ${usedDate}.`)
     if (bestCampaign) {
-      lines.push(`Best: "${bestCampaign.campaign_name}" — ${bestCampaign.purchases} purchases at ${(bestCampaign.metaCpa ?? 0).toFixed(0)} PLN CPA.`)
+      lines.push(`Best: "${bestCampaign.ad_name}" — ${bestCampaign.purchases} purchases at ${(bestCampaign.metaCpa ?? 0).toFixed(0)} PLN CPA.`)
     }
     if (worstCampaign && worstCampaign !== bestCampaign) {
-      lines.push(`Most expensive: "${worstCampaign.campaign_name}" — CPA ${(worstCampaign.metaCpa ?? 0).toFixed(0)} PLN.`)
+      lines.push(`Most expensive: "${worstCampaign.ad_name}" — CPA ${(worstCampaign.metaCpa ?? 0).toFixed(0)} PLN.`)
     }
     if (zeroAttribution.length > 0) {
-      lines.push(`Zero-attribution: ${zeroAttribution.map(e => `"${e.campaign_name}"`).join(', ')} — spending ${zeroAttribution.reduce((s, e) => s + e.spend, 0).toFixed(0)} PLN with 0 Meta purchases.`)
+      lines.push(`Zero-attribution: ${zeroAttribution.map(e => `"${e.ad_name}"`).join(', ')} — spending ${zeroAttribution.reduce((s, e) => s + e.spend, 0).toFixed(0)} PLN with 0 Meta purchases.`)
     }
     if (totPurch === 0 && totSpend > 0) {
       lines.push(`Meta has spend rows but reports zero purchases. This is zero-attribution, not missing data.`)
-      lines.push(`Ranked by spend: ${filtered.slice(0, 3).map(e => `"${e.campaign_name}" (${e.spend.toFixed(0)} PLN)`).join(', ')}.`)
+      lines.push(`Ranked by spend: ${filtered.slice(0, 3).map(e => `"${e.ad_name}" (${e.spend.toFixed(0)} PLN)`).join(', ')}.`)
     }
     if (totPurch > 0) {
       lines.push(`Total: ${totSpend.toFixed(0)} PLN spend, ${totPurch} Meta purchases, avg CPA ${(totals.metaCpa ?? 0).toFixed(0)} PLN.`)
