@@ -5,27 +5,27 @@
 }
 
 :root {
-  /* Palette — dark navy / deep emerald / teal / gold */
-  --bg:           #080e1c;
-  --bg2:          #0b1320;
-  --surface:      #10192e;
-  --surface2:     #162035;
-  --surface3:     #1c2b45;
-  --border:       #26375a;
-  --border-gold:  #906830;
+  /* Palette — deep navy / gold — matched to Stanley's owl colourway */
+  --bg:           #0b1e29;
+  --bg2:          #0d2030;
+  --surface:      #122636;
+  --surface2:     #173040;
+  --surface3:     #1d3a4e;
+  --border:       #2a4860;
+  --border-gold:  #8a6228;
   --gold:         #ee9d00;
   --gold-bright:  #f5b500;
   --gold-dim:     #5a4010;
-  --glow-gold:    rgba(238,157,0,0.35);
-  --glow-gold-sm: rgba(238,157,0,0.18);
+  --glow-gold:    rgba(238,157,0,0.40);
+  --glow-gold-sm: rgba(238,157,0,0.22);
   --teal:         #2dd4bf;
   --teal-dim:     #0d4a44;
   --emerald:      #4ade80;
   --emerald-dim:  #064e3b;
-  --text:         #e8edf5;
-  --text2:        #b8c4d8;
-  --muted:        #6a7a96;
-  --muted2:       #4a5a70;
+  --text:         #edf2fa;
+  --text2:        #c0cedf;
+  --muted:        #8a9db8;
+  --muted2:       #607288;
   --amber:        #fbbf24;
   --red:          #f87171;
   --orange:       #fb923c;
@@ -40,9 +40,10 @@ html, body {
   height: 100%;
   background: var(--bg);
   background-image:
-    radial-gradient(ellipse at 50% 0%, rgba(238,157,0,0.04) 0%, transparent 55%),
-    radial-gradient(ellipse at 0% 100%, rgba(45,212,191,0.03) 0%, transparent 45%),
-    radial-gradient(ellipse at 100% 50%, rgba(238,157,0,0.025) 0%, transparent 40%);
+    radial-gradient(ellipse at 50% 0%,   rgba(238,157,0,0.06)  0%, transparent 55%),
+    radial-gradient(ellipse at 0% 100%,  rgba(45,212,191,0.04) 0%, transparent 45%),
+    radial-gradient(ellipse at 100% 50%, rgba(238,157,0,0.04)  0%, transparent 40%),
+    radial-gradient(ellipse at 50% 100%, rgba(11,30,41,0.6)    0%, transparent 70%);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 18px;

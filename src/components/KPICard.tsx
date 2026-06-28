@@ -176,7 +176,7 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
       <div style={{
         fontFamily: 'var(--font-serif)',
         fontSize: '0.74rem',
-        color: 'var(--muted)',
+        color: 'var(--text2)',
         textTransform: 'uppercase',
         letterSpacing: '0.14em',
         marginBottom: '10px',
@@ -184,12 +184,13 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
         {label}
       </div>
       <div className="kpi-value" style={{
-        fontSize: 'clamp(2.0rem, 3vw, 2.8rem)',
+        fontSize: 'clamp(2.1rem, 3vw, 2.9rem)',
         fontWeight: 700,
         color: valueColor,
         fontVariantNumeric: 'tabular-nums',
         lineHeight: 1.1,
         fontFamily: 'var(--font-mono)',
+        letterSpacing: '-0.01em',
       }}>
         <AnimatedNumber value={value} />
       </div>

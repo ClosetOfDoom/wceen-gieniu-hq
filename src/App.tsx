@@ -8,7 +8,7 @@ import { RevenueTrendChart } from './components/RevenueTrendChart'
 import { InsightChart } from './components/InsightChart'
 import { CampaignsPanel } from './components/CampaignsPanel'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
-import { GoldenOrb } from './components/GoldenOrb'
+import { StanleyOwl } from './components/StanleyOwl'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday,
@@ -430,8 +430,8 @@ function RightPanel({
               </div>
             ) : (
             <div style={{ marginTop: chart ? '10px' : '4px' }}>
-              {/* Golden orb — replaces the "Speaking…" text indicator */}
-              <GoldenOrb state={speaking ? 'speaking' : thinking ? 'thinking' : 'idle'} />
+              {/* Stanley owl — visual speaking/thinking/idle indicator */}
+              <StanleyOwl state={speaking ? 'speaking' : thinking ? 'thinking' : 'idle'} />
 
               {/* Controls row below the orb */}
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: '4px' }}>
