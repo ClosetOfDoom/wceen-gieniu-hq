@@ -4,7 +4,7 @@ export function GieniuAvatar({ size = 68 }: { size?: number }) {
       viewBox="0 0 80 80"
       width={size}
       height={size}
-      aria-label="Gieniu — owl advisor"
+      aria-label="Stanley — owl advisor"
       role="img"
     >
       {/* Medallion ring */}

@@ -224,7 +224,7 @@ function DiagnosisCard({ text, scope }: { text: string; scope: CampaignScope }) 
       borderRadius: '5px', padding: '16px 18px',
     }}>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '8px' }}>
-        GIENIU Diagnosis — {scopeLabel}
+        STANLEY Diagnosis — {scopeLabel}
       </div>
       <pre style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text2)', whiteSpace: 'pre-wrap', lineHeight: 1.7, margin: 0 }}>
         {text}

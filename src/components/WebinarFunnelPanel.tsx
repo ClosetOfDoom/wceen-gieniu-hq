@@ -420,7 +420,7 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
           borderLeft: `3px solid ${bnColor}`, borderRadius: '8px', padding: '14px 16px',
         }}>
           <div style={{ fontSize: '0.65rem', color: bnColor, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
-            Gieniu's Diagnosis
+            Stanley's Diagnosis
           </div>
           <div style={{ fontSize: '0.82rem', color: '#ccc', lineHeight: 1.65, fontFamily: 'monospace' }}>
             {summary.diagnosis}
@@ -432,7 +432,7 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
       {gieniuResponse && (
         <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '16px' }}>
           <div style={{ fontSize: '0.65rem', color: '#e8ff00', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
-            GIENIU
+            STANLEY
           </div>
           <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.82rem', color: '#e0e0e0', lineHeight: 1.7 }}>
             {gieniuResponse}

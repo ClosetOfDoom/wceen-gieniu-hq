@@ -36,7 +36,7 @@ export function GieniuResponse({ text, compact }: Props) {
         textTransform: 'uppercase',
         marginBottom: '10px',
       }}>
-        Gieniu Says
+        Stanley Says
       </div>
       <pre style={{
         margin: 0,

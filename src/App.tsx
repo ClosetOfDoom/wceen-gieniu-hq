@@ -105,7 +105,7 @@ function Sidebar({
           </svg>
           <div>
             <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.9rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em' }}>
-              GIENIU
+              STANLEY
             </div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.55rem', color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
               HQ Command
@@ -138,7 +138,7 @@ function Sidebar({
             onClick={onInstall}
             style={{ width: '100%', fontSize: '0.72rem', color: 'var(--gold)', borderColor: 'var(--border-gold)' }}
           >
-            ⬇ Install GIENIU
+            ⬇ Install STANLEY
           </button>
         </div>
       )}
@@ -146,7 +146,7 @@ function Sidebar({
       <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '10px' }}>
         <GieniuAvatar size={52} />
         <div>
-          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.82rem', color: 'var(--gold)', fontWeight: 600 }}>Gieniu</div>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.82rem', color: 'var(--gold)', fontWeight: 600 }}>Stanley</div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted)', marginTop: '2px' }}>Revenue Advisor</div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--teal)', marginTop: '3px', letterSpacing: '0.04em' }}>● Active</div>
         </div>
@@ -226,7 +226,7 @@ function TopBar({
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '4px' }}>
           <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.14em' }}>
-            GIENIU HQ
+            STANLEY HQ
           </h1>
           <StatusBadge status={status} />
         </div>
@@ -369,7 +369,7 @@ function RightPanel({
         {/* Header row */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
           <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.78rem', color: 'var(--gold)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>
-            Gieniu Says
+            Stanley Says
           </div>
           {listening && (
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -422,7 +422,7 @@ function RightPanel({
                     letterSpacing: '0.05em',
                   }}
                 >
-                  🎙 Wake GIENIU
+                  🎙 Wake STANLEY
                 </button>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', marginTop: '6px', textAlign: 'center' }}>
                   One tap · unlocks voice &amp; mic
@@ -974,7 +974,7 @@ export default function App() {
     // eslint-disable-next-line no-console
     console.log('GIENIU Start voice — endpoint: /.netlify/functions/gieniu-tts')
     const testText = isElevenLabsPaused()
-      ? 'Gieniu voice is active.'
+      ? 'Stanley voice is active.'
       : (responseSpoken || response || OPENING_TEXT)
     const session = ++ttsSessionRef.current
     setSpeaking(true)
@@ -1400,7 +1400,7 @@ export default function App() {
 
       {/* Build stamp — always visible, bottom-right */}
       <div className="build-stamp">
-        GIENIU build: {__BUILD_HASH__}
+        STANLEY build: {__BUILD_HASH__}
       </div>
 
     </div>

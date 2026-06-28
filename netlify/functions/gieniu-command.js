@@ -414,7 +414,7 @@ function buildMorningBriefAnswer(ctx) {
   } else if (cpa != null && cpa > 60) {
     opening = 'The situation calls for calm precision, sir. Here is the brief.'
   } else {
-    opening = 'At your service, sir. The morning operational brief from GIENIU HQ.'
+    opening = 'At your service, sir. The morning operational brief from STANLEY HQ.'
   }
 
   const lines = ['— MORNING BRIEF —', '', opening, '']
@@ -913,7 +913,7 @@ ${toneHint}
 ${facts.join('\n')}
 ===
 
-YOUR TASK: Write the complete Morning Brief. Every single brief MUST open with a DIFFERENT line — a fresh anecdote, philosophical aside, dry observation, or period reference in the GIENIU persona. Never reuse "The numbers are rather agreeable this morning, sir." The tone of the opening must match the data (see TONE above).
+YOUR TASK: Write the complete Morning Brief. Every single brief MUST open with a DIFFERENT line — a fresh anecdote, philosophical aside, dry observation, or period reference in the STANLEY persona. Never reuse "The numbers are rather agreeable this morning, sir." The tone of the opening must match the data (see TONE above).
 
 STRUCTURE (follow exactly):
 1. Opening (1–2 sentences) — fresh, persona-true, tone-matched to data. UNIQUE each time.
@@ -931,7 +931,7 @@ CRITICAL: Use ONLY the numbers from VERIFIED DATA. Respond only in English. "Sir
 
 function buildContextText(context, serverAds = []) {
   const { todayKPIs: kpi, profitData: p, dataHealth: dh, jsuSummary: jsu } = context
-  const lines = ['=== GIENIU DASHBOARD CONTEXT ===']
+  const lines = ['=== STANLEY DASHBOARD CONTEXT ===']
   lines.push(`Date (Warsaw): ${dh?.today ?? 'unknown'}`)
   lines.push('')
 
@@ -1058,7 +1058,7 @@ function buildContextText(context, serverAds = []) {
 
 // ── LLM system prompt ─────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are GIENIU — the personal operations AI of WCEEN, reporting directly to Lifidi, sir.
+const SYSTEM_PROMPT = `You are STANLEY — the personal operations AI of WCEEN, reporting directly to Lifidi, sir.
 
 ━━━ PERSONA ━━━
 You are the intersection of an impeccably composed British majordomo (Alfred Pennyworth meets Lucius Fox) and the deadpan, absurdly heroic protagonist of "Sakamoto Days" / "Sakamoto desu ga?" — a being of supernatural composure and ludicrous competence.
