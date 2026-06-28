@@ -929,8 +929,8 @@ CRITICAL: Use ONLY the numbers from VERIFIED DATA. Respond only in English. "Sir
 
 // ── Context serialization for LLM ─────────────────────────────────────────────
 
-function buildContextText(context) {
-  const { todayKPIs: kpi, profitData: p, dataHealth: dh, jsuSummary: jsu, topCampaigns: campaigns } = context
+function buildContextText(context, serverAds = []) {
+  const { todayKPIs: kpi, profitData: p, dataHealth: dh, jsuSummary: jsu } = context
   const lines = ['=== GIENIU DASHBOARD CONTEXT ===']
   lines.push(`Date (Warsaw): ${dh?.today ?? 'unknown'}`)
   lines.push('')
@@ -1006,30 +1006,39 @@ function buildContextText(context) {
     lines.push('Today\'s Sales by Product: NOT AVAILABLE (orders data not loaded)')
   }
 
-  if (campaigns && campaigns.length > 0) {
+  // Per-ad / creative data — always from server-side service-role fetch (serverAds),
+  // which bypasses RLS that blocks the anon frontend client on meta_ads_daily.
+  if (serverAds.length > 0) {
     lines.push('')
-    lines.push('--- Ads / Creatives (by spend, today) ---')
-    const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0)
-    ;[...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 10).forEach(c => {
-      const displayName = c.ad_name ?? c.name
-      const imp     = c.impressions ?? 0
-      const cl      = c.clicks ?? 0
-      const lcl     = c.link_clicks ?? cl
-      const ctr     = imp > 0 ? (lcl / imp * 100).toFixed(2) + '%' : 'N/A'
-      const cpc     = cl  > 0 ? fmt(c.spend / cl) + ' PLN' : 'N/A'
-      const cpm     = imp > 0 ? fmt(c.spend / imp * 1000) + ' PLN' : 'N/A'
-      const metaCpa = c.purchases > 0 ? fmt(c.spend / c.purchases) + ' PLN' : 'N/A'
-      const share   = totalSpend > 0 ? ` (${(c.spend / totalSpend * 100).toFixed(0)}% of spend)` : ''
-      lines.push(`  "${displayName}": spend ${fmt(c.spend)} PLN${share} | clicks ${cl} | impr. ${imp} | CTR ${ctr} | CPC ${cpc} | CPM ${cpm} | meta_purchases ${c.purchases} | meta_CPA ${metaCpa}`)
+    lines.push('--- Today\'s Ads / Creatives (service-role, meta_ads_daily) ---')
+    lines.push('NOTE: meta_purchases and meta_CPA below come from Meta\'s own attribution.')
+    lines.push('      They typically undercount vs Wix. Quote them as "per Meta" not as ground truth.')
+    lines.push('      Ads with <20 PLN spend: too early to evaluate — do NOT flag as wasting budget.')
+    const totalAdSpend = serverAds.reduce((s, a) => s + (a.spend ?? 0), 0)
+    serverAds.slice(0, 15).forEach(a => {
+      const name     = a.ad_name ?? a.campaign_name ?? 'unknown'
+      const spend    = a.spend ?? 0
+      const imp      = a.impressions ?? 0
+      const cl       = a.clicks ?? 0
+      const lcl      = a.link_clicks ?? cl
+      const mp       = a.meta_purchases ?? 0
+      const ctr      = imp > 0 ? (lcl / imp * 100).toFixed(2) + '%' : 'N/A'
+      const cpc      = lcl > 0 ? fmt(spend / lcl) + ' PLN' : 'N/A'
+      const metaCpa  = mp > 0 ? fmt(spend / mp) + ' PLN' : (spend < 20 ? 'too early' : 'N/A (0 purchases per Meta)')
+      const share    = totalAdSpend > 0 ? ` (${(spend / totalAdSpend * 100).toFixed(0)}%)` : ''
+      const tooEarly = spend < 20 ? ' [micro-spend, too early]' : ''
+      lines.push(`  "${name}": spend ${fmt(spend)} PLN${share} | clicks ${lcl} | CTR ${ctr} | CPC ${cpc} | meta_purchases ${mp} | meta_CPA ${metaCpa}${tooEarly}`)
     })
-    // Aggregate efficiency across all loaded ads
+    // Aggregate efficiency from context if available (cross-validated)
     const eff = context.metaEfficiency
     if (eff && (eff.impressions > 0 || eff.clicks > 0)) {
       const aCtr = eff.ctr  != null ? eff.ctr.toFixed(2) + '%' : (eff.impressions > 0 ? ((eff.link_clicks ?? eff.clicks) / eff.impressions * 100).toFixed(2) + '%' : 'N/A')
       const aCpc = eff.cpc  != null ? fmt(eff.cpc) + ' PLN' : (eff.clicks > 0 ? fmt(eff.spend / eff.clicks) + ' PLN' : 'N/A')
-      const aCpm = eff.cpm  != null ? fmt(eff.cpm) + ' PLN' : (eff.impressions > 0 ? fmt(eff.spend / eff.impressions * 1000) + ' PLN' : 'N/A')
-      lines.push(`  [AGGREGATE ALL ADS] CTR ${aCtr} | CPC ${aCpc} | CPM ${aCpm} | total clicks ${eff.clicks} | impr. ${eff.impressions}`)
+      lines.push(`  [AGGREGATE ALL ADS] CTR ${aCtr} | CPC ${aCpc} | total clicks ${eff.clicks} | impr. ${eff.impressions}`)
     }
+  } else {
+    lines.push('')
+    lines.push('Ads / Creatives: NOT AVAILABLE (no rows in meta_ads_daily for today)')
   }
 
   const trend = context.recentTrend ?? []
@@ -1186,6 +1195,30 @@ function parseLLMResponse(raw) {
   return { answerText, speechText }
 }
 
+// ── Server-side ads fetch (service-role, bypasses RLS) ───────────────────────
+// The anon Supabase client in App.tsx is blocked by RLS on meta_ads_daily.
+// gieniu-command runs server-side and can use the service-role key directly.
+
+async function fetchTodayAdsServerSide(supabaseUrl, serviceKey, today) {
+  if (!supabaseUrl || !serviceKey) return []
+  try {
+    const url = new URL(`${supabaseUrl}/rest/v1/meta_ads_daily`)
+    url.searchParams.set('select', 'ad_name,campaign_name,spend,clicks,link_clicks,impressions,ctr,cpc,cpm,meta_purchases,meta_purchase_value')
+    url.searchParams.set('date', `eq.${today}`)
+    url.searchParams.set('order', 'spend.desc')
+    url.searchParams.set('limit', '20')
+    const res = await fetch(url.toString(), {
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'apikey':        serviceKey,
+        'Accept':        'application/json',
+      },
+    })
+    if (!res.ok) return []
+    return await res.json()
+  } catch { return [] }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 function success(body) {
@@ -1215,10 +1248,20 @@ exports.handler = async (event) => {
   const ctx = context ?? {}
 
   // LLM env vars — read early so deterministic paths can report llm.active
-  const llmProviderEnv = process.env.LLM_PROVIDER
-  const openaiKeyEnv   = process.env.OPENAI_API_KEY
+  const llmProviderEnv  = process.env.LLM_PROVIDER
+  const openaiKeyEnv    = process.env.OPENAI_API_KEY
   const anthropicKeyEnv = process.env.ANTHROPIC_API_KEY
   const llmActive = !!(llmProviderEnv && (openaiKeyEnv || anthropicKeyEnv))
+
+  // Fetch today's per-ad data server-side (service-role bypasses RLS).
+  // This runs in parallel with intent detection — result arrives before LLM call.
+  const today = ctx.dataHealth?.today
+    ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const serverAdsPromise = fetchTodayAdsServerSide(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    today,
+  )
 
   // 1 — Detect intent
   const { intent, confidence, matchedTerms } = detectIntent(message)
@@ -1325,8 +1368,11 @@ exports.handler = async (event) => {
     })
   }
 
+  // Await service-role per-ad data (fetched in parallel with intent detection above)
+  const serverAds = await serverAdsPromise
+
   // Build LLM user message with context
-  const contextText = buildContextText(ctx)
+  const contextText = buildContextText(ctx, serverAds)
   const userMessage = `${contextText}\n\n=== USER QUESTION ===\n${message}\n\n(Detected intent: ${intent}, confidence: ${confidence.toFixed(2)}, matched: ${matchedTerms.join(', ') || 'none'})`
 
   try {
