@@ -1,9 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <rect width="192" height="192" fill="#080e1c"/>
-  <path d="M96 14 L168 38 L168 104 Q168 152 96 174 Q24 152 24 104 L24 38 Z"
-        fill="#10192e" stroke="#c9a96e" stroke-width="4"/>
-  <line x1="42" y1="68" x2="150" y2="68" stroke="#7a6030" stroke-width="1.5"/>
-  <text x="96" y="140" text-anchor="middle"
-        font-family="Georgia, 'Times New Roman', serif"
-        font-size="82" font-weight="700" fill="#c9a96e">G</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="90" fill="#0b1e29"/>
+  <rect x="10" y="10" width="492" height="492" rx="82" fill="none" stroke="#ee9d00" stroke-width="16"/>
+  <ellipse cx="288" cy="345" rx="150" ry="108" fill="#f5f0e6"/>
+  <ellipse cx="222" cy="268" rx="52" ry="70" fill="#f5f0e6"/>
+  <circle cx="206" cy="196" r="80" fill="#f5f0e6"/>
+  <path d="M 142 214 L 70 199 L 70 231 L 138 233 Z" fill="#ee9d00"/>
+  <path d="M 142 214 L 70 199 L 76 208 L 142 222 Z" fill="#f5b500" opacity="0.5"/>
+  <circle cx="182" cy="180" r="14" fill="#0b1e29"/>
+  <circle cx="177" cy="175" r="5" fill="#ffffff"/>
+  <path d="M 188 302 Q 305 272 412 330 Q 328 385 204 362 Z" fill="#ddd8cc" opacity="0.70"/>
+  <path d="M 422 312 Q 476 278 468 348 Q 446 376 418 346 Z" fill="#eae5da"/>
 </svg>

@@ -6,7 +6,7 @@
 
   <!-- Body -->
   <ellipse cx="288" cy="345" rx="150" ry="108" fill="#f5f0e6"/>
-  <!-- Neck -->
+  <!-- Neck (connects head to body) -->
   <ellipse cx="222" cy="268" rx="52" ry="70" fill="#f5f0e6"/>
   <!-- Head -->
   <circle cx="206" cy="196" r="80" fill="#f5f0e6"/>
@@ -22,7 +22,12 @@
 
   <!-- Wing shading -->
   <path d="M 188 302 Q 305 272 412 330 Q 328 385 204 362 Z" fill="#ddd8cc" opacity="0.70"/>
+  <!-- Wing edge highlight -->
+  <path d="M 195 295 Q 295 268 398 318" fill="none" stroke="#c8c3b8" stroke-width="3" opacity="0.5"/>
 
   <!-- Tail -->
   <path d="M 422 312 Q 476 278 468 348 Q 446 376 418 346 Z" fill="#eae5da"/>
+
+  <!-- Bottom shadow (gives depth) -->
+  <ellipse cx="288" cy="440" rx="140" ry="12" fill="#000000" opacity="0.15"/>
 </svg>
