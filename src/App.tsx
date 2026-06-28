@@ -98,12 +98,15 @@ function Sidebar({
     <aside className="hud-sidebar">
       <div style={{ padding: '20px 18px 12px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <svg viewBox="0 0 36 40" width="32" height="36">
-            <path d="M18 2 L34 8 L34 22 Q34 34 18 38 Q2 34 2 22 L2 8 Z"
-              fill="var(--surface3)" stroke="var(--gold)" strokeWidth="1.5" />
-            <text x="18" y="26" textAnchor="middle" fill="var(--gold)" fontSize="14" fontFamily="Cinzel, serif" fontWeight="700">G</text>
-            <line x1="8" y1="16" x2="28" y2="16" stroke="var(--border-gold)" strokeWidth="0.7" />
-          </svg>
+          <div style={{
+            width: 36, height: 36, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
+            border: '1.5px solid var(--border-gold)',
+            boxShadow: '0 0 8px rgba(238,157,0,0.22)',
+          }}>
+            <img src="/stanley-duck.png" alt="" width={36} height={36}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              draggable={false} />
+          </div>
           <div>
             <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.9rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em' }}>
               STANLEY
