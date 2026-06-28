@@ -1,7 +1,7 @@
-// GIENIU Command Gateway — bilingual intent routing + LLM fallback.
+// GIENIU Command Gateway — EN-only intent routing + LLM fallback.
 //
 // POST /.netlify/functions/gieniu-command
-// Body: { message, context, language }
+// Body: { message, context }
 // Returns: { answerText, speechText, intent, confidence, dataSourcesUsed, warnings, llmUsed, llmProvider }
 
 // ── Intent detection (mirrors src/brain/intentRouter.ts) ─────────────────────
@@ -21,82 +21,73 @@ const INTENT_DEFS = [
   {
     intent: 'profit_today',
     phrases: [
-      'ile na czysto', 'zysk dzisiaj', 'zysk dzis', 'jaki zysk', 'ile zysku',
       'profit today', 'how much profit', 'net profit today', 'earned today',
       'profit after ads', 'margin today', 'how much did we earn',
-      'zysk po reklamie', 'ile zarobil', 'czy sie oplaca', 'oplaca sie',
-      'marza dzis', 'marza dzisiaj', 'na czysto', 'estimated profit',
+      'estimated profit',
     ],
   },
   {
     intent: 'revenue_today',
     phrases: [
-      'jak idzie dzisiaj', 'jak idzie', 'ile sprzedalismy', 'ile dzisiaj sprzedalismy',
       'revenue today', 'how are we doing today', 'how are we doing',
       'what are sales', 'sales today', 'how much did we make',
-      'today revenue', 'co dzisiaj', 'wyniki dzisiaj', 'ile dzisiaj',
-      'how much today', 'total revenue', 'przychod dzisiaj',
+      'today revenue', 'how much today', 'total revenue',
     ],
   },
   {
     intent: 'orders_freshness',
     phrases: [
-      'czy zamowienia sie aktualizuja', 'zamowienia aktualizuja', 'czy zamowienia sa aktualne',
       'are orders updating', 'orders updating', 'orders fresh', 'orders stale',
-      'wix aktualizuje', 'czy wix dziala', 'wix updating', 'are orders fresh',
-      'orders sync', 'zamowienia dzis', 'are wix orders updating',
+      'wix updating', 'are orders fresh',
+      'orders sync', 'are wix orders updating',
     ],
   },
   {
     intent: 'meta_freshness',
     phrases: [
-      'czy meta sie aktualizuje', 'meta aktualizuje', 'czy meta dziala',
       'is meta updating', 'meta fresh', 'meta stale', 'meta data updating',
-      'facebook updating', 'ads updating', 'reklamy sie aktualizuja',
+      'facebook updating', 'ads updating',
     ],
   },
   {
     intent: 'campaigns_today',
     phrases: [
-      'co z kampaniami', 'kampanie dzis', 'co sie dzieje z reklamami',
       'why are campaigns not showing', 'campaigns not showing', 'campaign performance',
       'which campaigns', 'best campaign', 'top campaign', 'show me campaigns',
-      'campaign data', 'pokaz kampanie', 'what campaigns',
+      'campaign data', 'what campaigns',
     ],
   },
   {
     intent: 'jsu_funnel',
     phrases: [
-      'czemu kurs jak sie uczyc sie nie sprzedaje', 'kurs jak sie uczyc',
-      'czemu kurs sie nie sprzedaje', 'why did jsu not sell', 'why jsu not selling',
+      'why did jsu not sell', 'why jsu not selling',
       'jsu funnel', 'webinar jsu', 'jsu webinar', 'funnel jsu',
-      'who attended and bought', 'kto byl i kupil', 'kto kupil',
-      'attendance rate', 'webinar funnel', 'co z webinarem', 'jsu',
+      'who attended and bought',
+      'attendance rate', 'webinar funnel', 'jsu',
     ],
   },
   {
     intent: 'data_health',
     phrases: [
-      'data health', 'data status', 'co z danymi', 'czy dane sa aktualne',
-      'are data fresh', 'is data fresh', 'data freshness', 'dane aktualne',
-      'diagnoza', 'co jest nie tak z danymi', 'system status',
+      'data health', 'data status',
+      'are data fresh', 'is data fresh', 'data freshness',
+      'system status',
     ],
   },
   {
     intent: 'red_flags',
     phrases: [
-      'what needs attention', 'what should i fix first', 'co naprawic najpierw',
-      'co wymaga uwagi', 'what is wrong', 'co jest nie tak', 'issues today',
+      'what needs attention', 'what should i fix first',
+      'what is wrong', 'issues today',
       'red flags', 'what to fix', 'what is broken', 'biggest problem',
-      'co poprawic', 'co wymaga natychmiastowej uwagi',
     ],
   },
   {
     intent: 'retargeting',
     phrases: [
-      'co przepala kase', 'co przepala budzet', 'co ubic', 'what to kill',
+      'what to kill',
       'what should i kill', 'stop campaigns', 'kill campaigns',
-      'wasting money', 'what is wasting money', 'co skalowac', 'what to scale',
+      'wasting money', 'what is wasting money', 'what to scale',
       'what should i scale', 'retargeting', 'retarget',
     ],
   },
@@ -104,41 +95,40 @@ const INTENT_DEFS = [
     intent: 'creative_recommendations',
     phrases: [
       'creative recommendations', 'best ad creative', 'top performing ad',
-      'which ad is best', 'creative performance', 'najlepsza reklama',
+      'which ad is best', 'creative performance',
     ],
   },
   {
     intent: 'email_rhythm',
     phrases: [
-      'czy mailing siadl', 'mailing siadl', 'email performance', 'email rhythm',
-      'czy mailing dziala', 'mailing performance', 'deliverability',
+      'email performance', 'email rhythm',
+      'mailing performance', 'deliverability',
     ],
   },
   {
     intent: 'today_vs_yesterday',
     phrases: [
-      'vs yesterday', 'vs wczoraj', 'today vs', 'dzisiaj vs', 'compare today', 'today against yesterday',
-      'porownaj dzisiaj', 'porownaj dzis', 'compare days', 'today vs yesterday',
+      'vs yesterday', 'today vs', 'compare today', 'today against yesterday',
+      'compare days', 'today vs yesterday',
     ],
   },
   {
     intent: 'yesterday',
     phrases: [
-      'how was yesterday', 'yesterday', 'wczoraj', 'jak bylo wczoraj', 'jak wczoraj',
-      'wyniki wczoraj', 'co bylo wczoraj', 'jakie revenue wczoraj', 'what happened yesterday',
+      'how was yesterday', 'yesterday', 'what happened yesterday',
     ],
   },
   {
     intent: 'week_summary',
     phrases: [
-      'week so far', 'this week', 'ten tydzien', 'jak idzie tydzien', 'week to date', 'wtd',
-      'weekly trend', 'tydzien podsumowanie', 'podsumowanie tygodnia',
+      'week so far', 'this week', 'week to date', 'wtd',
+      'weekly trend',
     ],
   },
   {
     intent: 'last_7_days',
     phrases: [
-      'last 7', 'last seven', 'past 7', 'past seven', 'ostatnie 7', 'ostatnich 7',
+      'last 7', 'last seven', 'past 7', 'past seven',
       '7 days', 'seven days', 'last 7 days',
     ],
   },
@@ -146,21 +136,16 @@ const INTENT_DEFS = [
     intent: 'morning_brief',
     phrases: [
       'morning brief', 'morning briefing', 'daily brief', 'daily briefing',
-      'wake gieniu', 'obudz gieniu', 'start briefing', 'give me a brief',
+      'wake gieniu', 'start briefing', 'give me a brief',
       'brief me', 'what happened today', 'summary', 'give me the summary',
-      'co sie dzieje', 'podsumuj dzien', 'poranny brief', 'poranne podsumowanie',
     ],
   },
   {
     intent: 'sales_by_product',
     phrases: [
-      'co sprzedalismy', 'co sprzedalismy dzis', 'co dzis sprzedalismy', 'jakie produkty dzis',
-      'ile jsu', 'ile kursow', 'ile pakietow', 'ile pamieciowych', 'ile jezykowych',
-      'ile jezykozakow', 'ile pp', 'ile pl', 'ile jzk',
       'sales by product', 'what did we sell', 'what did we sell today', 'products sold today',
       'how many courses today', 'how many jsu', 'how many memory packs', 'jsu today',
-      'sprzedajemy kursy', 'czy sprzedajemy jsu', 'jakie produkty', 'product breakdown',
-      'co sie sprzedalo', 'sales breakdown', 'rozkład sprzedaży', 'sprzedaz per produkt',
+      'product breakdown', 'sales breakdown',
     ],
   },
   {
@@ -169,8 +154,7 @@ const INTENT_DEFS = [
       'ctr', 'cpc', 'cpm', 'click through rate', 'cost per click', 'cost per mille',
       "what's the ctr", 'what is the ctr', 'whats the ctr',
       "what's the cpc", 'what is the cpc', 'whats the cpc',
-      'koszt klikniecia', 'wskaznik klikalnosci', 'efektywnosc reklam',
-      'jak klikalny', 'ile kosztuje klikniecie', 'click rate',
+      'click rate',
       'ad efficiency', 'campaign efficiency', 'meta efficiency',
     ],
   },
@@ -198,13 +182,10 @@ function detectIntent(message) {
     }
   }
 
-  const hasPolish = /[ąćęłńóśźż]/i.test(message) ||
-    norm.split(/\s+/).some(w => ['ile', 'jak', 'czy', 'co', 'czemu', 'kto', 'nie', 'sie', 'jest', 'czy'].includes(w))
-
   return {
     intent: bestScore >= 0.4 ? bestIntent : 'normal_chat',
     confidence: Math.min(bestScore, 1.0),
-    language: hasPolish ? 'pl' : 'en',
+    language: 'en',
     matchedTerms: bestMatches,
   }
 }
@@ -215,12 +196,10 @@ function fmt(n, digits = 2) {
   return n != null ? n.toFixed(digits) : '—'
 }
 
-function buildRevenueAnswer(ctx, lang) {
+function buildRevenueAnswer(ctx) {
   const kpi = ctx.todayKPIs
   if (!kpi) {
-    const msg = lang === 'pl'
-      ? 'Brak danych KPI na dziś. Sprawdź synchronizację Wix.'
-      : 'No KPI data for today. Check Wix sync in the Automation tab.'
+    const msg = 'No KPI data for today. Check Wix sync in the Automation tab.'
     return { text: msg, speech: msg, sources: [], warnings: ['todayKPIs unavailable'] }
   }
   const orders = kpi.wix_orders ?? 0
@@ -230,20 +209,10 @@ function buildRevenueAnswer(ctx, lang) {
   const cpa = kpi.real_cpa != null ? `${fmt(kpi.real_cpa)} PLN` : '—'
 
   if (orders === 0 && revenue === 0) {
-    const msg = lang === 'pl'
-      ? `Brak zamówień dziś. Wydatki Meta: ${fmt(spend)} PLN. Sprawdź synchronizację Wix.`
-      : `No orders recorded today yet. Meta spend: ${fmt(spend)} PLN. Check Wix sync.`
+    const msg = `No orders recorded today yet. Meta spend: ${fmt(spend)} PLN. Check Wix sync.`
     return { text: msg, speech: msg, sources: ['todayKPIs'], warnings: ['no orders today'] }
   }
 
-  if (lang === 'pl') {
-    return {
-      text: `${orders} zamówień | ${fmt(revenue)} PLN przychodu\nWydatki Meta: ${fmt(spend)} PLN\nReal ROAS: ${roas} | Real CPA: ${cpa}`,
-      speech: `${orders} zamówień, ${fmt(revenue)} złotych przychodu. Wydatki na reklamy: ${fmt(spend)} złotych.`,
-      sources: ['todayKPIs'],
-      warnings: [],
-    }
-  }
   return {
     text: `${orders} orders | ${fmt(revenue)} PLN revenue\nMeta spend: ${fmt(spend)} PLN\nReal ROAS: ${roas} | Real CPA: ${cpa}`,
     speech: `${orders} orders, ${fmt(revenue)} PLN revenue today. Meta spend: ${fmt(spend)} PLN.`,
@@ -252,107 +221,86 @@ function buildRevenueAnswer(ctx, lang) {
   }
 }
 
-function buildProfitAnswer(ctx, lang) {
+function buildProfitAnswer(ctx) {
   const p = ctx.profitData
   if (!p?.ok) {
-    const msg = lang === 'pl'
-      ? 'Dane o zysku są niedostępne. Sprawdź endpoint profit-data w Diagnostics.'
-      : 'Profit data is not available right now. Check the profit endpoint in Diagnostics.'
+    const msg = 'Profit data is not available right now. Check the profit endpoint in Diagnostics.'
     return { text: msg, speech: msg, sources: [], warnings: ['profitData unavailable'] }
   }
   const profit = p.estimatedProfitAfterAds ?? 0
-  const verdictPL = profit > 100 ? 'Rentowny dzień.' : profit >= 0 ? 'Na granicy rentowności.' : 'Przepalamy — wydatki > przychód.'
-  const verdictEN = profit > 100 ? 'Profitable day.' : profit >= 0 ? 'Break-even territory.' : 'Spending more than earning.'
+  const verdict = profit > 100 ? 'Profitable day.' : profit >= 0 ? 'Break-even territory.' : 'Spending more than earning.'
   const unknown = (p.unknownRevenue ?? 0) > 0
-    ? (lang === 'pl' ? `\n⚠ ${fmt(p.unknownRevenue)} PLN przychodów niezidentyfikowanych — wykluczone z zysku.` : `\n⚠ ${fmt(p.unknownRevenue)} PLN unmapped revenue excluded from profit.`)
+    ? `\n⚠ ${fmt(p.unknownRevenue)} PLN unmapped revenue excluded from profit.`
     : ''
 
-  if (lang === 'pl') {
-    return {
-      text: `${verdictPL}\nMarża (znane produkty): ${fmt(p.marginBeforeAds)} PLN\nWydatki Meta: ${fmt(p.adSpend)} PLN\nZysk est.: ${fmt(profit)} PLN\nZysk/zamówienie: ${fmt(p.estimatedProfitPerOrder)} PLN${unknown}`,
-      speech: `${verdictPL} Marża: ${fmt(p.marginBeforeAds)} złotych. Reklamy: ${fmt(p.adSpend)} złotych. Zysk: ${fmt(profit)} złotych.`,
-      sources: ['profitData'],
-      warnings: unknown ? ['unmapped revenue excluded'] : [],
-    }
-  }
   return {
-    text: `${verdictEN}\nContribution margin: ${fmt(p.marginBeforeAds)} PLN\nMeta spend: ${fmt(p.adSpend)} PLN\nEst. profit: ${fmt(profit)} PLN\nProfit/order: ${fmt(p.estimatedProfitPerOrder)} PLN${unknown}`,
-    speech: `${verdictEN} Margin: ${fmt(p.marginBeforeAds)} PLN. Spend: ${fmt(p.adSpend)} PLN. Estimated profit: ${fmt(profit)} PLN.`,
+    text: `${verdict}\nContribution margin: ${fmt(p.marginBeforeAds)} PLN\nMeta spend: ${fmt(p.adSpend)} PLN\nEst. profit: ${fmt(profit)} PLN\nProfit/order: ${fmt(p.estimatedProfitPerOrder)} PLN${unknown}`,
+    speech: `${verdict} Margin: ${fmt(p.marginBeforeAds)} PLN. Spend: ${fmt(p.adSpend)} PLN. Estimated profit: ${fmt(profit)} PLN.`,
     sources: ['profitData'],
     warnings: unknown ? ['unmapped revenue excluded'] : [],
   }
 }
 
-function buildOrdersFreshnessAnswer(ctx, lang) {
+function buildOrdersFreshnessAnswer(ctx) {
   const dh = ctx.dataHealth
   if (!dh) return null
   const fresh = dh.wixFresh
   const date = dh.latestWixDate ?? '—'
   const today = dh.today ?? '—'
   if (fresh) {
-    const msg = lang === 'pl'
-      ? `Zamówienia aktualne. Ostatnia data Wix: ${date} (dziś).`
-      : `Orders are up to date. Latest Wix date: ${date} (today).`
+    const msg = `Orders are up to date. Latest Wix date: ${date} (today).`
     return { text: msg, speech: msg, sources: ['dataHealth'], warnings: [] }
   }
-  const text = lang === 'pl'
-    ? `Zamówienia mogą być nieaktualne. Ostatnia data Wix: ${date}. Oczekiwana: ${today}.\nNext action: Sprawdź automatyzację Make → Wix w zakładce Automation.`
-    : `Orders may be stale. Latest Wix date: ${date}. Expected: ${today}.\nNext action: Check Make → Wix sync in the Automation tab.`
+  const text = `Orders may be stale. Latest Wix date: ${date}. Expected: ${today}.\nNext action: Check Make → Wix sync in the Automation tab.`
   return {
     text,
-    speech: lang === 'pl' ? `Zamówienia mogą być nieaktualne. Ostatnia data: ${date}.` : `Orders may be stale. Latest date: ${date}.`,
+    speech: `Orders may be stale. Latest date: ${date}.`,
     sources: ['dataHealth'],
     warnings: [`Wix date ${date} may be stale (expected ${today})`],
   }
 }
 
-function buildMetaFreshnessAnswer(ctx, lang) {
+function buildMetaFreshnessAnswer(ctx) {
   const dh = ctx.dataHealth
   if (!dh) return null
   const fresh = dh.metaFresh
   const date = dh.latestMetaDate ?? '—'
   if (fresh) {
-    const msg = lang === 'pl'
-      ? `Meta się aktualizuje. Ostatnia data: ${date} (dziś).`
-      : `Meta is updating. Latest date: ${date} (today).`
+    const msg = `Meta is updating. Latest date: ${date} (today).`
     return { text: msg, speech: msg, sources: ['dataHealth'], warnings: [] }
   }
-  const text = lang === 'pl'
-    ? `Dane Meta mogą być nieaktualne. Ostatnia data: ${date}. Meta zazwyczaj opóźnia się 1-3 godz. Jeśli dłużej — sprawdź integrację Meta Ads.`
-    : `Meta data may be stale. Latest date: ${date}. Meta usually lags 1-3 hours. If longer — check Meta Ads integration.`
+  const text = `Meta data may be stale. Latest date: ${date}. Meta usually lags 1-3 hours. If longer — check Meta Ads integration.`
   return {
     text,
-    speech: lang === 'pl' ? `Dane Meta nieaktualne. Ostatnia data: ${date}.` : `Meta data stale. Latest date: ${date}.`,
+    speech: `Meta data stale. Latest date: ${date}.`,
     sources: ['dataHealth'],
     warnings: [`Meta date ${date} may be stale`],
   }
 }
 
-function buildDataHealthAnswer(ctx, lang) {
+function buildDataHealthAnswer(ctx) {
   const dh = ctx.dataHealth
   if (!dh) return null
   const issues = []
-  if (!dh.metaFresh) issues.push(lang === 'pl' ? `Dane Meta nieaktualne (${dh.latestMetaDate})` : `Meta data stale (${dh.latestMetaDate})`)
-  if (!dh.wixFresh) issues.push(lang === 'pl' ? `Zamówienia Wix nieaktualne (${dh.latestWixDate})` : `Wix orders stale (${dh.latestWixDate})`)
+  if (!dh.metaFresh) issues.push(`Meta data stale (${dh.latestMetaDate})`)
+  if (!dh.wixFresh) issues.push(`Wix orders stale (${dh.latestWixDate})`)
   if (issues.length === 0) {
-    const msg = lang === 'pl' ? 'Wszystkie dane aktualne. Meta i Wix zsynchronizowane.' : 'All data sources fresh. Meta and Wix are up to date.'
+    const msg = 'All data sources fresh. Meta and Wix are up to date.'
     return { text: msg, speech: msg, sources: ['dataHealth'], warnings: [] }
   }
   const issueList = issues.map(i => `⚠ ${i}`).join('\n')
   return {
-    text: (lang === 'pl' ? 'Problemy z danymi:\n' : 'Data health issues:\n') + issueList + '\n' + (lang === 'pl' ? 'Sprawdź zakładkę Automation.' : 'Check the Automation tab.'),
-    speech: lang === 'pl' ? `${issues.length} problem${issues.length > 1 ? 'y' : ''} z danymi. ${issues.join('. ')}.` : `${issues.length} data issue${issues.length > 1 ? 's' : ''}: ${issues.join('. ')}.`,
+    text: 'Data health issues:\n' + issueList + '\nCheck the Automation tab.',
+    speech: `${issues.length} data issue${issues.length > 1 ? 's' : ''}: ${issues.join('. ')}.`,
     sources: ['dataHealth'],
     warnings: issues,
   }
 }
 
-function buildCampaignsAnswer(ctx, lang) {
+function buildCampaignsAnswer(ctx) {
   const campaigns = ctx.topCampaigns ?? []
   if (campaigns.length === 0) {
-    const msg = lang === 'pl'
-      ? 'Brak danych kampanii. Sprawdź synchronizację Meta Ads.'
-      : 'No campaign data loaded. Check Meta Ads sync in the Automation tab.'
+    const msg = 'No campaign data loaded. Check Meta Ads sync in the Automation tab.'
     return { text: msg, speech: msg, sources: [], warnings: ['no campaign data'] }
   }
   const sorted = [...campaigns].sort((a, b) => b.spend - a.spend)
@@ -366,14 +314,14 @@ function buildCampaignsAnswer(ctx, lang) {
   })
   const topName = sorted[0]?.name ?? '—'
   return {
-    text: (lang === 'pl' ? 'Top kampanie wg wydatków:\n' : 'Top campaigns by spend:\n') + lines.join('\n'),
-    speech: lang === 'pl' ? `Załadowano ${campaigns.length} kampanii. Największa: ${topName}.` : `${campaigns.length} campaigns loaded. Top spender: ${topName}.`,
+    text: 'Top campaigns by spend:\n' + lines.join('\n'),
+    speech: `${campaigns.length} campaigns loaded. Top spender: ${topName}.`,
     sources: ['topCampaigns'],
     warnings: [],
   }
 }
 
-function buildMorningBriefAnswer(ctx, lang) {
+function buildMorningBriefAnswer(ctx) {
   const kpi    = ctx.todayKPIs
   const trend  = ctx.recentTrend ?? []
   const tbp    = ctx.todayByProduct
@@ -382,9 +330,7 @@ function buildMorningBriefAnswer(ctx, lang) {
   const yRow   = (yDate ? trend.find(r => r.date === yDate) : null) ?? trend[1] ?? null
 
   if (!kpi && trend.length === 0) {
-    const msg = lang === 'pl'
-      ? 'Obawiam się, sir, że dane nie są jeszcze dostępne. Proszę zainicjować ponownie za chwilę.'
-      : "I'm afraid the data is not yet available, sir. Kindly initialise again in a moment."
+    const msg = "I'm afraid the data is not yet available, sir. Kindly initialise again in a moment."
     return { text: msg, speech: msg, sources: [], warnings: ['no data'] }
   }
 
@@ -412,97 +358,37 @@ function buildMorningBriefAnswer(ctx, lang) {
 
   // Red flags
   const redFlags = []
-  if (cpa != null && cpa > 50) redFlags.push(lang === 'pl' ? `Real CPA ${fmt(cpa)} PLN — przekracza próg 50 PLN` : `Real CPA ${fmt(cpa)} PLN — exceeds the 50 PLN alert threshold`)
-  if (spend > 0 && orders === 0) redFlags.push(lang === 'pl' ? 'Budżet Meta aktywny, zero zamówień Wix' : 'Meta spend active, zero Wix orders')
-  if (roas != null && roas < 2 && spend > 50) redFlags.push(lang === 'pl' ? `ROAS ${fmt(roas)}x — poniżej progu opłacalności` : `ROAS ${fmt(roas)}x — below breakeven`)
-  if (memCount > 0 && jsuCount === 0 && memCount >= 3) redFlags.push(lang === 'pl' ? `${memCount} nabywców PP — brak konwersji na JSU. Sprawdź sekwencję upsell.` : `${memCount} PP buyers with zero JSU conversions. Check upsell sequence.`)
+  if (cpa != null && cpa > 50) redFlags.push(`Real CPA ${fmt(cpa)} PLN — exceeds the 50 PLN alert threshold`)
+  if (spend > 0 && orders === 0) redFlags.push('Meta spend active, zero Wix orders')
+  if (roas != null && roas < 2 && spend > 50) redFlags.push(`ROAS ${fmt(roas)}x — below breakeven`)
+  if (memCount > 0 && jsuCount === 0 && memCount >= 3) redFlags.push(`${memCount} PP buyers with zero JSU conversions. Check upsell sequence.`)
 
   // Recommendation
   let rec
   if (cpa != null && cpa > 50) {
-    rec = lang === 'pl'
-      ? 'Ośmielę się zasugerować, sir: przejrzyj kampanie z najwyższym CPA i rozważ wyłączenie słabych kreacji.'
-      : 'I would venture to suggest, sir: review high-CPA campaigns and consider pausing the weakest creatives.'
+    rec = 'I would venture to suggest, sir: review high-CPA campaigns and consider pausing the weakest creatives.'
   } else if (spend > 0 && orders === 0) {
-    rec = lang === 'pl'
-      ? 'Ośmielę się zasugerować, sir: sprawdź stronę docelową — budżet pracuje, konwersje nie nadchodzą.'
-      : 'I would venture to suggest, sir: inspect the landing page — budget is flowing, but conversions are absent.'
+    rec = 'I would venture to suggest, sir: inspect the landing page — budget is flowing, but conversions are absent.'
   } else if (memCount > 0 && jsuCount === 0) {
-    rec = lang === 'pl'
-      ? `Ośmielę się zasugerować, sir: ${memCount} nabywców PP bez JSU — upewnij się, że sekwencja upsell na webinar czwartkowy jest aktywna.`
-      : `I would venture to suggest, sir: ${memCount} PP buyer${memCount > 1 ? 's' : ''} without JSU — confirm the Thursday webinar upsell sequence is live.`
+    rec = `I would venture to suggest, sir: ${memCount} PP buyer${memCount > 1 ? 's' : ''} without JSU — confirm the Thursday webinar upsell sequence is live.`
   } else if (jsuCount > 0) {
-    rec = lang === 'pl'
-      ? `Ośmielę się zasugerować, sir: ${jsuCount} kurs JSU — sprawdź, czy sekwencja wysokoticketowa WSZTP została uruchomiona.`
-      : `I would venture to suggest, sir: ${jsuCount} JSU course${jsuCount > 1 ? 's' : ''} — confirm the WSZTP high-ticket sequence has been dispatched.`
+    rec = `I would venture to suggest, sir: ${jsuCount} JSU course${jsuCount > 1 ? 's' : ''} — confirm the WSZTP high-ticket sequence has been dispatched.`
   } else if (revDelta != null && revDelta < -100) {
-    rec = lang === 'pl'
-      ? 'Ośmielę się zasugerować, sir: dzień za słabszy od wczoraj — sprawdź, czy kampanie są w fazie uczenia, bądź wymagają korekty.'
-      : 'I would venture to suggest, sir: today trails yesterday — check whether campaigns are in the learning phase or require adjustment.'
+    rec = 'I would venture to suggest, sir: today trails yesterday — check whether campaigns are in the learning phase or require adjustment.'
   } else {
-    rec = lang === 'pl'
-      ? 'Ośmielę się zasugerować, sir: monitoruj CPA i revenue co godzinę — dzień jeszcze w toku, sir.'
-      : 'I would venture to suggest, sir: monitor CPA and revenue hourly — the day is still in progress, sir.'
+    rec = 'I would venture to suggest, sir: monitor CPA and revenue hourly — the day is still in progress, sir.'
   }
 
   // Persona opening (one sharp line, context-dependent)
   let opening
-  if (lang === 'pl') {
-    if (orders > 4 && (cpa == null || cpa < 40)) {
-      opening = 'Liczby mówią same za siebie, sir — z przyjemnością je przedstawię.'
-    } else if (spend > 0 && orders === 0) {
-      opening = 'Budżet pracuje, sir, lecz sprzedaż jeszcze milczy. Rzecz do natychmiastowej uwagi.'
-    } else if (cpa != null && cpa > 60) {
-      opening = 'Sytuacja wymaga spokoju i precyzji, sir. Oto raport.'
-    } else {
-      opening = 'Do usług, sir. Oto poranny raport operacyjny GIENIU HQ.'
-    }
+  if (orders > 4 && (cpa == null || cpa < 40)) {
+    opening = 'The numbers are rather agreeable this morning, sir. Allow me to present them.'
+  } else if (spend > 0 && orders === 0) {
+    opening = 'The budget is active, sir, yet the orders have not arrived. A matter requiring immediate attention.'
+  } else if (cpa != null && cpa > 60) {
+    opening = 'The situation calls for calm precision, sir. Here is the brief.'
   } else {
-    if (orders > 4 && (cpa == null || cpa < 40)) {
-      opening = 'The numbers are rather agreeable this morning, sir. Allow me to present them.'
-    } else if (spend > 0 && orders === 0) {
-      opening = 'The budget is active, sir, yet the orders have not arrived. A matter requiring immediate attention.'
-    } else if (cpa != null && cpa > 60) {
-      opening = 'The situation calls for calm precision, sir. Here is the brief.'
-    } else {
-      opening = 'At your service, sir. The morning operational brief from GIENIU HQ.'
-    }
-  }
-
-  if (lang === 'pl') {
-    const lines = ['— PORANNY BRIEF GIENIA —', '', opening, '']
-    lines.push(`Dziś (${today || '?'}):`)
-    lines.push(`  Zamówienia: ${orders}  |  Przychód: ${fmt(revenue)} PLN  |  Wydatki Meta: ${fmt(spend)} PLN`)
-    if (cpa != null) lines.push(`  Real CPA: ${fmt(cpa)} PLN  |  ROAS: ${roas != null ? fmt(roas) + 'x' : '—'}`)
-    if (revDelta != null || orderDelta != null) {
-      lines.push('')
-      lines.push(`vs Wczoraj (${yRow?.date ?? '?'}):`)
-      if (orderDelta != null) lines.push(`  Zamówienia: ${sign(orderDelta)}${orderDelta}`)
-      if (revDelta   != null) lines.push(`  Przychód:   ${sign(revDelta)}${fmt(revDelta)} PLN`)
-    }
-    if (hasWeekData) {
-      const weekLine = `Ostatnie ${weekRows.length} dni: ${fmt(weekTotalRev)} PLN revenue, ${weekTotalOrders} zamówień${weekAvgCpa != null ? `, śr. CPA ${fmt(weekAvgCpa)} PLN` : ''}.`
-      lines.push('', weekLine)
-    }
-    if (tbp) {
-      lines.push('')
-      lines.push('Sprzedaż per produkt (dziś):')
-      if (memCount > 0) lines.push(`  Pakiet Pamięciowy: ${memCount}`)
-      if (jsuCount > 0) lines.push(`  Kurs Jak się uczyć: ${jsuCount}`)
-      if (jzkCount > 0) lines.push(`  Językozak/Językowy: ${jzkCount}`)
-      if (memCount + jsuCount + jzkCount === 0) lines.push('  Brak sprzedaży.')
-    }
-    if (redFlags.length > 0) {
-      lines.push('')
-      lines.push('🚨 Uwaga:')
-      redFlags.forEach(f => lines.push(`  ⚠ ${f}`))
-    }
-    lines.push('', rec)
-    const sp = [opening, `Dziś ${orders} zamówień, ${fmt(revenue, 0)} złotych przychodu`]
-    if (revDelta != null) sp.push(`${revDelta >= 0 ? 'plus' : 'minus'} ${fmt(Math.abs(revDelta), 0)} vs wczoraj`)
-    if (redFlags.length > 0) sp.push(redFlags[0])
-    const speech = sp.join('. ') + '. ' + rec
-    return { text: lines.join('\n'), speech, sources: ['todayKPIs', 'recentTrend', 'todayByProduct'], warnings: [] }
+    opening = 'At your service, sir. The morning operational brief from GIENIU HQ.'
   }
 
   const lines = ['— MORNING BRIEF —', '', opening, '']
@@ -540,12 +426,10 @@ function buildMorningBriefAnswer(ctx, lang) {
   return { text: lines.join('\n'), speech, sources: ['todayKPIs', 'recentTrend', 'todayByProduct'], warnings: [] }
 }
 
-function buildSalesByProductAnswer(ctx, lang) {
+function buildSalesByProductAnswer(ctx) {
   const tbp = ctx.todayByProduct
   if (!tbp) {
-    const msg = lang === 'pl'
-      ? 'Obawiam się, że rozkład sprzedaży per produkt nie jest dziś dostępny, sir. Dane zamówień nie zostały załadowane.'
-      : "I'm afraid today's product breakdown is unavailable, sir. Orders data was not loaded."
+    const msg = "I'm afraid today's product breakdown is unavailable, sir. Orders data was not loaded."
     return { text: msg, speech: msg, sources: [], warnings: ['no todayByProduct'] }
   }
 
@@ -556,64 +440,44 @@ function buildSalesByProductAnswer(ctx, lang) {
   const total  = jsu.count + jzk.count + mem.count + unk.count
 
   if (total === 0) {
-    const msg = lang === 'pl'
-      ? 'Nie odnotowano dziś żadnej sprzedaży, sir. Czyste konto — dzień jeszcze trwa.'
-      : 'No sales recorded today, sir. The ledger remains pristine — the day is not yet done.'
+    const msg = 'No sales recorded today, sir. The ledger remains pristine — the day is not yet done.'
     return { text: msg, speech: msg, sources: ['todayByProduct'], warnings: [] }
   }
 
   const lines = []
   const hasSales = (p) => p.count > 0
 
-  if (lang === 'pl') {
-    lines.push('— SPRZEDAŻ DZIŚ PER PRODUKT —', '')
-    if (hasSales(mem)) lines.push(`Pakiet Pamięciowy:    ${mem.count} szt. × 119 zł = ${fmt(mem.revenue)} zł`)
-    if (hasSales(jsu)) lines.push(`Kurs Jak się uczyć:   ${jsu.count} szt. × 549 zł = ${fmt(jsu.revenue)} zł`)
-    if (hasSales(jzk)) lines.push(`Językozak / Językowy: ${jzk.count} szt. = ${fmt(jzk.revenue)} zł`)
-    if (hasSales(unk)) lines.push(`Niezmapowane:         ${unk.count} szt.`)
-    lines.push('')
-    lines.push(`Łącznie: ${total} sprzedaży`)
-  } else {
-    lines.push('— TODAY\'S SALES BY PRODUCT —', '')
-    if (hasSales(mem)) lines.push(`Pakiet Pamięciowy:    ${mem.count} × 119 PLN = ${fmt(mem.revenue)} PLN`)
-    if (hasSales(jsu)) lines.push(`Kurs Jak się uczyć:   ${jsu.count} × 549 PLN = ${fmt(jsu.revenue)} PLN`)
-    if (hasSales(jzk)) lines.push(`Językozak / Language: ${jzk.count} units = ${fmt(jzk.revenue)} PLN`)
-    if (hasSales(unk)) lines.push(`Unmapped:             ${unk.count} units`)
-    lines.push('')
-    lines.push(`Total: ${total} sales`)
-  }
+  lines.push('— TODAY\'S SALES BY PRODUCT —', '')
+  if (hasSales(mem)) lines.push(`Pakiet Pamięciowy:    ${mem.count} × 119 PLN = ${fmt(mem.revenue)} PLN`)
+  if (hasSales(jsu)) lines.push(`Kurs Jak się uczyć:   ${jsu.count} × 549 PLN = ${fmt(jsu.revenue)} PLN`)
+  if (hasSales(jzk)) lines.push(`Językozak / Language: ${jzk.count} units = ${fmt(jzk.revenue)} PLN`)
+  if (hasSales(unk)) lines.push(`Unmapped:             ${unk.count} units`)
+  lines.push('')
+  lines.push(`Total: ${total} sales`)
 
   // Verdict / recommendation
   const hasJsu = jsu.count > 0
   const hasMem = mem.count > 0
   let verdict = ''
   if (hasJsu && hasMem) {
-    verdict = lang === 'pl'
-      ? `Ośmielę się zasugerować, sir: ${jsu.count} kurs JSU to dobry znak — rozważ sekwencję email upsell do ${mem.count} nabywców PP, którzy kursu nie kupili.`
-      : `I would venture to suggest, sir: ${jsu.count} JSU course${jsu.count > 1 ? 's' : ''} is an encouraging sign — consider dispatching the upsell sequence to the ${mem.count} PP buyer${mem.count > 1 ? 's' : ''} who have not yet converted.`
+    verdict = `I would venture to suggest, sir: ${jsu.count} JSU course${jsu.count > 1 ? 's' : ''} is an encouraging sign — consider dispatching the upsell sequence to the ${mem.count} PP buyer${mem.count > 1 ? 's' : ''} who have not yet converted.`
   } else if (hasMem && !hasJsu) {
-    verdict = lang === 'pl'
-      ? `Ośmielę się zasugerować, sir: ${mem.count} Pakiet${mem.count > 1 ? 'ów' : ''} Pamięciowy${mem.count > 1 ? '' : 'y'} — żadnego JSU. Sekwencja upsell do webinaru czwartkowego powinna być aktywna.`
-      : `I would venture to suggest, sir: ${mem.count} Memory Pack${mem.count > 1 ? 's' : ''}, zero JSU courses. The upsell sequence toward Thursday's webinar should be live and running.`
+    verdict = `I would venture to suggest, sir: ${mem.count} Memory Pack${mem.count > 1 ? 's' : ''}, zero JSU courses. The upsell sequence toward Thursday's webinar should be live and running.`
   } else if (hasJsu && !hasMem) {
-    verdict = lang === 'pl'
-      ? `Ośmielę się zasugerować, sir: same kursy JSU bez sprzedaży PP — sprawdź czy zimna kampania działa i dowozi nowych nabywców do lejka.`
-      : `I would venture to suggest, sir: JSU sales without PP — verify the cold traffic campaign is active and feeding fresh buyers into the funnel.`
+    verdict = `I would venture to suggest, sir: JSU sales without PP — verify the cold traffic campaign is active and feeding fresh buyers into the funnel.`
   }
   if (verdict) lines.push('', verdict)
 
   const speechParts = []
-  if (hasSales(mem)) speechParts.push(lang === 'pl' ? `${mem.count} Pakiet${mem.count > 1 ? 'y' : ''} Pamięciow${mem.count > 1 ? 'e' : 'y'}` : `${mem.count} Memory Pack${mem.count > 1 ? 's' : ''}`)
-  if (hasSales(jsu)) speechParts.push(lang === 'pl' ? `${jsu.count} kurs${jsu.count > 1 ? 'y' : ''} JSU` : `${jsu.count} JSU course${jsu.count > 1 ? 's' : ''}`)
-  if (hasSales(jzk)) speechParts.push(lang === 'pl' ? `${jzk.count} Językozak` : `${jzk.count} Językozak`)
-  const speech = lang === 'pl'
-    ? `Dziś sprzedaliśmy, sir: ${speechParts.join(', ')}. Łącznie ${total}.`
-    : `Today's sales, sir: ${speechParts.join(', ')}. ${total} total.`
+  if (hasSales(mem)) speechParts.push(`${mem.count} Memory Pack${mem.count > 1 ? 's' : ''}`)
+  if (hasSales(jsu)) speechParts.push(`${jsu.count} JSU course${jsu.count > 1 ? 's' : ''}`)
+  if (hasSales(jzk)) speechParts.push(`${jzk.count} Językozak`)
+  const speech = `Today's sales, sir: ${speechParts.join(', ')}. ${total} total.`
 
   return { text: lines.join('\n'), speech, sources: ['todayByProduct'], warnings: [] }
 }
 
-function buildEfficiencyAnswer(ctx, lang) {
+function buildEfficiencyAnswer(ctx) {
   // Prefer ctx.metaEfficiency (pre-computed from all ads), fall back to summing topCampaigns
   let clicks, linkClicks, impressions, spend, ctr, cpc, cpm
   const eff = ctx.metaEfficiency
@@ -628,9 +492,7 @@ function buildEfficiencyAnswer(ctx, lang) {
   } else {
     const campaigns = ctx.topCampaigns ?? []
     if (campaigns.length === 0) {
-      const msg = lang === 'pl'
-        ? 'Brak danych kampanii — CTR/CPC/CPM niedostępne.'
-        : 'No campaign data — CTR/CPC/CPM unavailable. Check Meta Ads sync.'
+      const msg = 'No campaign data — CTR/CPC/CPM unavailable. Check Meta Ads sync.'
       return { text: msg, speech: msg, sources: [], warnings: ['no efficiency data'] }
     }
     clicks      = campaigns.reduce((s, c) => s + (c.clicks ?? 0), 0)
@@ -643,9 +505,7 @@ function buildEfficiencyAnswer(ctx, lang) {
   }
 
   if (impressions === 0 && clicks === 0) {
-    const msg = lang === 'pl'
-      ? 'Brak danych o wyświetleniach i kliknięciach — CTR/CPC/CPM niedostępne. Sprawdź synchronizację Meta Ads.'
-      : 'No impressions or clicks data — CTR/CPC/CPM unavailable. Check Meta Ads sync in Automation.'
+    const msg = 'No impressions or clicks data — CTR/CPC/CPM unavailable. Check Meta Ads sync in Automation.'
     return { text: msg, speech: msg, sources: [], warnings: ['no impressions/clicks'] }
   }
 
@@ -655,10 +515,10 @@ function buildEfficiencyAnswer(ctx, lang) {
 
   const verdict = ctr != null
     ? (ctr >= 2
-        ? (lang === 'pl' ? `CTR ${ctrStr} — dobry wynik (benchmark 1-2%).` : `CTR at ${ctrStr} — solid (benchmark 1-2%).`)
+        ? `CTR at ${ctrStr} — solid (benchmark 1-2%).`
         : ctr >= 1
-          ? (lang === 'pl' ? `CTR ${ctrStr} — przeciętny. Warto przetestować nowe kreacje.` : `CTR at ${ctrStr} — average. Test new creatives.`)
-          : (lang === 'pl' ? `CTR ${ctrStr} — poniżej benchmarku. Kreacje wymagają uwagi.` : `CTR at ${ctrStr} — below benchmark. Creatives need review.`))
+          ? `CTR at ${ctrStr} — average. Test new creatives.`
+          : `CTR at ${ctrStr} — below benchmark. Creatives need review.`)
     : ''
 
   // Per-campaign breakdown
@@ -671,24 +531,6 @@ function buildEfficiencyAnswer(ctx, lang) {
     const cCpc = cl  > 0 ? fmt(c.spend / cl) + ' PLN' : '—'
     return `  ${c.name}: CTR ${cCtr} | CPC ${cCpc} | ${cl} clicks / ${imp} impr.`
   })
-
-  if (lang === 'pl') {
-    const lines = [
-      '— EFEKTYWNOŚĆ META ADS (DZIŚ) —', '',
-      `CTR (link clicks / wyświetlenia): ${ctrStr}`,
-      `CPC (koszt kliknięcia):           ${cpcStr}`,
-      `CPM (koszt 1000 wyświetleń):      ${cpmStr}`,
-      '',
-      `Łącznie: ${clicks} kliknięć | ${impressions} wyświetleń | ${fmt(spend)} PLN wydatków`,
-    ]
-    if (perCampaign.length > 0) {
-      lines.push('', 'Per kampania:')
-      lines.push(...perCampaign)
-    }
-    if (verdict) lines.push('', verdict)
-    const speech = `CTR: ${ctrStr}. CPC: ${cpcStr}. CPM: ${cpmStr}. ${verdict}`
-    return { text: lines.join('\n'), speech, sources: ['metaEfficiency', 'topCampaigns'], warnings: [] }
-  }
 
   const lines = [
     '— META ADS EFFICIENCY (TODAY) —', '',
@@ -707,12 +549,10 @@ function buildEfficiencyAnswer(ctx, lang) {
   return { text: lines.join('\n'), speech, sources: ['metaEfficiency', 'topCampaigns'], warnings: [] }
 }
 
-function buildJsuFunnelAnswer(ctx, lang) {
+function buildJsuFunnelAnswer(ctx) {
   const jsu = ctx.jsuSummary
   if (!jsu || jsu.bottleneck === 'NO_DATA' || jsu.bottleneck === 'NO_SOURCES') {
-    const msg = lang === 'pl'
-      ? 'Brak danych webinarowego lejka JSU. Sprawdź synchronizację Make → ClickMeeting w Automation.'
-      : 'JSU webinar funnel data is not available. Check Make → ClickMeeting sync in Automation.'
+    const msg = 'JSU webinar funnel data is not available. Check Make → ClickMeeting sync in Automation.'
     return { text: msg, speech: msg, sources: [], warnings: ['jsuSummary unavailable'] }
   }
   const bottleneck = jsu.bottleneck ?? 'OK'
@@ -721,14 +561,6 @@ function buildJsuFunnelAnswer(ctx, lang) {
   const pur = jsu.rates?.purchase_rate != null ? `${(jsu.rates.purchase_rate * 100).toFixed(1)}%` : '—'
   const totals = jsu.totals ?? {}
 
-  if (lang === 'pl') {
-    return {
-      text: `Bottleneck JSU: ${bottleneck}\n${diagnosis}\nFrekwencja: ${att} | Konwersja: ${pur}\nZarejestrowani: ${totals.registered ?? '—'} | Obecni: ${totals.attendees ?? '—'} | Kupujący: ${totals.purchases ?? '—'}`,
-      speech: `Bottleneck: ${bottleneck}. Frekwencja: ${att}. Konwersja: ${pur}.`,
-      sources: ['jsuSummary'],
-      warnings: [],
-    }
-  }
   return {
     text: `JSU Funnel — Bottleneck: ${bottleneck}\n${diagnosis}\nAttendance: ${att} | Purchase conversion: ${pur}\nRegistered: ${totals.registered ?? '—'} | Attended: ${totals.attendees ?? '—'} | Bought: ${totals.purchases ?? '—'}`,
     speech: `JSU bottleneck: ${bottleneck}. Attendance: ${att}. Conversion: ${pur}.`,
@@ -737,28 +569,28 @@ function buildJsuFunnelAnswer(ctx, lang) {
   }
 }
 
-function buildRedFlagsAnswer(ctx, lang) {
+function buildRedFlagsAnswer(ctx) {
   const flags = []
   const dh = ctx.dataHealth
   const p = ctx.profitData
   const kpi = ctx.todayKPIs
 
-  if (dh && !dh.metaFresh) flags.push(lang === 'pl' ? `Meta nieaktualne (${dh.latestMetaDate})` : `Meta data stale (${dh.latestMetaDate})`)
-  if (dh && !dh.wixFresh) flags.push(lang === 'pl' ? `Wix nieaktualne (${dh.latestWixDate})` : `Wix orders stale (${dh.latestWixDate})`)
-  if (p?.ok && (p.estimatedProfitAfterAds ?? 0) < 0) flags.push(lang === 'pl' ? `Ujemny zysk: ${fmt(p.estimatedProfitAfterAds)} PLN` : `Negative profit: ${fmt(p.estimatedProfitAfterAds)} PLN`)
-  if (kpi?.real_cpa != null && kpi.real_cpa > 60) flags.push(lang === 'pl' ? `CPA bardzo wysoki: ${fmt(kpi.real_cpa)} PLN` : `CPA very high: ${fmt(kpi.real_cpa)} PLN`)
-  if (kpi?.real_roas != null && kpi.real_roas < 1.5) flags.push(lang === 'pl' ? `ROAS niski: ${fmt(kpi.real_roas)}x` : `ROAS low: ${fmt(kpi.real_roas)}x`)
-  if ((p?.unknownRevenue ?? 0) > 100) flags.push(lang === 'pl' ? `${fmt(p?.unknownRevenue)} PLN niezidentyfikowanych przychodów` : `${fmt(p?.unknownRevenue)} PLN unmapped revenue`)
+  if (dh && !dh.metaFresh) flags.push(`Meta data stale (${dh.latestMetaDate})`)
+  if (dh && !dh.wixFresh) flags.push(`Wix orders stale (${dh.latestWixDate})`)
+  if (p?.ok && (p.estimatedProfitAfterAds ?? 0) < 0) flags.push(`Negative profit: ${fmt(p.estimatedProfitAfterAds)} PLN`)
+  if (kpi?.real_cpa != null && kpi.real_cpa > 60) flags.push(`CPA very high: ${fmt(kpi.real_cpa)} PLN`)
+  if (kpi?.real_roas != null && kpi.real_roas < 1.5) flags.push(`ROAS low: ${fmt(kpi.real_roas)}x`)
+  if ((p?.unknownRevenue ?? 0) > 100) flags.push(`${fmt(p?.unknownRevenue)} PLN unmapped revenue`)
 
   if (flags.length === 0) {
-    const msg = lang === 'pl' ? 'Brak krytycznych problemów w danych dashboardu.' : 'No critical issues detected in dashboard data.'
+    const msg = 'No critical issues detected in dashboard data.'
     return { text: msg, speech: msg, sources: ['todayKPIs', 'profitData', 'dataHealth'], warnings: [] }
   }
 
   const list = flags.map((f, i) => `${i + 1}. ${f}`).join('\n')
   return {
-    text: (lang === 'pl' ? `Red flags (${flags.length}):\n` : `Red flags (${flags.length}):\n`) + list,
-    speech: lang === 'pl' ? `${flags.length} red flag${flags.length > 1 ? 's' : ''}. Pierwszy: ${flags[0]}.` : `${flags.length} red flag${flags.length > 1 ? 's' : ''}. Top: ${flags[0]}.`,
+    text: `Red flags (${flags.length}):\n` + list,
+    speech: `${flags.length} red flag${flags.length > 1 ? 's' : ''}. Top: ${flags[0]}.`,
     sources: ['todayKPIs', 'profitData', 'dataHealth'],
     warnings: flags,
   }
@@ -776,12 +608,10 @@ function sign(n) { return n >= 0 ? '+' : '' }
 
 // ── Historical data builders ───────────────────────────────────────────────────
 
-function buildYesterdayAnswer(ctx, lang) {
+function buildYesterdayAnswer(ctx) {
   const trend = ctx.recentTrend ?? []
   if (trend.length === 0) {
-    const msg = lang === 'pl'
-      ? 'Brak danych historycznych — recentTrend nie został załadowany.'
-      : 'No historical data available — recentTrend was not loaded.'
+    const msg = 'No historical data available — recentTrend was not loaded.'
     return { text: msg, speech: msg, sources: [], warnings: ['no recentTrend'] }
   }
   const today   = ctx.dataHealth?.today ?? ''
@@ -789,9 +619,7 @@ function buildYesterdayAnswer(ctx, lang) {
   const row     = (yDate ? trend.find(r => r.date === yDate) : null) ?? trend[1] ?? null
 
   if (!row) {
-    const msg = lang === 'pl'
-      ? `Brak danych za wczoraj (${yDate ?? '?'}). Dostępne daty: ${trend.map(r => r.date).join(', ')}.`
-      : `No data for yesterday (${yDate ?? '?'}). Available dates: ${trend.map(r => r.date).join(', ')}.`
+    const msg = `No data for yesterday (${yDate ?? '?'}). Available dates: ${trend.map(r => r.date).join(', ')}.`
     return { text: msg, speech: msg, sources: ['recentTrend'], warnings: ['no yesterday row'] }
   }
 
@@ -803,29 +631,14 @@ function buildYesterdayAnswer(ctx, lang) {
   const purchases = row.meta_purchases ?? 0
 
   const verdict = spend > 0 && orders === 0
-    ? (lang === 'pl' ? 'Reklamy działały, ale bez sprzedaży.' : 'Spend went out, nothing came back.')
+    ? 'Spend went out, nothing came back.'
     : roas != null && roas >= 3
-      ? (lang === 'pl' ? `Dobry dzień — ROAS ${fmt(roas)}x.` : `Good day — ROAS at ${fmt(roas)}x.`)
+      ? `Good day — ROAS at ${fmt(roas)}x.`
       : roas != null && roas < 2
-        ? (lang === 'pl' ? 'Słabe ROAS — reklamy nie zwróciły kosztów.' : 'Weak ROAS — ads underperformed.')
+        ? 'Weak ROAS — ads underperformed.'
         : orders > 0
-          ? (lang === 'pl' ? 'Solidny dzień operacyjny.' : 'Solid operational day.')
-          : (lang === 'pl' ? 'Brak danych sprzedażowych.' : 'No sales data.')
-
-  if (lang === 'pl') {
-    const lines = [
-      `— WCZORAJ ${row.date} —`, '',
-      `Zamówienia: ${orders}`,
-      `Przychód: ${fmt(revenue)} PLN`,
-      `Wydatki Meta: ${fmt(spend)} PLN`,
-    ]
-    if (cpa  != null) lines.push(`Real CPA: ${fmt(cpa)} PLN`)
-    if (roas != null) lines.push(`Real ROAS: ${fmt(roas)}x`)
-    if (purchases > 0) lines.push(`Meta zakupy: ${purchases}`)
-    lines.push('', verdict)
-    const speech = `Wczoraj, ${row.date}: ${orders} zamówień, ${fmt(revenue, 0)} złotych przychodu, ${fmt(spend, 0)} złotych wydatków.${roas != null ? ` ROAS ${fmt(roas)}x.` : ''}`
-    return { text: lines.join('\n'), speech, sources: ['recentTrend'], warnings: [] }
-  }
+          ? 'Solid operational day.'
+          : 'No sales data.'
 
   const lines = [
     `— YESTERDAY ${row.date} —`, '',
@@ -841,7 +654,7 @@ function buildYesterdayAnswer(ctx, lang) {
   return { text: lines.join('\n'), speech, sources: ['recentTrend'], warnings: [] }
 }
 
-function buildTodayVsYesterdayAnswer(ctx, lang) {
+function buildTodayVsYesterdayAnswer(ctx) {
   const trend   = ctx.recentTrend ?? []
   const today   = ctx.dataHealth?.today ?? ''
   const yDate   = today ? prevDay(today) : null
@@ -854,9 +667,7 @@ function buildTodayVsYesterdayAnswer(ctx, lang) {
   const yRow = (yDate ? trend.find(r => r.date === yDate) : null) ?? trend[1] ?? null
 
   if (!todayRow || !yRow) {
-    const msg = lang === 'pl'
-      ? `Brak danych do porównania. Dostępne daty: ${trend.map(r => r.date).join(', ') || 'brak'}.`
-      : `Cannot compare — missing data. Available dates: ${trend.map(r => r.date).join(', ') || 'none'}.`
+    const msg = `Cannot compare — missing data. Available dates: ${trend.map(r => r.date).join(', ') || 'none'}.`
     return { text: msg, speech: msg, sources: [], warnings: ['insufficient trend data'] }
   }
 
@@ -872,27 +683,10 @@ function buildTodayVsYesterdayAnswer(ctx, lang) {
   const revPct       = yRevenue > 0 ? (revDelta / yRevenue * 100) : null
 
   const verdict = revDelta > 0
-    ? (lang === 'pl' ? 'Dzisiaj lepiej niż wczoraj. Dobry trend, Lifidi.' : 'Today is ahead of yesterday. Good trend, Lifidi.')
+    ? 'Today is ahead of yesterday. Good trend, Lifidi.'
     : revDelta < 0
-      ? (lang === 'pl' ? 'Dziś poniżej wczoraj. Dzień jeszcze trwa — sprawdź kampanie.' : 'Today is behind yesterday. Day not over — check campaigns.')
-      : (lang === 'pl' ? 'Identycznie jak wczoraj.' : 'Identical to yesterday.')
-
-  if (lang === 'pl') {
-    const lines = [
-      `— DZIŚ vs WCZORAJ —`, '',
-      `                Wczoraj (${yRow.date})     Dziś (${todayRow.date ?? today})`,
-      `Zamówienia:     ${yOrders}                  ${todayOrders}   (${sign(orderDelta)}${orderDelta})`,
-      `Przychód:       ${fmt(yRevenue)} PLN         ${fmt(todayRevenue)} PLN   (${sign(revDelta)}${fmt(revDelta)}${revPct != null ? `, ${sign(revPct)}${revPct.toFixed(0)}%` : ''})`,
-      `Wydatki Meta:   ${fmt(ySpend)} PLN           ${fmt(todaySpend)} PLN   (${sign(spendDelta)}${fmt(spendDelta)})`,
-    ]
-    if (todayRow.real_roas != null && yRow.real_roas != null) {
-      const rd = (todayRow.real_roas ?? 0) - (yRow.real_roas ?? 0)
-      lines.push(`ROAS:           ${fmt(yRow.real_roas)}x                ${fmt(todayRow.real_roas)}x   (${sign(rd)}${fmt(rd)})`)
-    }
-    lines.push('', verdict)
-    const speech = `Dziś vs wczoraj. Przychód: ${fmt(todayRevenue, 0)} vs ${fmt(yRevenue, 0)} złotych (${sign(revDelta)}${fmt(revDelta, 0)} PLN). Zamówienia: ${todayOrders} vs ${yOrders}.`
-    return { text: lines.join('\n'), speech, sources: ['todayKPIs', 'recentTrend'], warnings: [] }
-  }
+      ? 'Today is behind yesterday. Day not over — check campaigns.'
+      : 'Identical to yesterday.'
 
   const lines = [
     `— TODAY vs YESTERDAY —`, '',
@@ -910,10 +704,10 @@ function buildTodayVsYesterdayAnswer(ctx, lang) {
   return { text: lines.join('\n'), speech, sources: ['todayKPIs', 'recentTrend'], warnings: [] }
 }
 
-function buildWeekSummaryAnswer(ctx, lang) {
+function buildWeekSummaryAnswer(ctx) {
   const trend = ctx.recentTrend ?? []
   if (trend.length === 0) {
-    const msg = lang === 'pl' ? 'Brak danych historycznych.' : 'No historical data available.'
+    const msg = 'No historical data available.'
     return { text: msg, speech: msg, sources: [], warnings: ['no recentTrend'] }
   }
   const today     = ctx.dataHealth?.today ?? (trend[0]?.date ?? '')
@@ -926,7 +720,7 @@ function buildWeekSummaryAnswer(ctx, lang) {
 
   const rows = trend.filter(r => r.date >= weekStartStr).sort((a, b) => a.date < b.date ? -1 : 1)
   if (rows.length === 0) {
-    const msg = lang === 'pl' ? 'Brak danych z tego tygodnia jeszcze.' : 'No data for this week yet.'
+    const msg = 'No data for this week yet.'
     return { text: msg, speech: msg, sources: ['recentTrend'], warnings: ['no this-week rows'] }
   }
 
@@ -935,20 +729,6 @@ function buildWeekSummaryAnswer(ctx, lang) {
   const totalSpend   = rows.reduce((s, r) => s + (r.meta_spend  ?? 0), 0)
   const wtdCPA       = totalSpend > 0 && totalOrders > 0 ? totalSpend / totalOrders : null
   const wtdROAS      = totalSpend > 0 ? totalRevenue / totalSpend : null
-
-  if (lang === 'pl') {
-    const lines = [
-      `— TEN TYDZIEŃ (${rows.length} dni, od ${weekStartStr}) —`, '',
-      `Zamówienia łącznie: ${totalOrders}`,
-      `Przychód łącznie: ${fmt(totalRevenue)} PLN`,
-      `Wydatki Meta łącznie: ${fmt(totalSpend)} PLN`,
-    ]
-    if (wtdCPA)  lines.push(`WTD CPA: ${fmt(wtdCPA)} PLN`)
-    if (wtdROAS) lines.push(`WTD ROAS: ${fmt(wtdROAS)}x`)
-    lines.push('', `${rows.length} ${rows.length === 1 ? 'dzień' : 'dni'} z danymi: ${rows.map(r => r.date).join(', ')}.`)
-    const speech = `Ten tydzień: ${totalOrders} zamówień, ${fmt(totalRevenue, 0)} złotych przychodu, ${fmt(totalSpend, 0)} złotych wydatków.${wtdROAS != null ? ` ROAS ${fmt(wtdROAS)}x.` : ''}`
-    return { text: lines.join('\n'), speech, sources: ['recentTrend'], warnings: [] }
-  }
 
   const lines = [
     `— THIS WEEK (${rows.length} day${rows.length > 1 ? 's' : ''}, since ${weekStartStr}) —`, '',
@@ -963,10 +743,10 @@ function buildWeekSummaryAnswer(ctx, lang) {
   return { text: lines.join('\n'), speech, sources: ['recentTrend'], warnings: [] }
 }
 
-function buildLast7Answer(ctx, lang) {
+function buildLast7Answer(ctx) {
   const trend = ctx.recentTrend ?? []
   if (trend.length === 0) {
-    const msg = lang === 'pl' ? 'Brak danych historycznych.' : 'No historical data available.'
+    const msg = 'No historical data available.'
     return { text: msg, speech: msg, sources: [], warnings: ['no recentTrend'] }
   }
   const rows = [...trend].sort((a, b) => a.date < b.date ? -1 : 1)
@@ -977,46 +757,148 @@ function buildLast7Answer(ctx, lang) {
   const avgCPA       = totalSpend > 0 && totalOrders > 0 ? totalSpend / totalOrders : null
   const avgROAS      = totalSpend > 0 ? totalRevenue / totalSpend : null
 
-  const label = lang === 'pl' ? 'OSTATNIE 7 DNI' : 'LAST 7 DAYS'
   const lines = [
-    `— ${label} (${rows[0]?.date} → ${rows[rows.length - 1]?.date}) —`, '',
-    lang === 'pl' ? `Łączne zamówienia: ${totalOrders}` : `Total orders: ${totalOrders}`,
-    lang === 'pl' ? `Łączny przychód: ${fmt(totalRevenue)} PLN` : `Total revenue: ${fmt(totalRevenue)} PLN`,
-    lang === 'pl' ? `Łączne wydatki Meta: ${fmt(totalSpend)} PLN` : `Total Meta spend: ${fmt(totalSpend)} PLN`,
+    `— LAST 7 DAYS (${rows[0]?.date} → ${rows[rows.length - 1]?.date}) —`, '',
+    `Total orders: ${totalOrders}`,
+    `Total revenue: ${fmt(totalRevenue)} PLN`,
+    `Total Meta spend: ${fmt(totalSpend)} PLN`,
   ]
-  if (avgCPA)  lines.push(lang === 'pl' ? `Średnie CPA: ${fmt(avgCPA)} PLN` : `Average CPA: ${fmt(avgCPA)} PLN`)
-  if (avgROAS) lines.push(lang === 'pl' ? `Średnie ROAS: ${fmt(avgROAS)}x` : `Average ROAS: ${fmt(avgROAS)}x`)
+  if (avgCPA)  lines.push(`Average CPA: ${fmt(avgCPA)} PLN`)
+  if (avgROAS) lines.push(`Average ROAS: ${fmt(avgROAS)}x`)
   lines.push('')
   rows.forEach(r => {
     const cpaStr  = r.real_cpa  != null ? `  CPA: ${fmt(r.real_cpa)}`   : ''
     const roasStr = r.real_roas != null ? `  ROAS: ${fmt(r.real_roas)}x` : ''
     lines.push(`  ${r.date}: ${r.wix_orders ?? 0} orders | ${fmt(r.wix_revenue ?? 0)} PLN | spend ${fmt(r.meta_spend ?? 0)}${cpaStr}${roasStr}`)
   })
-  const speech = lang === 'pl'
-    ? `Ostatnie 7 dni: ${totalOrders} zamówień łącznie, ${fmt(totalRevenue, 0)} złotych przychodu, ${fmt(totalSpend, 0)} złotych wydatków.${avgROAS != null ? ` Średnie ROAS ${fmt(avgROAS)}x.` : ''}`
-    : `Last 7 days: ${totalOrders} total orders, ${fmt(totalRevenue, 0)} PLN revenue, ${fmt(totalSpend, 0)} PLN spend.${avgROAS != null ? ` Average ROAS ${fmt(avgROAS)}x.` : ''}`
+  const speech = `Last 7 days: ${totalOrders} total orders, ${fmt(totalRevenue, 0)} PLN revenue, ${fmt(totalSpend, 0)} PLN spend.${avgROAS != null ? ` Average ROAS ${fmt(avgROAS)}x.` : ''}`
   return { text: lines.join('\n'), speech, sources: ['recentTrend'], warnings: [] }
 }
 
-function buildDeterministicAnswer(intent, context, lang) {
+function buildDeterministicAnswer(intent, context) {
   switch (intent) {
-    case 'revenue_today':        return buildRevenueAnswer(context, lang)
-    case 'profit_today':         return buildProfitAnswer(context, lang)
-    case 'orders_freshness':     return buildOrdersFreshnessAnswer(context, lang)
-    case 'meta_freshness':       return buildMetaFreshnessAnswer(context, lang)
-    case 'data_health':          return buildDataHealthAnswer(context, lang)
-    case 'campaigns_today':      return buildCampaignsAnswer(context, lang)
-    case 'jsu_funnel':           return buildJsuFunnelAnswer(context, lang)
-    case 'red_flags':            return buildRedFlagsAnswer(context, lang)
-    case 'yesterday':            return buildYesterdayAnswer(context, lang)
-    case 'today_vs_yesterday':   return buildTodayVsYesterdayAnswer(context, lang)
-    case 'week_summary':         return buildWeekSummaryAnswer(context, lang)
-    case 'last_7_days':          return buildLast7Answer(context, lang)
-    case 'sales_by_product':     return buildSalesByProductAnswer(context, lang)
-    case 'meta_efficiency':      return buildEfficiencyAnswer(context, lang)
-    case 'morning_brief':        return buildMorningBriefAnswer(context, lang)
+    case 'revenue_today':        return buildRevenueAnswer(context)
+    case 'profit_today':         return buildProfitAnswer(context)
+    case 'orders_freshness':     return buildOrdersFreshnessAnswer(context)
+    case 'meta_freshness':       return buildMetaFreshnessAnswer(context)
+    case 'data_health':          return buildDataHealthAnswer(context)
+    case 'campaigns_today':      return buildCampaignsAnswer(context)
+    case 'jsu_funnel':           return buildJsuFunnelAnswer(context)
+    case 'red_flags':            return buildRedFlagsAnswer(context)
+    case 'yesterday':            return buildYesterdayAnswer(context)
+    case 'today_vs_yesterday':   return buildTodayVsYesterdayAnswer(context)
+    case 'week_summary':         return buildWeekSummaryAnswer(context)
+    case 'last_7_days':          return buildLast7Answer(context)
+    case 'sales_by_product':     return buildSalesByProductAnswer(context)
+    case 'meta_efficiency':      return buildEfficiencyAnswer(context)
+    case 'morning_brief':        return null  // LLM-generated — handled separately in handler
     default:                     return null
   }
+}
+
+// ── Morning brief — LLM prompt builder ───────────────────────────────────────
+// Extracts verified facts, then asks LLM to write a FRESH brief each call.
+
+function buildMorningBriefLLMPrompt(ctx) {
+  const kpi   = ctx.todayKPIs
+  const trend = ctx.recentTrend ?? []
+  const tbp   = ctx.todayByProduct
+  const today = ctx.dataHealth?.today ?? ''
+  const yDate = today ? prevDay(today) : null
+  const yRow  = (yDate ? trend.find(r => r.date === yDate) : null) ?? trend[1] ?? null
+
+  const orders  = kpi?.wix_orders  ?? 0
+  const revenue = kpi?.wix_revenue ?? 0
+  const spend   = kpi?.meta_spend  ?? 0
+  const cpa     = kpi?.real_cpa
+  const roas    = kpi?.real_roas
+  const yOrders = yRow?.wix_orders  ?? null
+  const yRev    = yRow?.wix_revenue ?? null
+  const revDelta   = yRev    != null ? revenue - yRev    : null
+  const orderDelta = yOrders != null ? orders  - yOrders : null
+  const jsuCount = tbp?.jsu_course?.count   ?? 0
+  const memCount = tbp?.memory_pack?.count  ?? 0
+  const jzkCount = tbp?.jzk_language?.count ?? 0
+
+  const weekRows = trend.filter(r => r.date !== today).slice(0, 7)
+  const weekTotalRev    = weekRows.reduce((s, r) => s + (r.wix_revenue ?? 0), 0)
+  const weekTotalOrders = weekRows.reduce((s, r) => s + (r.wix_orders  ?? 0), 0)
+  const cpaRows         = weekRows.filter(r => r.real_cpa != null)
+  const weekAvgCpa      = cpaRows.length > 0 ? cpaRows.reduce((s, r) => s + (r.real_cpa ?? 0), 0) / cpaRows.length : null
+  const hasWeekData     = weekRows.length >= 2
+
+  const redFlags = []
+  if (cpa != null && cpa > 50) redFlags.push(`Real CPA ${fmt(cpa)} PLN — exceeds the 50 PLN alert threshold`)
+  if (spend > 0 && orders === 0) redFlags.push('Meta spend active, zero Wix orders')
+  if (roas != null && roas < 2 && spend > 50) redFlags.push(`ROAS ${fmt(roas)}x — below breakeven`)
+  if (memCount > 0 && jsuCount === 0 && memCount >= 3) redFlags.push(`${memCount} PP buyers with zero JSU conversions — check upsell sequence`)
+
+  // Tone hint based on data
+  let toneHint
+  if (spend > 0 && orders === 0) {
+    toneHint = 'TONE: composed alarm — budget is burning, no orders. Urgent but glacially calm.'
+  } else if (cpa != null && cpa > 60) {
+    toneHint = 'TONE: strategic concern — CPA is painfully high. Precise, measured, focused.'
+  } else if (redFlags.length > 0) {
+    toneHint = 'TONE: watchful composure — some flags present, sir is informed without panic.'
+  } else if (orders > 5 && (cpa == null || cpa < 35)) {
+    toneHint = 'TONE: dry satisfaction — a good day, delivered with aristocratic understatement.'
+  } else if (orders === 0 && spend === 0) {
+    toneHint = 'TONE: dignified patience — nothing has happened yet; the day is young.'
+  } else {
+    toneHint = 'TONE: neutral operational — moderate day, neither celebration nor alarm.'
+  }
+
+  // Build fact block
+  const facts = []
+  if (!kpi && trend.length === 0) {
+    facts.push('DATA: Not yet available for today.')
+  } else {
+    facts.push(`Date: ${today || 'unknown'}`)
+    facts.push(`Today: ${orders} orders | ${fmt(revenue)} PLN revenue | ${fmt(spend)} PLN ad spend`)
+    if (cpa != null) facts.push(`Real CPA: ${fmt(cpa)} PLN | Real ROAS: ${roas != null ? fmt(roas) + 'x' : 'N/A'}`)
+    if (revDelta != null || orderDelta != null) {
+      const parts = []
+      if (orderDelta != null) parts.push(`orders ${sign(orderDelta)}${orderDelta}`)
+      if (revDelta   != null) parts.push(`revenue ${sign(revDelta)}${fmt(revDelta)} PLN`)
+      facts.push(`vs Yesterday (${yRow?.date ?? '?'}): ${parts.join(' | ')}`)
+    } else {
+      facts.push('vs Yesterday: no comparison data')
+    }
+    if (hasWeekData) {
+      facts.push(`Last ${weekRows.length} days: ${fmt(weekTotalRev)} PLN revenue | ${weekTotalOrders} orders${weekAvgCpa != null ? ` | avg CPA ${fmt(weekAvgCpa)} PLN` : ''}`)
+    }
+    if (tbp) {
+      facts.push(`Sales by product today: PP ${memCount} | JSU ${jsuCount} | JZK ${jzkCount}`)
+    }
+    if (redFlags.length > 0) {
+      facts.push('ALERTS:')
+      redFlags.forEach(f => facts.push(`  ⚠ ${f}`))
+    } else {
+      facts.push('ALERTS: none')
+    }
+  }
+
+  return `You are generating the Morning Brief for Lifidi, sir.
+
+${toneHint}
+
+=== VERIFIED DATA — use ONLY these numbers, never invent ===
+${facts.join('\n')}
+===
+
+YOUR TASK: Write the complete Morning Brief. Every single brief MUST open with a DIFFERENT line — a fresh anecdote, philosophical aside, dry observation, or period reference in the GIENIU persona. Never reuse "The numbers are rather agreeable this morning, sir." The tone of the opening must match the data (see TONE above).
+
+STRUCTURE (follow exactly):
+1. Opening (1–2 sentences) — fresh, persona-true, tone-matched to data. UNIQUE each time.
+2. Today's numbers: orders, revenue, spend (CPA and ROAS if available)
+3. vs Yesterday comparison (if available)
+4. Week summary (if available)
+5. Sales by product (if available)
+6. Alert block with ⚠ prefix (if any)
+7. One recommendation: "I would venture to suggest, sir: ..."
+
+CRITICAL: Use ONLY the numbers from VERIFIED DATA. Respond only in English. "Sir" stays.`
 }
 
 // ── Context serialization for LLM ─────────────────────────────────────────────
@@ -1164,10 +1046,10 @@ Character pillars:
    • Meta = ad spend, CTR, CPC, CPM, Meta-attributed purchases (tends to overcount)
    • Real CPA = meta spend ÷ Wix orders (the honest number)
    • Real ROAS = Wix revenue ÷ meta spend (the honest number)
-4. LANGUAGE: Respond in the user's language (Polish or English). Persona works in both — "sir" stays regardless.
+4. LANGUAGE: Respond only in English. "Sir" stays regardless.
 5. CONCISION: A majordomo does not ramble. Make each sentence carry weight. Three sharp sentences beat two paragraphs.
 6. NEXT MOVE: Every performance answer ends with exactly one concrete recommendation, delivered as a loyal advisor's counsel:
-   "I would venture to suggest, sir..." / "Ośmielę się zasugerować, sir..."
+   "I would venture to suggest, sir..."
 7. NO RAW JSON OR DATA TABLES in the response.
 
 ━━━ BUSINESS KNOWLEDGE — WCEEN ━━━
@@ -1204,7 +1086,7 @@ SPEECH:
 
 // ── LLM call ──────────────────────────────────────────────────────────────────
 
-async function callOpenAI(userMessage, apiKey) {
+async function callOpenAI(userMessage, apiKey, { temperature = 0.3, max_tokens = 600 } = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 8000)
   try {
@@ -1217,8 +1099,8 @@ async function callOpenAI(userMessage, apiKey) {
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userMessage },
         ],
-        max_tokens: 600,
-        temperature: 0.3,
+        max_tokens,
+        temperature,
       }),
       signal: controller.signal,
     })
@@ -1230,7 +1112,7 @@ async function callOpenAI(userMessage, apiKey) {
   }
 }
 
-async function callAnthropic(userMessage, apiKey) {
+async function callAnthropic(userMessage, apiKey, { temperature = 0.3, max_tokens = 600 } = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 8000)
   try {
@@ -1243,7 +1125,8 @@ async function callAnthropic(userMessage, apiKey) {
       },
       body: JSON.stringify({
         model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
-        max_tokens: 600,
+        max_tokens,
+        temperature,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userMessage }],
       }),
@@ -1288,9 +1171,9 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: 'Method Not Allowed' }
   }
 
-  let message, context, language
+  let message, context
   try {
-    ;({ message, context, language } = JSON.parse(event.body ?? '{}'))
+    ;({ message, context } = JSON.parse(event.body ?? '{}'))
   } catch {
     return { statusCode: 400, body: 'Invalid JSON body' }
   }
@@ -1299,7 +1182,6 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: 'message field is required' }
   }
 
-  const lang = language === 'pl' ? 'pl' : 'en'
   const ctx = context ?? {}
 
   // LLM env vars — read early so deterministic paths can report llm.active
@@ -1313,14 +1195,14 @@ exports.handler = async (event) => {
 
   // 2 — Deterministic answer for known high-confidence intents
   if (confidence >= 0.4 && intent !== 'normal_chat') {
-    const det = buildDeterministicAnswer(intent, ctx, lang)
+    const det = buildDeterministicAnswer(intent, ctx)
     if (det) {
       return success({
         answerText: det.text,
         speechText: det.speech,
         intent,
         confidence,
-        language: lang,
+        language: 'en',
         dataSourcesUsed: det.sources,
         warnings: det.warnings ?? [],
         llmUsed: false,
@@ -1329,17 +1211,82 @@ exports.handler = async (event) => {
     }
   }
 
-  // 3 — LLM fallback
+  // 3 — Morning brief: always goes through LLM (temperature 0.85 for variety)
+  if (intent === 'morning_brief') {
+    if (!llmProviderEnv || (!openaiKeyEnv && !anthropicKeyEnv)) {
+      // No LLM configured — fall back to deterministic builder
+      const det = buildMorningBriefAnswer(ctx)
+      return success({
+        answerText: det.text,
+        speechText: det.speech,
+        intent,
+        confidence,
+        language: 'en',
+        dataSourcesUsed: det.sources,
+        warnings: ['LLM not configured — deterministic fallback used'],
+        llmUsed: false,
+        llm: { active: false, provider: null, used: false, model: null },
+      })
+    }
+
+    const briefPrompt = buildMorningBriefLLMPrompt(ctx)
+    const opts = { temperature: 0.85, max_tokens: 850 }
+
+    try {
+      let rawLLM, usedProvider, usedModel
+      if (llmProviderEnv === 'openai' && openaiKeyEnv) {
+        rawLLM = await callOpenAI(briefPrompt, openaiKeyEnv, opts)
+        usedProvider = 'openai'
+        usedModel = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+      } else if (anthropicKeyEnv) {
+        rawLLM = await callAnthropic(briefPrompt, anthropicKeyEnv, opts)
+        usedProvider = 'anthropic'
+        usedModel = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
+      } else {
+        rawLLM = await callOpenAI(briefPrompt, openaiKeyEnv, opts)
+        usedProvider = 'openai'
+        usedModel = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+      }
+
+      const { answerText, speechText } = parseLLMResponse(rawLLM)
+      return success({
+        answerText,
+        speechText,
+        intent,
+        confidence,
+        language: 'en',
+        dataSourcesUsed: ['llm', 'todayKPIs', 'recentTrend', 'todayByProduct'],
+        warnings: [],
+        llmUsed: true,
+        llmProvider: usedProvider,
+        llm: { active: true, provider: usedProvider, used: true, model: usedModel },
+      })
+    } catch (err) {
+      // LLM failed — fall back to deterministic so the user always gets a brief
+      const det = buildMorningBriefAnswer(ctx)
+      return success({
+        answerText: det.text,
+        speechText: det.speech,
+        intent,
+        confidence,
+        language: 'en',
+        dataSourcesUsed: det.sources,
+        warnings: [`LLM error (deterministic fallback): ${String(err).slice(0, 80)}`],
+        llmUsed: false,
+        llm: { active: llmActive, provider: llmProviderEnv ?? null, used: false, model: null },
+      })
+    }
+  }
+
+  // 4 — LLM fallback
   if (!llmProviderEnv || (!openaiKeyEnv && !anthropicKeyEnv)) {
-    const noLLMMsg = lang === 'pl'
-      ? 'Mogę odpowiadać na komendy dashboardowe, ale AI konwersacyjna nie jest jeszcze podłączona. Skonfiguruj LLM_PROVIDER i klucz API w Netlify.'
-      : 'I can answer operational dashboard commands, but conversational AI is not connected yet. Configure LLM_PROVIDER and API key in Netlify environment variables.'
+    const noLLMMsg = 'I can answer operational dashboard commands, but conversational AI is not connected yet. Configure LLM_PROVIDER and API key in Netlify environment variables.'
     return success({
       answerText: noLLMMsg,
-      speechText: lang === 'pl' ? 'Konwersacyjna AI nie jest podłączona.' : 'Conversational AI is not connected.',
+      speechText: 'Conversational AI is not connected.',
       intent: intent === 'normal_chat' ? 'normal_chat' : intent,
       confidence,
-      language: lang,
+      language: 'en',
       dataSourcesUsed: [],
       warnings: ['LLM not configured'],
       llmUsed: false,
@@ -1380,7 +1327,7 @@ exports.handler = async (event) => {
       speechText,
       intent,
       confidence,
-      language: lang,
+      language: 'en',
       dataSourcesUsed: ['llm', ...(contextText.includes('Today KPIs') ? ['todayKPIs'] : [])],
       warnings: [],
       llmUsed: true,
@@ -1388,15 +1335,13 @@ exports.handler = async (event) => {
       llm: { active: true, provider: usedProvider, used: true, model: usedModel },
     })
   } catch (err) {
-    const errMsg = lang === 'pl'
-      ? `Błąd AI: ${String(err).slice(0, 100)}. Spróbuj ponownie lub sprawdź klucz API.`
-      : `AI error: ${String(err).slice(0, 100)}. Retry or check your API key.`
+    const errMsg = `AI error: ${String(err).slice(0, 100)}. Retry or check your API key.`
     return success({
       answerText: errMsg,
-      speechText: lang === 'pl' ? 'Błąd połączenia z AI.' : 'AI connection error.',
+      speechText: 'AI connection error.',
       intent,
       confidence,
-      language: lang,
+      language: 'en',
       dataSourcesUsed: [],
       warnings: [`LLM error: ${String(err).slice(0, 100)}`],
       llmUsed: false,
