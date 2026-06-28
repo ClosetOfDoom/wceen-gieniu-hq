@@ -279,6 +279,25 @@ const CHIPS = [
   'What needs attention?',
 ]
 
+function getFallbackBanner(elevenError: string): string {
+  if (!elevenError) return 'ElevenLabs unavailable — using Browser TTS.'
+  if (/missing_api_key/i.test(elevenError))
+    return 'ElevenLabs: No API key set in Netlify env (ELEVENLABS_API_KEY). Using Browser TTS.'
+  if (/elevenStatus 401/i.test(elevenError))
+    return 'ElevenLabs: API key rejected (401) — update ELEVENLABS_API_KEY in Netlify env. Using Browser TTS.'
+  if (/elevenStatus 429/i.test(elevenError))
+    return 'ElevenLabs quota exhausted (429) — wait for monthly reset or upgrade. Using Browser TTS.'
+  if (/elevenStatus 404/i.test(elevenError))
+    return 'ElevenLabs: Voice not found (404) — check voice ID. Using Browser TTS.'
+  if (/elevenStatus 422/i.test(elevenError))
+    return 'ElevenLabs: Bad request (422) — check voice ID / model. Using Browser TTS.'
+  if (/elevenStatus (\d+)/i.test(elevenError)) {
+    const m = elevenError.match(/elevenStatus (\d+)/i)
+    return `ElevenLabs HTTP ${m?.[1] ?? '?'} — switched to Browser TTS.`
+  }
+  return `ElevenLabs error — switched to Browser TTS.`
+}
+
 function getTtsErrorMessage(err: string): string {
   if (!err) return ''
   if (err === 'no-pl-voice')
@@ -322,6 +341,7 @@ function RightPanel({
   onMuteToggle,
   transcript,
   ttsError,
+  ttsLastElevenError,
   ttsFallbackActive,
   onRetryElevenLabs,
   browserVoiceInfo,
@@ -348,6 +368,7 @@ function RightPanel({
   onMuteToggle: () => void
   transcript: string
   ttsError: string
+  ttsLastElevenError: string
   ttsFallbackActive: boolean
   onRetryElevenLabs: () => void
   browserVoiceInfo: { name: string; lang: string } | null
@@ -512,10 +533,10 @@ function RightPanel({
               </div>
             )}
 
-            {/* Fallback status notice */}
+            {/* Fallback status notice — shows real error reason */}
             {ttsFallbackActive && (
               <div style={{ marginTop: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', padding: '5px 8px', background: 'rgba(100,100,100,0.08)', borderRadius: '3px', borderLeft: '2px solid var(--border)' }}>
-                ElevenLabs limit reached — switched to Browser TTS.
+                {getFallbackBanner(ttsLastElevenError)}
               </div>
             )}
           </>
@@ -830,7 +851,8 @@ export default function App() {
     setSpeaking(false)
     if (result.ok && result.provider === 'browser') {
       setTtsFallbackActive(true)
-      if (result.error) setTtsLastElevenError(result.error)
+      if (result.elevenError) setTtsLastElevenError(result.elevenError)
+      else if (result.error) setTtsLastElevenError(result.error)
     } else if (!result.ok && !result.aborted) {
       if (result.provider === 'elevenlabs') setTtsLastElevenError(result.error ?? '')
       setTtsError(result.error ?? 'unknown error')
@@ -855,7 +877,8 @@ export default function App() {
       setSpeaking(false)
       if (res.ok && res.provider === 'browser') {
         setTtsFallbackActive(true)
-        if (res.error) setTtsLastElevenError(res.error)
+        if (res.elevenError) setTtsLastElevenError(res.elevenError)
+        else if (res.error) setTtsLastElevenError(res.error)
         if (!voiceUnlocked) setVoiceUnlocked(true)
       } else if (res.ok) {
         if (!voiceUnlocked) {
@@ -995,7 +1018,8 @@ export default function App() {
     setSpeaking(false)
     if (result.ok && result.provider === 'browser') {
       setTtsFallbackActive(true)
-      if (result.error) setTtsLastElevenError(result.error)
+      if (result.elevenError) setTtsLastElevenError(result.elevenError)
+      else if (result.error) setTtsLastElevenError(result.error)
       setVoiceUnlocked(true)
     } else if (result.ok) {
       setVoiceUnlocked(true)
@@ -1400,6 +1424,7 @@ export default function App() {
         onMuteToggle={() => setMuted(m => !m)}
         transcript={transcript}
         ttsError={ttsError}
+        ttsLastElevenError={ttsLastElevenError}
         ttsFallbackActive={ttsFallbackActive}
         onRetryElevenLabs={handleRetryElevenLabs}
         browserVoiceInfo={browserVoiceInfo}

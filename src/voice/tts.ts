@@ -135,6 +135,7 @@ export interface TTSResult {
   error?: string
   fallbackFrom?: 'elevenlabs'
   reason?: string
+  elevenError?: string
 }
 
 // ── Error classification ──────────────────────────────────────────────────────
@@ -296,13 +297,14 @@ export async function speak(text: string): Promise<TTSResult> {
       // ── Silent failover for quota / auth errors ───────────────────────────
       if (isQuotaOrAuthError(errorMsg)) {
         // eslint-disable-next-line no-console
-        console.warn('GIENIU TTS quota/auth error — switching to browser TTS:', errorMsg)
+        console.warn('GIENIU TTS error — switching to browser TTS:', errorMsg)
         markElevenLabsPaused('quota_or_api_error')
         const browserResult = await speakBrowser(cleanForEnglishTTS(text))
         return {
           ...browserResult,
           fallbackFrom: 'elevenlabs',
           reason:       'quota_or_api_error',
+          elevenError:  errorMsg,
         }
       }
 

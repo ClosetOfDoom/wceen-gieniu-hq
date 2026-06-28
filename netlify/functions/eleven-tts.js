@@ -222,9 +222,10 @@ export const handler = async (event) => {
     )
 
     if (!elevenRes.ok) {
-      const snippet = (await elevenRes.text().catch(() => '')).slice(0, 300)
+      const snippet = (await elevenRes.text().catch(() => '')).slice(0, 500)
       // ElevenLabs returns 401 for quota exhaustion (not 429) — detect it by body
       const stage = snippet.includes('quota_exceeded') ? 'quota_exceeded' : 'elevenlabs_http_error'
+      console.error(`GIENIU TTS ElevenLabs error | HTTP ${elevenRes.status} | voice: ${GEORGE_VOICE_ID} | model: ${modelId} | keyLen: ${diagnostics.keyLength} | body: ${snippet}`)
       return {
         statusCode: elevenRes.status,
         headers: { ...CORS, 'Content-Type': 'application/json' },
