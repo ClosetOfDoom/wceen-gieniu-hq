@@ -189,18 +189,10 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
             <Row label="Status" value="checking…" />
           ) : (
             <>
-              <Row label="wix_orders table"        value={dataContract.wixOrdersTableExists ? 'exists' : 'not found'} ok={dataContract.wixOrdersTableExists} />
-              <Row label="product_name column"     value={dataContract.hasProductName ? 'present' : 'absent'} ok={dataContract.hasProductName} />
-              <Row label="item_name column"        value={dataContract.hasItemName ? 'present' : 'absent'} ok={dataContract.hasItemName} />
-              <Row label="line_items column"       value={dataContract.hasLineItems ? 'present' : 'absent'} ok={dataContract.hasLineItems} />
-              <Row label="Product classification" value={dataContract.classificationAvailable ? 'available' : 'UNAVAILABLE — orders unclassifiable'} ok={dataContract.classificationAvailable} />
+              <Row label="orders table"             value={dataContract.wixOrdersTableExists ? 'found' : 'not found'} ok={dataContract.wixOrdersTableExists} />
+              <Row label="product_name_raw column" value={dataContract.hasProductNameRaw ? 'present' : 'absent'} ok={dataContract.hasProductNameRaw} />
+              <Row label="Product classification" value={dataContract.classificationAvailable ? 'available' : 'UNAVAILABLE'} ok={dataContract.classificationAvailable} />
               {dataContract.error && <Row label="Query error" value={dataContract.error} ok={false} />}
-              {!dataContract.classificationAvailable && (
-                <div style={{ marginTop: '10px', fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)', lineHeight: 1.5 }}>
-                  GIENIU cannot answer "how many memory bundles" until line items are saved per order.<br />
-                  Fix: extend Make → Wix scenario → see docs/wix_orders_product_mapping_fix.md
-                </div>
-              )}
             </>
           )}
         </div>

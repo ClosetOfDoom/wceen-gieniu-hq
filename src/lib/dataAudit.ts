@@ -1,16 +1,13 @@
 // Inspect what Wix order data is actually available in Supabase.
 // Used by DiagnosticsPanel to show data contract status.
-// If wix_orders table does not exist or has no product columns,
-// product classification is impossible and must be reported honestly.
+// Table is "orders" (not "wix_orders"). Primary classification column is product_name_raw.
 
 import { supabase } from '../services/supabase'
 import { PRODUCT_CLASSIFICATION_REASON } from './productClassifier'
 
 export interface DataContractReport {
   wixOrdersTableExists: boolean
-  hasProductName: boolean
-  hasItemName: boolean
-  hasLineItems: boolean
+  hasProductNameRaw: boolean
   classificationAvailable: boolean
   sampleRowCount: number
   checkedAt: string
@@ -22,16 +19,14 @@ export async function fetchDataContract(): Promise<DataContractReport> {
   const checkedAt = new Date().toISOString()
 
   const { data, error } = await supabase
-    .from('wix_orders')
-    .select('*')
+    .from('orders')
+    .select('product_name_raw')
     .limit(1)
 
   if (error) {
     return {
       wixOrdersTableExists: false,
-      hasProductName: false,
-      hasItemName: false,
-      hasLineItems: false,
+      hasProductNameRaw: false,
       classificationAvailable: false,
       sampleRowCount: 0,
       checkedAt,
@@ -41,16 +36,12 @@ export async function fetchDataContract(): Promise<DataContractReport> {
   }
 
   const row = data?.[0] ?? {}
-  const hasProductName = 'product_name' in row
-  const hasItemName = 'item_name' in row
-  const hasLineItems = 'line_items' in row
-  const classificationAvailable = hasProductName || hasItemName || hasLineItems
+  const hasProductNameRaw = 'product_name_raw' in row
+  const classificationAvailable = hasProductNameRaw
 
   return {
     wixOrdersTableExists: true,
-    hasProductName,
-    hasItemName,
-    hasLineItems,
+    hasProductNameRaw,
     classificationAvailable,
     sampleRowCount: data?.length ?? 0,
     checkedAt,
