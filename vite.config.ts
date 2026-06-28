@@ -18,11 +18,11 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'GIENIU HQ',
-        short_name: 'GIENIU',
+        name: 'STANLEY HQ',
+        short_name: 'STANLEY',
         description: 'Revenue and operations command center for WCEEN / Językozak',
-        theme_color: '#080e1c',
-        background_color: '#080e1c',
+        theme_color: '#0b1e29',
+        background_color: '#0b1e29',
         display: 'standalone',
         orientation: 'portrait-primary',
         scope: '/',
@@ -34,8 +34,9 @@ export default defineConfig({
         ]
       },
       workbox: {
-        cacheId: 'gieniu-hq-v7',
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        cacheId: 'gieniu-hq-v8',
+        // Exclude large avatar PNGs from SW precache (served via HTTP cache)
+        globPatterns: ['**/*.{js,css,html,ico,svg,woff2}', '**/icons/*.png'],
         skipWaiting: true,
         clientsClaim: true,
         runtimeCaching: [

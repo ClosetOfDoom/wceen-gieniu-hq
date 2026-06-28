@@ -106,7 +106,7 @@ export function StanleyOwl({ state, size = 100 }: StanleyOwlProps) {
         }}
       >
         <img
-          src="/owl.png"
+          src="/stanley-duck.png"
           alt="Stanley"
           width={size}
           height={size}
