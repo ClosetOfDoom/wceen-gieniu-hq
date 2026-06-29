@@ -10,6 +10,12 @@ import { InsightChart } from './components/InsightChart'
 import { CampaignsPanel } from './components/CampaignsPanel'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { StanleyOwl } from './components/StanleyOwl'
+import { GoalBar } from './components/GoalBar'
+import {
+  ppOrdersGoal, monthlyRevenueGoal, cpaGoal, roasGoal,
+  daysInMonthOf, sumMonthToDate,
+  MONTHLY_REVENUE_TARGET,
+} from './lib/goalProgress'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday,
@@ -648,6 +654,7 @@ export default function App() {
   // Dashboard data
   const [perf, setPerf]               = useState<DailyPerformance | null>(null)
   const [trend, setTrend]             = useState<DailyPerformance[]>([])
+  const [monthTrend, setMonthTrend]   = useState<DailyPerformance[]>([])
   const [ads, setAds]                 = useState<MetaAdDaily[]>([])
   const [runs, setRuns]               = useState<AutomationRun[]>([])
   const [metaStats, setMetaStats]     = useState<MetaStatsToday>({ meta_purchases: 0, latestDate: '', isStale: false })
@@ -745,6 +752,12 @@ export default function App() {
     setAdsLoading(false)
   }, [])
 
+  // Month-to-date trend (up to 31 days) — drives the monthly-revenue goal bar.
+  // Same read-only view as `trend`, just a wider window; summed by current month.
+  const loadMonthTrend = useCallback(async () => {
+    setMonthTrend(await fetchRecentPerformance(31))
+  }, [])
+
   const loadRuns = useCallback(async () => {
     setRunsLoading(true)
     setRuns(await fetchAutomationRuns())
@@ -819,9 +832,10 @@ export default function App() {
     loadOpsWeekReport()
     loadOrdersData()
     loadProfitData()
-    const interval = setInterval(() => { loadData(); loadAds(); loadProfitData(); loadOrdersData() }, 60 * 1000)
+    loadMonthTrend()
+    const interval = setInterval(() => { loadData(); loadAds(); loadProfitData(); loadOrdersData(); loadMonthTrend() }, 60 * 1000)
     return () => clearInterval(interval)
-  }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants, loadOpsWeekReport, loadOrdersData, loadProfitData])
+  }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants, loadOpsWeekReport, loadOrdersData, loadProfitData, loadMonthTrend])
 
   // ── Opening greeting ─────────────────────────────────────────────────────────
 
@@ -1209,6 +1223,18 @@ export default function App() {
   const cpaHigh      = displayPerf?.real_cpa != null && displayPerf.real_cpa > 50
   const jsuAlert     = !!jsuSummary && jsuSummary.bottleneck !== 'OK' && jsuSummary.bottleneck !== 'NO_DATA' && jsuSummary.bottleneck !== 'NO_SOURCES'
 
+  // ── Goal progress (Command Center bars) ──────────────────────────────────────
+  const goalToday   = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' }) // YYYY-MM-DD
+  const goalYyyymm  = goalToday.slice(0, 7)
+  const goalDayNum  = parseInt(goalToday.slice(8, 10), 10)
+  const goalDaysIn  = daysInMonthOf(goalYyyymm)
+  const mtdRevenue  = sumMonthToDate(monthTrend, goalYyyymm)
+  const ppOrdersToday = ordersData?.today_classified?.memory_pack?.count ?? null
+  const ppGoal      = ppOrdersGoal(ppOrdersToday)
+  const revGoal     = monthlyRevenueGoal(mtdRevenue, goalDayNum, goalDaysIn)
+  const cpaGoalRes  = cpaGoal(displayPerf?.real_cpa ?? null)
+  const roasGoalRes = roasGoal(displayPerf?.real_roas ?? null)
+
   // Profit KPI derived states — via mapProfitToSummary for canonical ProfitSummary shape
   const profitSummary     = profitData?.ok ? mapProfitToSummary(profitData) : null
   const profitEst         = profitSummary?.estimatedProfit ?? null
@@ -1231,7 +1257,7 @@ export default function App() {
           loading={loading}
           lastRefresh={lastRefresh}
           isStale={metaStats.isStale}
-          onRefresh={() => { loadData(); loadAds(); loadRuns(); loadJsuFunnel(); loadOrdersData(); loadProfitData() }}
+          onRefresh={() => { loadData(); loadAds(); loadRuns(); loadJsuFunnel(); loadOrdersData(); loadProfitData(); loadMonthTrend() }}
           theme={theme}
           onToggleTheme={toggleTheme}
         />
@@ -1265,6 +1291,44 @@ export default function App() {
                     />
                     <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Meta spend / Wix orders" />
                     <KPICard label="Real ROAS" value={fmtRoas(displayPerf?.real_roas)} sublabel="Wix revenue / Meta spend" />
+                  </div>
+
+                  {/* Goal progress bars — KPI realization vs business targets */}
+                  <div className="panel-illuminate card">
+                    <div className="section-title section-title-gold" style={{ marginBottom: '14px' }}>Goal Progress</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '18px 28px' }}>
+                      <GoalBar
+                        label="PP orders today"
+                        valueText={`${ppOrdersToday ?? '—'} / 18`}
+                        pct={ppGoal.pct}
+                        status={ppGoal.status}
+                        note={ppGoal.note}
+                      />
+                      <GoalBar
+                        label="Monthly revenue"
+                        valueText={`${fmtNum(Math.round(mtdRevenue))} / ${fmtNum(MONTHLY_REVENUE_TARGET)} PLN`}
+                        pct={revGoal.pct}
+                        status={revGoal.status}
+                        note={revGoal.note}
+                      />
+                      <GoalBar
+                        label="Real CPA (cel <40)"
+                        valueText={displayPerf?.real_cpa != null ? `${fmtPln(displayPerf.real_cpa)}` : '—'}
+                        pct={cpaGoalRes.pct}
+                        status={cpaGoalRes.status}
+                        note={cpaGoalRes.note}
+                      />
+                      <GoalBar
+                        label="Real ROAS (cel ≥2x)"
+                        valueText={fmtRoas(displayPerf?.real_roas)}
+                        pct={roasGoalRes.pct}
+                        status={roasGoalRes.status}
+                        note={roasGoalRes.note}
+                      />
+                    </div>
+                    <div style={{ marginTop: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted2)' }}>
+                      PP = Pakiet Pamięciowy (daily orders). Monthly revenue is month-to-date vs the 30 000 PLN target, paced by days elapsed. CPA/ROAS are blended (all products).
+                    </div>
                   </div>
 
                   {/* Row 2: margin detail + warnings */}

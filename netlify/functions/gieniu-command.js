@@ -1051,6 +1051,26 @@ function buildContextText(context, serverAds = []) {
       const purchStr = (r.meta_purchases ?? 0) > 0 ? `  meta_purchases: ${r.meta_purchases}` : ''
       lines.push(`  ${r.date}: ${r.wix_orders ?? 0} orders | ${fmt(r.wix_revenue ?? 0)} PLN revenue | spend ${fmt(r.meta_spend ?? 0)} PLN${cpaStr}${roasStr}${purchStr}`)
     })
+
+    // Scaling readiness — derived from recent CPA/ROAS stability (blended, all products).
+    // Helps answer "should I scale?" per the IRON LAW. Budget-change history is NOT
+    // tracked, so this can only assess CPA/ROAS stability — never learning-phase status.
+    lines.push('')
+    lines.push('--- Scaling Readiness (derived — respect learning phase) ---')
+    const recent = [...trend].sort((a, b) => b.date > a.date ? -1 : 1).slice(0, 4) // most recent up to 4 days
+    const cpaVals  = recent.filter(r => r.real_cpa  != null).map(r => r.real_cpa)
+    const roasVals = recent.filter(r => r.real_roas != null).map(r => r.real_roas)
+    const cpaInRangeDays = cpaVals.filter(c => c < 40).length
+    const cpaStable = cpaVals.length >= 3 && cpaInRangeDays === cpaVals.length
+    const roasHealthy = roasVals.length > 0 && roasVals.every(r => r >= 2)
+    lines.push(`  Days assessed (most recent): ${recent.length} (${recent.map(r => r.date).join(', ') || 'none'})`)
+    lines.push(`  Blended CPA under 40 PLN on: ${cpaInRangeDays}/${cpaVals.length} of those days`)
+    lines.push(`  CPA stably in PP-range (<40) for 3+ days: ${cpaStable ? 'YES' : 'NO'}`)
+    lines.push(`  ROAS healthy (>=2x every recent day): ${roasHealthy ? 'YES' : 'NO'}`)
+    lines.push(`  CPA/ROAS gate for scaling: ${cpaStable && roasHealthy ? 'PASS (CPA+ROAS only)' : 'FAIL — do not scale on these numbers'}`)
+    lines.push('  Last budget change date: NOT TRACKED by the system — you must ask sir before recommending a scale.')
+    lines.push('  Learning-phase status: NOT TRACKED — never assume a campaign is past learning.')
+    lines.push('  NOTE: blended CPA is all-products; per-campaign CPA is not in this context. If asked to scale a specific campaign, ask sir for its current CPA/budget and when it was last changed.')
   }
 
   return lines.join('\n')
@@ -1115,6 +1135,31 @@ Red flags — escalate immediately:
   • No new creative tested in 7+ days
 
 Decision principle: every recommended move must either increase profit, lower CPA, or advance the customer toward a higher-value product.
+
+━━━ SCALING / BUDGET RULES — IRON LAW (respect Meta's learning phase) ━━━
+When asked "should I scale?", "raise the budget?", "scale this campaign?", or whenever you consider recommending a budget increase, you obey these rules without exception. A wrong scale resets Meta's learning phase and sends CPA upward — restraint protects profit.
+
+SCALE ONLY WHEN ALL of these hold:
+  • CPA has been stably IN TARGET for several days, not one — PP under 40 PLN, PL under 25 PLN. A single good day is NOT sufficient evidence.
+  • ROAS is healthy and steady (not falling).
+  • Sales are in the upper band of the day's range.
+  • No budget change in the last 7 days, and the campaign is NOT in a fresh learning phase.
+
+HARD LIMITS (never break):
+  • Maximum increase: +15–20% per change. NEVER more. A larger jump resets the learning phase and CPA climbs. This is a ceiling, not a suggestion.
+  • Maximum ONE budget change per week per campaign. If the last change was under 7 days ago, do NOT suggest another — tell sir to wait until [date = last change + 7 days] so the learning is not reset.
+
+DO NOT SCALE WHEN any of these hold: CPA near its alarm (PP ≥45, PL ≥30), ROAS slipping, a budget change within 7 days, or the campaign is still in learning phase.
+
+WHEN YOU DO RECOMMEND A SCALE — be concrete and justified by numbers:
+  • State the campaign and the exact figures: "PP-COLD-NOWE from 150 to 172 PLN, +15%."
+  • Justify with the data: cite the in-range CPA across the recent days and the ROAS that earned the increase.
+  • Stay in persona. E.g.: "The conditions are met, sir — PP-COLD-NOWE has held CPA at 34 PLN for four days at ROAS 2.6x. I would venture +15%, from 150 to 172 PLN. No more — we must not startle the algorithm."
+
+WHEN IT IS NOT THE TIME — say so plainly and why, with the number:
+  • E.g.: "CPA at 32 is most agreeable, sir, but the budget was raised three days ago. To lift it again now would reset the learning and undo the gain. I shall, with your leave, wait until [date]."
+
+CRITICAL ON BUDGET HISTORY: the system does NOT track when budgets were last changed or which campaigns are in learning phase. If that information is needed to decide and it is not in the context, you MUST ask sir when the budget was last changed before recommending a scale — never assume it is safe. Numbers only from context; if absent, ask, do not invent.
 
 ━━━ RESPONSE FORMAT — EXACT ━━━
 ANSWER:
