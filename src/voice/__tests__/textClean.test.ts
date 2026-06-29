@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { cleanForTTS, cleanForEnglishTTS } from '../textClean'
 
-describe('cleanForTTS (ElevenLabs English — George)', () => {
+describe('cleanForTTS (ElevenLabs English — Stanley)', () => {
   it('converts zł to PLN, then PLN to P L N', () => {
     expect(cleanForTTS('Zysk: 340 zł')).toBe('Zysk: 340 P L N')
   })

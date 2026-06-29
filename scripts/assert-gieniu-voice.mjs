@@ -1,21 +1,23 @@
 #!/usr/bin/env node
-// Build-time assertion: George (JBFqnCBsd6RMkjVDRZzb) is the only ElevenLabs voice in the codebase.
+// Build-time assertion: Stanley (9Ft9sm9dzvprPILZmLJl) is the only ElevenLabs voice in the codebase.
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs'
 import { join, extname } from 'path'
 
-const ALLOWED_VOICE_ID   = 'JBFqnCBsd6RMkjVDRZzb'
-const ALLOWED_VOICE_NAME = 'George'
+const ALLOWED_VOICE_ID   = '9Ft9sm9dzvprPILZmLJl'
+const ALLOWED_VOICE_NAME = 'Stanley'
 
 const BAD_PATTERNS = [
   // Specific known-bad ElevenLabs voice IDs (as quoted strings or bare constants)
   { label: 'Daniel ElevenLabs voice ID', re: /onwK4e9ZLuTAKqWW03F9/g },
+  // George was the old placeholder voice — must not reappear anywhere
+  { label: 'old George ElevenLabs voice ID', re: /JBFqnCBsd6RMkjVDRZzb/g },
   // Voice names used as ElevenLabs voice selection (not just any mention of the name)
   { label: 'voice name Rachel in voice context', re: /Rachel.*voice|voice.*Rachel|voiceName.*Rachel|Rachel.*voiceName/gi },
   { label: 'voice name Bella in voice context',  re: /Bella.*voice|voice.*Bella|voiceName.*Bella|Bella.*voiceName/gi },
   // "female" in voice-selection context
   { label: 'female voice selection',  re: /['"](female)['"]/gi },
-  // Any quoted 20-char alphanumeric string that is NOT George's ID
+  // Any quoted 20-char alphanumeric string that is NOT Stanley's ID
   // (ElevenLabs voice IDs are exactly 20 chars)
   {
     label: 'unknown quoted ElevenLabs voice ID',
@@ -80,7 +82,7 @@ console.log(`Scanned ${scannedFiles} files.`)
 console.log()
 
 if (totalErrors === 0) {
-  console.log(`PASS — George (${ALLOWED_VOICE_ID}) is the only voice. No bad voices found.`)
+  console.log(`PASS — ${ALLOWED_VOICE_NAME} (${ALLOWED_VOICE_ID}) is the only voice. No bad voices found.`)
   process.exit(0)
 } else {
   console.error(`FAIL — ${totalErrors} bad voice reference(s) found. Fix before deploying.`)

@@ -135,7 +135,7 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
           <Row label="Build hash"     value={__BUILD_HASH__} ok />
           <Row label="Build time"     value={__BUILD_TIME__} />
           <Row label="TTS endpoint"   value="/.netlify/functions/gieniu-tts" ok />
-          <Row label="TTS voice"      value={ttsFallbackActive ? 'Browser TTS (ElevenLabs paused)' : 'George (ElevenLabs)'} ok={!ttsFallbackActive} />
+          <Row label="TTS voice"      value={ttsFallbackActive ? 'Browser TTS (ElevenLabs paused)' : 'Stanley (ElevenLabs)'} ok={!ttsFallbackActive} />
           {ttsLastElevenError && (
             <Row label="Last ElevenLabs error" value={ttsLastElevenError.slice(0, 80)} ok={false} />
           )}

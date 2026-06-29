@@ -3,7 +3,7 @@
 //
 // Provider routing order:
 //   1. GIENIU_TTS_PROVIDER=local + GIENIU_LOCAL_TTS_URL  → local/self-hosted TTS server
-//   2. ElevenLabs (George JBFqnCBsd6RMkjVDRZzb) if API key is set
+//   2. ElevenLabs (Stanley 9Ft9sm9dzvprPILZmLJl) if API key is set
 //   3. voice_unavailable JSON (text/chat still works)
 //
 // No browser speechSynthesis fallback — voice is always server-provided.
@@ -62,6 +62,6 @@ export async function handler(event, context) {
     }
   }
 
-  // ── Route 2: ElevenLabs George ───────────────────────────────────────────
+  // ── Route 2: ElevenLabs Stanley ──────────────────────────────────────────
   return elevenTtsHandler(event, context)
 }

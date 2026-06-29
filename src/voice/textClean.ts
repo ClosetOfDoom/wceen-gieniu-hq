@@ -1,6 +1,6 @@
 // Text cleaning before TTS.
 //
-// cleanForTTS        — ElevenLabs (George, English voice)
+// cleanForTTS        — ElevenLabs (Stanley, English voice)
 // cleanForEnglishTTS — Browser English voice (fallback)
 
 // ── Shared base (pure normalization, no language-specific transforms) ──────────
@@ -32,7 +32,7 @@ function spellAbbrevs(text: string): string {
     .replace(/\bWCSEEN\b/gi, 'W C E E N')
 }
 
-// ── ElevenLabs (George, English voice) ───────────────────────────────────────
+// ── ElevenLabs (Stanley, English voice) ──────────────────────────────────────
 
 export function cleanForTTS(text: string): string {
   return spellAbbrevs(cleanBase(text))

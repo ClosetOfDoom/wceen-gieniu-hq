@@ -1,6 +1,6 @@
 export const GIENIU_VOICE = {
-  name: 'George',
-  id: 'JBFqnCBsd6RMkjVDRZzb',
+  name: 'Stanley',
+  id: '9Ft9sm9dzvprPILZmLJl',
 } as const
 
 export const GIENIU_VOICE_ID   = GIENIU_VOICE.id

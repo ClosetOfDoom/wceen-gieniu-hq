@@ -295,7 +295,7 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
   if (c.includes('Gieniu voice is active.')) {
     pass("App.tsx uses 'Gieniu voice is active.' as English browser TTS test phrase")
   } else {
-    fail("App.tsx handleStartGeorgeVoice must use 'Gieniu voice is active.' when browser TTS is active (English)")
+    fail("App.tsx handleStartStanleyVoice must use 'Gieniu voice is active.' when browser TTS is active (English)")
   }
 
   // Language selector in RightPanel

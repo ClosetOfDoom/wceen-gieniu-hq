@@ -4,8 +4,8 @@
 // GET /.netlify/functions/tts-health
 // GET /.netlify/functions/tts-health?live=1
 
-const GEORGE_VOICE_ID   = 'JBFqnCBsd6RMkjVDRZzb'
-const GEORGE_VOICE_NAME = 'George'
+const STANLEY_VOICE_ID   = '9Ft9sm9dzvprPILZmLJl'
+const STANLEY_VOICE_NAME = 'Stanley'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -58,8 +58,8 @@ export const handler = async (event) => {
   const liveMode  = event.queryStringParameters?.live === '1'
 
   const base = {
-    voiceId:   GEORGE_VOICE_ID,
-    voiceName: GEORGE_VOICE_NAME,
+    voiceId:   STANLEY_VOICE_ID,
+    voiceName: STANLEY_VOICE_NAME,
     modelId,
     outFormat,
     liveMode,
@@ -102,12 +102,12 @@ export const handler = async (event) => {
 
   try {
     const res = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${GEORGE_VOICE_ID}?output_format=${outFormat}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${STANLEY_VOICE_ID}?output_format=${outFormat}`,
       {
         method:  'POST',
         headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
         body:    JSON.stringify({
-          text:           'George.',
+          text:           'Stanley.',
           model_id:       modelId,
           voice_settings: { stability: 0.45, similarity_boost: 0.75 },
         }),
@@ -125,7 +125,7 @@ export const handler = async (event) => {
 
     let stage   = ok ? 'ok' : (isQuota ? 'quota_exceeded' : 'elevenlabs_http_error')
     let message = ok
-      ? 'George is ready.'
+      ? 'Stanley is ready.'
       : isQuota
         ? 'ElevenLabs quota exhausted. Upgrade plan or wait for monthly reset.'
         : `ElevenLabs returned HTTP ${res.status}. ${bodyText ?? ''}`

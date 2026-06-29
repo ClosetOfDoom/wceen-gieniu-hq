@@ -1,9 +1,9 @@
 // Netlify Function: eleven-tts
 // Proxies TTS requests to ElevenLabs keeping the API key server-side.
-// Voice is ALWAYS George (JBFqnCBsd6RMkjVDRZzb) — env ELEVENLABS_VOICE_ID is intentionally ignored.
+// Voice is ALWAYS Stanley (9Ft9sm9dzvprPILZmLJl) — env ELEVENLABS_VOICE_ID is intentionally ignored.
 
-const GEORGE_VOICE_ID   = 'JBFqnCBsd6RMkjVDRZzb'
-const GEORGE_VOICE_NAME = 'George'
+const STANLEY_VOICE_ID   = '9Ft9sm9dzvprPILZmLJl'
+const STANLEY_VOICE_NAME = 'Stanley'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -69,8 +69,8 @@ function errorBody(stage, diagnostics, extra = {}) {
   const obj = {
     ok: false,
     stage,
-    voiceId:          GEORGE_VOICE_ID,
-    voiceName:        GEORGE_VOICE_NAME,
+    voiceId:          STANLEY_VOICE_ID,
+    voiceName:        STANLEY_VOICE_NAME,
     ...diagnostics,
     elevenStatus:      extra.elevenStatus ?? null,
     elevenBodySnippet: extra.elevenBodySnippet ?? null,
@@ -94,12 +94,12 @@ export const handler = async (event) => {
   if (event.httpMethod === 'GET') {
     const debugMode = event.queryStringParameters?.debug === '1'
     const info = {
-      voiceId:   GEORGE_VOICE_ID,
-      voiceName: GEORGE_VOICE_NAME,
+      voiceId:   STANLEY_VOICE_ID,
+      voiceName: STANLEY_VOICE_NAME,
       ...diagnostics,
       modelId,
       outFormat,
-      endpoint:  `https://api.elevenlabs.io/v1/text-to-speech/${GEORGE_VOICE_ID}?output_format=${outFormat}`,
+      endpoint:  `https://api.elevenlabs.io/v1/text-to-speech/${STANLEY_VOICE_ID}?output_format=${outFormat}`,
     }
 
     // debug=1 without live=1: return static key diagnostics (no ElevenLabs call, no quota burn)
@@ -129,11 +129,11 @@ export const handler = async (event) => {
 
     try {
       const pingRes = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${GEORGE_VOICE_ID}?output_format=${outFormat}`,
+        `https://api.elevenlabs.io/v1/text-to-speech/${STANLEY_VOICE_ID}?output_format=${outFormat}`,
         {
           method:  'POST',
           headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
-          body:    JSON.stringify({ text: 'George.', model_id: modelId, voice_settings: { stability: 0.45, similarity_boost: 0.75 } }),
+          body:    JSON.stringify({ text: 'Stanley.', model_id: modelId, voice_settings: { stability: 0.45, similarity_boost: 0.75 } }),
         }
       )
       const elevenContentType = pingRes.headers.get('content-type') ?? null
@@ -190,7 +190,7 @@ export const handler = async (event) => {
 
   // Use debug text if ?debug=1 so callers can test without providing text
   const isDebug = event.queryStringParameters?.debug === '1'
-  const text    = isDebug ? 'George voice check.' : (body.text || '').slice(0, 2500)
+  const text    = isDebug ? 'Stanley voice check.' : (body.text || '').slice(0, 2500)
 
   if (!text) {
     return {
@@ -204,7 +204,7 @@ export const handler = async (event) => {
   // Answers: is the key reaching the function (keyLen/keySource/hasKey), which
   // voice_id and model_id are actually sent, and what output format.
   console.log(
-    `GIENIU TTS attempt | voice_id: ${GEORGE_VOICE_ID} (${GEORGE_VOICE_NAME}) | model_id: ${modelId} | outFormat: ${outFormat}` +
+    `GIENIU TTS attempt | voice_id: ${STANLEY_VOICE_ID} (${STANLEY_VOICE_NAME}) | model_id: ${modelId} | outFormat: ${outFormat}` +
     ` | keySource: ${diagnostics.apiKeySource} | keyLen: ${diagnostics.keyLength} | hasKey: ${diagnostics.hasApiKey}` +
     ` | textLen: ${text.length}`
   )
@@ -212,7 +212,7 @@ export const handler = async (event) => {
   // ── ElevenLabs request ──────────────────────────────────────────────────────
   try {
     const elevenRes = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${GEORGE_VOICE_ID}?output_format=${outFormat}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${STANLEY_VOICE_ID}?output_format=${outFormat}`,
       {
         method:  'POST',
         headers: {
@@ -232,7 +232,7 @@ export const handler = async (event) => {
       const snippet = (await elevenRes.text().catch(() => '')).slice(0, 500)
       // ElevenLabs returns 401 for quota exhaustion (not 429) — detect it by body
       const stage = snippet.includes('quota_exceeded') ? 'quota_exceeded' : 'elevenlabs_http_error'
-      console.error(`GIENIU TTS ElevenLabs error | HTTP ${elevenRes.status} | voice: ${GEORGE_VOICE_ID} | model: ${modelId} | keyLen: ${diagnostics.keyLength} | body: ${snippet}`)
+      console.error(`GIENIU TTS ElevenLabs error | HTTP ${elevenRes.status} | voice: ${STANLEY_VOICE_ID} | model: ${modelId} | keyLen: ${diagnostics.keyLength} | body: ${snippet}`)
       return {
         statusCode: elevenRes.status,
         headers: { ...CORS, 'Content-Type': 'application/json' },
@@ -245,7 +245,7 @@ export const handler = async (event) => {
 
     const audioBuffer = await elevenRes.arrayBuffer()
     console.log(
-      `GIENIU TTS success | HTTP ${elevenRes.status} | voice_id: ${GEORGE_VOICE_ID} | model_id: ${modelId}` +
+      `GIENIU TTS success | HTTP ${elevenRes.status} | voice_id: ${STANLEY_VOICE_ID} | model_id: ${modelId}` +
       ` | keyLen: ${diagnostics.keyLength} | bytes: ${audioBuffer.byteLength}`
     )
     if (audioBuffer.byteLength === 0) {

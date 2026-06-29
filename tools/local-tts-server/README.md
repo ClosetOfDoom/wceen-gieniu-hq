@@ -65,7 +65,7 @@ GIENIU_TTS_PROVIDER=local + GIENIU_LOCAL_TTS_URL set
   → call local server
 
 GIENIU_TTS_PROVIDER not set (default)
-  → ElevenLabs George (JBFqnCBsd6RMkjVDRZzb) — requires ELEVENLABS_API_KEY
+  → ElevenLabs Stanley (9Ft9sm9dzvprPILZmLJl) — requires ELEVENLABS_API_KEY
 
 ElevenLabs quota exhausted or key missing
   → voice_unavailable JSON — text/chat still works

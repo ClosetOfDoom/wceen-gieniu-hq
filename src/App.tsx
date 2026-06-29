@@ -334,7 +334,7 @@ function RightPanel({
   chart,
   lastQuery,
   voiceUnlocked,
-  onStartGeorgeVoice,
+  onStartStanleyVoice,
   onWake,
   onQuery,
   speaking,
@@ -361,7 +361,7 @@ function RightPanel({
   chart?: InsightChartSpec
   lastQuery?: string
   voiceUnlocked?: boolean
-  onStartGeorgeVoice?: () => void
+  onStartStanleyVoice?: () => void
   onWake?: () => void
   onQuery: (query: string) => void
   speaking: boolean
@@ -448,7 +448,7 @@ function RightPanel({
               <div style={{ marginTop: chart ? '14px' : '4px' }}>
                 <button
                   className="wake-btn-illuminate"
-                  onClick={onWake ?? onStartGeorgeVoice}
+                  onClick={onWake ?? onStartStanleyVoice}
                   style={{
                     display: 'block', width: '100%',
                     background: 'transparent',
@@ -604,7 +604,7 @@ function RightPanel({
           <button
             className={`btn-mic${listening ? ' listening' : ''}`}
             onClick={onMic}
-            title={speaking ? 'Interrupt George' : listening ? 'Stop listening' : 'Start voice input'}
+            title={speaking ? 'Interrupt Stanley' : listening ? 'Stop listening' : 'Start voice input'}
           >
             {listening ? '⏹' : speaking ? '✋' : '🎙'}
           </button>
@@ -1006,9 +1006,9 @@ export default function App() {
     }
   }
 
-  // ── Start George voice ────────────────────────────────────────────────────────
+  // ── Start Stanley voice ───────────────────────────────────────────────────────
 
-  async function handleStartGeorgeVoice() {
+  async function handleStartStanleyVoice() {
     prewarmAudio()
     setTtsError('')
     // eslint-disable-next-line no-console
@@ -1417,7 +1417,7 @@ export default function App() {
         chart={responseChart}
         lastQuery={lastQuery}
         voiceUnlocked={voiceUnlocked}
-        onStartGeorgeVoice={handleStartGeorgeVoice}
+        onStartStanleyVoice={handleStartStanleyVoice}
         onWake={handleWakeAndBrief}
         onQuery={handleIntentQuery}
         speaking={speaking}

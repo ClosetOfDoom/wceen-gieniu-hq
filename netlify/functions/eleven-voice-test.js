@@ -1,7 +1,7 @@
 // Netlify Function: eleven-voice-test
-// Voice preview — always uses George (JBFqnCBsd6RMkjVDRZzb).
+// Voice preview — always uses Stanley (9Ft9sm9dzvprPILZmLJl).
 
-const GEORGE_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb'
+const STANLEY_VOICE_ID = '9Ft9sm9dzvprPILZmLJl'
 
 export const handler = async (event) => {
   const headers = {
@@ -25,13 +25,13 @@ export const handler = async (event) => {
   let body
   try { body = JSON.parse(event.body ?? '{}') } catch { return { statusCode: 400, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Invalid JSON' }) } }
 
-  // Always George — never override
-  const voiceId      = GEORGE_VOICE_ID
-  const text         = (body.text || 'Operational snapshot. George voice check.').slice(0, 500)
+  // Always Stanley — never override
+  const voiceId      = STANLEY_VOICE_ID
+  const text         = (body.text || 'Operational snapshot. Stanley voice check.').slice(0, 500)
   const outputFormat = process.env.ELEVENLABS_OUTPUT_FORMAT || 'mp3_44100_128'
   const modelId      = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2'
 
-  console.log(`GIENIU TTS voice used: George ${GEORGE_VOICE_ID}`)
+  console.log(`GIENIU TTS voice used: Stanley ${STANLEY_VOICE_ID}`)
 
   try {
     const res = await fetch(
