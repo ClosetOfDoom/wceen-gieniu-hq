@@ -15,17 +15,20 @@ interface Props {
   gieniuResponse: string
 }
 
+// Semantic accent colours — theme-agnostic (saturated, readable on cream and on
+// forest-dark). Neutrals (backgrounds, borders, muted text) use CSS theme tokens
+// so this panel follows the active light/dark theme like the rest of the app.
 const BOTTLENECK_COLOR: Record<FunnelBottleneck, string> = {
-  NO_DATA:         '#555',
-  NO_SOURCES:      '#888',
-  DELIVERABILITY:  '#ff6b00',
-  OPENS:           '#ff6b00',
-  CLICKS:          '#ff6b00',
-  REGISTRATIONS:   '#ff6b00',
-  ATTENDANCE:      '#e8ff00',
-  PURCHASE_PITCH:  '#ff6b00',
-  PRODUCT_MAPPING: '#ff3333',
-  OK:              '#00ff88',
+  NO_DATA:         'var(--muted2)',
+  NO_SOURCES:      'var(--muted)',
+  DELIVERABILITY:  'var(--orange)',
+  OPENS:           'var(--orange)',
+  CLICKS:          'var(--orange)',
+  REGISTRATIONS:   'var(--orange)',
+  ATTENDANCE:      'var(--amber)',
+  PURCHASE_PITCH:  'var(--orange)',
+  PRODUCT_MAPPING: 'var(--red)',
+  OK:              'var(--emerald)',
 }
 
 const BOTTLENECK_LABEL: Record<FunnelBottleneck, string> = {
@@ -69,25 +72,25 @@ function FunnelStep({
   return (
     <div style={{
       flex: '1 1 100px',
-      background: '#0d0d0d',
-      border: `1px solid ${dim ? '#2a2a2a' : '#333'}`,
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
       borderRadius: '8px',
       padding: '10px 12px',
       minWidth: '90px',
     }}>
-      <div style={{ fontSize: '0.62rem', color: '#555', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
+      <div style={{ fontSize: '0.62rem', color: 'var(--muted)', fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
         {label}
       </div>
-      <div style={{ fontSize: missing ? '1rem' : '1.2rem', fontWeight: 700, color: dim ? '#444' : '#e0e0e0', fontVariantNumeric: 'tabular-nums' }}>
+      <div style={{ fontSize: missing ? '1rem' : '1.3rem', fontWeight: 700, color: dim ? 'var(--muted2)' : 'var(--text)', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>
         {missing ? '—' : value}
       </div>
       {statusText && (
-        <div style={{ fontSize: '0.62rem', color: '#555', marginTop: '3px', fontFamily: 'monospace', fontStyle: 'italic' }}>
+        <div style={{ fontSize: '0.62rem', color: 'var(--muted2)', marginTop: '3px', fontFamily: 'var(--font-mono)', fontStyle: 'italic' }}>
           {statusText}
         </div>
       )}
       {rate !== undefined && !notPopulated && !notMapped && (
-        <div style={{ fontSize: '0.68rem', color: missing ? '#333' : '#888', marginTop: '3px', fontFamily: 'monospace' }}>
+        <div style={{ fontSize: '0.68rem', color: missing ? 'var(--muted2)' : 'var(--muted)', marginTop: '3px', fontFamily: 'var(--font-mono)' }}>
           {missing ? '—' : (rate != null ? pct(rate) : '—')} {rateLabel ?? ''}
         </div>
       )}
@@ -98,17 +101,17 @@ function FunnelStep({
 function ClickMeetingStatus({ debug }: { debug?: JsuFunnelDebug }) {
   if (debug && (debug.sessionsCount > 0 || debug.participantsCount > 0)) {
     return (
-      <div style={{ background: '#0a0a0a', border: '1px dashed #555', borderRadius: '8px', padding: '12px 16px', fontSize: '0.78rem', color: '#888', fontFamily: 'monospace', lineHeight: 1.7 }}>
-        <div style={{ color: '#e8ff00', fontWeight: 700, marginBottom: '4px' }}>ClickMeeting sessions found</div>
-        {debug.sessionsCount > 0 && <div>✓ Sessions in DB: <span style={{ color: '#e0e0e0' }}>{debug.sessionsCount}</span></div>}
-        {debug.participantsCount > 0 && <div>✓ Participants in DB: <span style={{ color: '#e0e0e0' }}>{debug.participantsCount}</span></div>}
-        {debug.sessionsCount > 0 && debug.participantsCount === 0 && <div style={{ color: '#ff6b00' }}>⚠ No participant rows yet — Make may still be syncing</div>}
-        <div style={{ marginTop: '4px', color: '#555', fontSize: '0.7rem' }}>Email/ESP data missing — deliverability not assessable.</div>
+      <div style={{ background: 'var(--surface2)', border: '1px dashed var(--border)', borderRadius: '8px', padding: '12px 16px', fontSize: '0.78rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.7 }}>
+        <div style={{ color: 'var(--amber)', fontWeight: 700, marginBottom: '4px' }}>ClickMeeting sessions found</div>
+        {debug.sessionsCount > 0 && <div>✓ Sessions in DB: <span style={{ color: 'var(--text)' }}>{debug.sessionsCount}</span></div>}
+        {debug.participantsCount > 0 && <div>✓ Participants in DB: <span style={{ color: 'var(--text)' }}>{debug.participantsCount}</span></div>}
+        {debug.sessionsCount > 0 && debug.participantsCount === 0 && <div style={{ color: 'var(--orange)' }}>⚠ No participant rows yet — Make may still be syncing</div>}
+        <div style={{ marginTop: '4px', color: 'var(--muted2)', fontSize: '0.7rem' }}>Email/ESP data missing — deliverability not assessable.</div>
       </div>
     )
   }
   return (
-    <div style={{ background: '#0a0a0a', border: '1px dashed #333', borderRadius: '8px', padding: '12px 16px', fontSize: '0.78rem', color: '#888', fontFamily: 'monospace', lineHeight: 1.6 }}>
+    <div style={{ background: 'var(--surface2)', border: '1px dashed var(--border)', borderRadius: '8px', padding: '12px 16px', fontSize: '0.78rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
       No ClickMeeting data yet — registrations and attendance cannot be assessed.
       <br />
       Connect Make → ClickMeeting API → Supabase (webinar_sessions, webinar_participants).
@@ -122,31 +125,31 @@ function DataDebugBar({ debug }: { debug?: JsuFunnelDebug }) {
     <div style={{
       marginTop: '6px',
       padding: '5px 10px',
-      background: '#060606',
-      border: '1px solid #1a1a1a',
+      background: 'var(--surface2)',
+      border: '1px solid var(--border)',
       borderRadius: '4px',
-      fontFamily: 'monospace',
+      fontFamily: 'var(--font-mono)',
       fontSize: '0.64rem',
-      color: '#444',
+      color: 'var(--muted2)',
       display: 'flex',
       gap: '16px',
       flexWrap: 'wrap',
     }}>
       <span>data debug:</span>
-      <span>source: <span style={{ color: debug.source === 'raw_tables' ? '#00ff88' : '#666' }}>{debug.source}</span></span>
-      <span>sessions: <span style={{ color: debug.sessionsCount > 0 ? '#00ff88' : '#555' }}>{debug.sessionsCount}</span></span>
-      <span>participants: <span style={{ color: debug.participantsCount > 0 ? '#00ff88' : '#ff6b00' }}>{debug.participantsCount}</span></span>
+      <span>source: <span style={{ color: debug.source === 'raw_tables' ? 'var(--emerald)' : 'var(--muted)' }}>{debug.source}</span></span>
+      <span>sessions: <span style={{ color: debug.sessionsCount > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>{debug.sessionsCount}</span></span>
+      <span>participants: <span style={{ color: debug.participantsCount > 0 ? 'var(--emerald)' : 'var(--orange)' }}>{debug.participantsCount}</span></span>
       {debug.rawParticipants != null && debug.rawParticipants !== debug.participantsCount && (
-        <span>raw: <span style={{ color: debug.rawParticipants > 0 ? '#e8ff00' : '#555' }}>{debug.rawParticipants}</span></span>
+        <span>raw: <span style={{ color: debug.rawParticipants > 0 ? 'var(--amber)' : 'var(--muted2)' }}>{debug.rawParticipants}</span></span>
       )}
-      {debug.uniqueEmails != null && <span>unique: <span style={{ color: debug.uniqueEmails > 0 ? '#e0e0e0' : '#555' }}>{debug.uniqueEmails}</span></span>}
-      {debug.hasMismatch && <span style={{ color: '#ff6b00' }}>⚠ view mismatch: raw participants available</span>}
-      {debug.registrationsFromParticipants && <span style={{ color: '#e8ff00' }}>reg from participants ↑</span>}
-      {debug.attendanceStatus === 'not_populated' && <span style={{ color: '#ff6b00' }}>attendance: not populated</span>}
-      {debug.purchaseMappingStatus === 'not_mapped_yet' && <span style={{ color: '#555' }}>purchases: not mapped</span>}
-      {debug.latestSessionDate && <span>latest: <span style={{ color: '#666' }}>{debug.latestSessionDate}{debug.latestSessionName ? ` / ${debug.latestSessionName.slice(0, 30)}` : ''}</span></span>}
-      {debug.lastError && <span style={{ color: '#ff6b00' }}>error: {debug.lastError.slice(0, 60)}</span>}
-      <span style={{ color: '#2a2a2a', marginLeft: 'auto' }}>schedule: Tue 18:00=JZK · Thu 18:00=JSU</span>
+      {debug.uniqueEmails != null && <span>unique: <span style={{ color: debug.uniqueEmails > 0 ? 'var(--text)' : 'var(--muted2)' }}>{debug.uniqueEmails}</span></span>}
+      {debug.hasMismatch && <span style={{ color: 'var(--orange)' }}>⚠ view mismatch: raw participants available</span>}
+      {debug.registrationsFromParticipants && <span style={{ color: 'var(--amber)' }}>reg from participants ↑</span>}
+      {debug.attendanceStatus === 'not_populated' && <span style={{ color: 'var(--orange)' }}>attendance: not populated</span>}
+      {debug.purchaseMappingStatus === 'not_mapped_yet' && <span style={{ color: 'var(--muted2)' }}>purchases: not mapped</span>}
+      {debug.latestSessionDate && <span>latest: <span style={{ color: 'var(--muted)' }}>{debug.latestSessionDate}{debug.latestSessionName ? ` / ${debug.latestSessionName.slice(0, 30)}` : ''}</span></span>}
+      {debug.lastError && <span style={{ color: 'var(--orange)' }}>error: {debug.lastError.slice(0, 60)}</span>}
+      <span style={{ color: 'var(--muted2)', marginLeft: 'auto' }}>schedule: Tue 18:00=JZK · Thu 18:00=JSU</span>
     </div>
   )
 }
@@ -157,45 +160,45 @@ function SessionRow({ s, attendancePopulated, purchasesMapped }: {
   purchasesMapped: boolean
 }) {
   const bottleneckColor = (() => {
-    if (attendancePopulated && s.attendance_rate_pct !== null && s.attendance_rate_pct < 60) return '#ff6b00'
-    if (purchasesMapped && s.purchase_rate_pct !== null && s.purchase_rate_pct < 3) return '#e8ff00'
-    if (s.purchases > 0) return '#00ff88'
-    return '#555'
+    if (attendancePopulated && s.attendance_rate_pct !== null && s.attendance_rate_pct < 60) return 'var(--orange)'
+    if (purchasesMapped && s.purchase_rate_pct !== null && s.purchase_rate_pct < 3) return 'var(--amber)'
+    if (s.purchases > 0) return 'var(--emerald)'
+    return 'var(--muted2)'
   })()
 
   const product = normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name, scheduled_at: s.scheduled_at })
-  const productColor = product.canonicalTag === 'JZK' ? '#2dd4bf' : product.canonicalTag === 'JSU' ? '#c9a96e' : '#555'
+  const productColor = product.canonicalTag === 'JZK' ? 'var(--teal)' : product.canonicalTag === 'JSU' ? 'var(--gold)' : 'var(--muted2)'
 
   return (
-    <tr style={{ borderBottom: '1px solid #1a1a1a', fontSize: '0.73rem', fontFamily: 'monospace' }}>
-      <td style={{ padding: '5px 8px', color: '#ccc', whiteSpace: 'nowrap' }}>
+    <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.73rem', fontFamily: 'var(--font-mono)' }}>
+      <td style={{ padding: '5px 8px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
         {s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : s.session_date}
       </td>
       <td style={{ padding: '5px 8px', whiteSpace: 'nowrap' }}>
-        <span style={{ fontSize: '0.65rem', color: productColor, border: `1px solid ${productColor}44`, borderRadius: '3px', padding: '1px 5px' }}>
+        <span style={{ fontSize: '0.65rem', color: productColor, border: `1px solid var(--border)`, borderRadius: '3px', padding: '1px 5px' }}>
           {product.canonicalTag}
         </span>
         {product.reason.includes('overridden') && (
-          <span style={{ marginLeft: '4px', fontSize: '0.6rem', color: '#ff6b00' }} title={product.reason}>⚠</span>
+          <span style={{ marginLeft: '4px', fontSize: '0.6rem', color: 'var(--orange)' }} title={product.reason}>⚠</span>
         )}
       </td>
-      <td style={{ padding: '5px 8px', color: '#ccc', textAlign: 'right' }}>
-        {s.registered_count > 0 ? s.registered_count : <span style={{ color: '#444' }}>—</span>}
+      <td style={{ padding: '5px 8px', color: 'var(--text2)', textAlign: 'right' }}>
+        {s.registered_count > 0 ? s.registered_count : <span style={{ color: 'var(--muted2)' }}>—</span>}
       </td>
-      <td style={{ padding: '5px 8px', textAlign: 'right', color: attendancePopulated ? '#ccc' : '#444' }}>
+      <td style={{ padding: '5px 8px', textAlign: 'right', color: attendancePopulated ? 'var(--text2)' : 'var(--muted2)' }}>
         {attendancePopulated
           ? (s.attendee_count > 0 ? s.attendee_count : '0')
-          : <span style={{ fontSize: '0.66rem', color: '#444', fontStyle: 'italic' }}>n/p</span>}
+          : <span style={{ fontSize: '0.66rem', color: 'var(--muted2)', fontStyle: 'italic' }}>n/p</span>}
       </td>
-      <td style={{ padding: '5px 8px', textAlign: 'right', color: attendancePopulated && s.attendance_rate_pct !== null && s.attendance_rate_pct < 60 ? '#ff6b00' : '#888' }}>
+      <td style={{ padding: '5px 8px', textAlign: 'right', color: attendancePopulated && s.attendance_rate_pct !== null && s.attendance_rate_pct < 60 ? 'var(--orange)' : 'var(--muted)' }}>
         {attendancePopulated && s.attendance_rate_pct != null
           ? s.attendance_rate_pct + '%'
-          : <span style={{ fontSize: '0.66rem', color: '#444', fontStyle: 'italic' }}>n/p</span>}
+          : <span style={{ fontSize: '0.66rem', color: 'var(--muted2)', fontStyle: 'italic' }}>n/p</span>}
       </td>
       <td style={{ padding: '5px 8px', textAlign: 'right', color: bottleneckColor, fontWeight: s.purchases > 0 ? 700 : 400 }}>
-        {purchasesMapped ? s.purchases : <span style={{ fontSize: '0.66rem', color: '#444', fontStyle: 'italic' }}>n/m</span>}
+        {purchasesMapped ? s.purchases : <span style={{ fontSize: '0.66rem', color: 'var(--muted2)', fontStyle: 'italic' }}>n/m</span>}
       </td>
-      <td style={{ padding: '5px 8px', textAlign: 'right', color: s.revenue > 0 ? '#00ff88' : '#555' }}>
+      <td style={{ padding: '5px 8px', textAlign: 'right', color: s.revenue > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
         {s.revenue > 0 ? s.revenue.toFixed(0) + ' PLN' : '—'}
       </td>
     </tr>
@@ -219,7 +222,7 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
 
   if (loading) {
     return (
-      <div style={{ color: '#444', fontFamily: 'monospace', fontSize: '0.85rem', padding: '20px 0' }}>
+      <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', padding: '20px 0' }}>
         Loading webinar funnel data...
       </div>
     )
@@ -271,16 +274,16 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.9rem', color: '#e0e0e0', letterSpacing: '0.05em' }}>
+          <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 700, fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.05em' }}>
             WEBINARS — funnel
           </div>
-          <div style={{ fontSize: '0.68rem', color: '#555', fontFamily: 'monospace', marginTop: '4px' }}>
+          <div style={{ fontSize: '0.68rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
             {summary?.sessions.length ? `${summary.sessions.length} sessions · dominant: ${productLabel}` : productSubtitle}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{
-            fontFamily: 'monospace', fontWeight: 700, fontSize: '0.72rem',
+            fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.72rem',
             letterSpacing: '0.08em', color: bnColor,
             border: `1px solid ${bnColor}`, padding: '3px 10px', borderRadius: '16px',
           }}>
@@ -311,25 +314,25 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
       {thisWeekSessions.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
           {/* JSU card (Thursday 18:00) */}
-          <div style={{ background: '#0d0d0d', border: `1px solid ${thisWeekJsu.length > 0 ? '#c9a96e44' : '#1a1a1a'}`, borderRadius: '8px', padding: '14px 16px' }}>
-            <div style={{ fontFamily: 'monospace', fontSize: '0.62rem', color: thisWeekJsu.length > 0 ? '#c9a96e' : '#444', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
+          <div style={{ background: 'var(--surface)', border: `1px solid ${thisWeekJsu.length > 0 ? 'var(--border-gold)' : 'var(--border)'}`, borderRadius: '8px', padding: '14px 16px' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: thisWeekJsu.length > 0 ? 'var(--gold)' : 'var(--muted2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
               JSU / Memory — Thu 18:00
             </div>
             {thisWeekJsu.length === 0 ? (
-              <div style={{ fontSize: '0.72rem', color: '#333', fontFamily: 'monospace' }}>No session this week</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)' }}>No session this week</div>
             ) : thisWeekJsu.map(s => {
               const sp = summary!.sessions.find(r => r.session_id === s.session_id)!
               const dateStr = s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' }) : s.session_date
               return (
-                <div key={s.session_id} style={{ fontSize: '0.73rem', fontFamily: 'monospace', lineHeight: 1.7 }}>
-                  <div style={{ color: '#ccc' }}>{dateStr} · {s.session_name?.slice(0, 30)}</div>
-                  <div style={{ color: sp?.registered_count > 0 ? '#e0e0e0' : '#444' }}>
-                    Registrations: {sp?.registered_count > 0 ? sp.registered_count : <span style={{ color: '#444' }}>—</span>}
+                <div key={s.session_id} style={{ fontSize: '0.73rem', fontFamily: 'var(--font-mono)', lineHeight: 1.7 }}>
+                  <div style={{ color: 'var(--text2)' }}>{dateStr} · {s.session_name?.slice(0, 30)}</div>
+                  <div style={{ color: sp?.registered_count > 0 ? 'var(--text)' : 'var(--muted2)' }}>
+                    Registrations: {sp?.registered_count > 0 ? sp.registered_count : <span style={{ color: 'var(--muted2)' }}>—</span>}
                   </div>
-                  <div style={{ color: '#666' }}>
+                  <div style={{ color: 'var(--muted)' }}>
                     Attendance: {attendancePopulated && sp?.attendee_count > 0 ? sp.attendee_count : <span style={{ fontStyle: 'italic' }}>not populated</span>}
                   </div>
-                  <div style={{ color: purchasesMapped && sp?.purchases > 0 ? '#00ff88' : '#444' }}>
+                  <div style={{ color: purchasesMapped && sp?.purchases > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
                     Sales: {purchasesMapped ? sp?.purchases : <span style={{ fontStyle: 'italic' }}>not mapped</span>}
                     {purchasesMapped && sp?.revenue > 0 ? ` · ${sp.revenue.toFixed(0)} PLN` : ''}
                   </div>
@@ -339,25 +342,25 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
           </div>
 
           {/* JZK card (Tuesday 18:00) */}
-          <div style={{ background: '#0d0d0d', border: `1px solid ${thisWeekJzk.length > 0 ? '#2dd4bf44' : '#1a1a1a'}`, borderRadius: '8px', padding: '14px 16px' }}>
-            <div style={{ fontFamily: 'monospace', fontSize: '0.62rem', color: thisWeekJzk.length > 0 ? '#2dd4bf' : '#444', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
+          <div style={{ background: 'var(--surface)', border: `1px solid ${thisWeekJzk.length > 0 ? 'var(--teal)' : 'var(--border)'}`, borderRadius: '8px', padding: '14px 16px' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: thisWeekJzk.length > 0 ? 'var(--teal)' : 'var(--muted2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
               JZK / Językozak AI — Tue 18:00
             </div>
             {thisWeekJzk.length === 0 ? (
-              <div style={{ fontSize: '0.72rem', color: '#333', fontFamily: 'monospace' }}>No session this week</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)' }}>No session this week</div>
             ) : thisWeekJzk.map(s => {
               const sp = summary!.sessions.find(r => r.session_id === s.session_id)!
               const dateStr = s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' }) : s.session_date
               return (
-                <div key={s.session_id} style={{ fontSize: '0.73rem', fontFamily: 'monospace', lineHeight: 1.7 }}>
-                  <div style={{ color: '#ccc' }}>{dateStr} · {s.session_name?.slice(0, 30)}</div>
-                  <div style={{ color: sp?.registered_count > 0 ? '#e0e0e0' : '#444' }}>
-                    Registrations: {sp?.registered_count > 0 ? sp.registered_count : <span style={{ color: '#444' }}>—</span>}
+                <div key={s.session_id} style={{ fontSize: '0.73rem', fontFamily: 'var(--font-mono)', lineHeight: 1.7 }}>
+                  <div style={{ color: 'var(--text2)' }}>{dateStr} · {s.session_name?.slice(0, 30)}</div>
+                  <div style={{ color: sp?.registered_count > 0 ? 'var(--text)' : 'var(--muted2)' }}>
+                    Registrations: {sp?.registered_count > 0 ? sp.registered_count : <span style={{ color: 'var(--muted2)' }}>—</span>}
                   </div>
-                  <div style={{ color: '#666' }}>
+                  <div style={{ color: 'var(--muted)' }}>
                     Attendance: {attendancePopulated && sp?.attendee_count > 0 ? sp.attendee_count : <span style={{ fontStyle: 'italic' }}>not populated</span>}
                   </div>
-                  <div style={{ color: purchasesMapped && sp?.purchases > 0 ? '#00ff88' : '#444' }}>
+                  <div style={{ color: purchasesMapped && sp?.purchases > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
                     Sales: {purchasesMapped ? sp?.purchases : <span style={{ fontStyle: 'italic' }}>not mapped</span>}
                     {purchasesMapped && sp?.revenue > 0 ? ` · ${sp.revenue.toFixed(0)} PLN` : ''}
                   </div>
@@ -380,11 +383,11 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
                 key={tag}
                 onClick={() => setProductFilter(tag)}
                 style={{
-                  fontFamily: 'monospace', fontSize: '0.7rem', letterSpacing: '0.06em',
+                  fontFamily: 'var(--font-mono)', fontSize: '0.7rem', letterSpacing: '0.06em',
                   padding: '4px 12px', borderRadius: '14px', cursor: 'pointer',
-                  border: `1px solid ${isActive ? '#c9a96e' : '#2a2a2a'}`,
-                  background: isActive ? 'rgba(201,169,110,0.1)' : '#0a0a0a',
-                  color: isActive ? '#c9a96e' : '#555',
+                  border: `1px solid ${isActive ? 'var(--border-gold)' : 'var(--border)'}`,
+                  background: isActive ? 'rgba(238,157,0,0.10)' : 'var(--surface2)',
+                  color: isActive ? 'var(--gold)' : 'var(--muted)',
                 }}
               >
                 {tag === 'ALL' ? 'All' : tag === 'JSU' ? 'JSU / Memory' : 'JZK / Językozak'}
@@ -401,8 +404,8 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
       {/* Missing data notices */}
       {!summary?.hasEmailData && (
         <div style={{
-          background: '#0a0a0a', border: '1px dashed #333', borderRadius: '8px',
-          padding: '12px 16px', fontSize: '0.78rem', color: '#888', fontFamily: 'monospace', lineHeight: 1.6,
+          background: 'var(--surface2)', border: '1px dashed var(--border)', borderRadius: '8px',
+          padding: '12px 16px', fontSize: '0.78rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.6,
         }}>
           No email data yet — deliverability, open rate, and click rate cannot be assessed.
           <br />
@@ -416,13 +419,13 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
       {/* Diagnosis box */}
       {summary && !noData && (
         <div style={{
-          background: '#0d0d0d', border: `1px solid ${bnColor}33`,
+          background: 'var(--surface)', border: '1px solid var(--border)',
           borderLeft: `3px solid ${bnColor}`, borderRadius: '8px', padding: '14px 16px',
         }}>
-          <div style={{ fontSize: '0.65rem', color: bnColor, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
+          <div style={{ fontSize: '0.65rem', color: bnColor, fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
             Stanley's Diagnosis
           </div>
-          <div style={{ fontSize: '0.82rem', color: '#ccc', lineHeight: 1.65, fontFamily: 'monospace' }}>
+          <div style={{ fontSize: '0.86rem', color: 'var(--text)', lineHeight: 1.65, fontFamily: 'var(--font-mono)' }}>
             {summary.diagnosis}
           </div>
         </div>
@@ -430,11 +433,11 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
 
       {/* GIENIU response (from commands) */}
       {gieniuResponse && (
-        <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '16px' }}>
-          <div style={{ fontSize: '0.65rem', color: '#e8ff00', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '16px' }}>
+          <div style={{ fontSize: '0.65rem', color: 'var(--gold)', fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
             STANLEY
           </div>
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.82rem', color: '#e0e0e0', lineHeight: 1.7 }}>
+          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '0.86rem', color: 'var(--text)', lineHeight: 1.7 }}>
             {gieniuResponse}
           </pre>
         </div>
@@ -442,7 +445,7 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
 
       {/* Command buttons */}
       <div>
-        <div style={{ fontSize: '0.65rem', color: '#555', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
+        <div style={{ fontSize: '0.65rem', color: 'var(--muted)', fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
           JSU Commands
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -457,13 +460,13 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
       {/* Per-session table */}
       {summary && filteredSessions.length > 0 && (
         <div>
-          <div style={{ fontSize: '0.65rem', color: '#555', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
+          <div style={{ fontSize: '0.65rem', color: 'var(--muted)', fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
             Webinar History {productFilter !== 'ALL' ? `· ${productFilter}` : ''}
           </div>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.73rem', fontFamily: 'monospace', minWidth: '640px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.73rem', fontFamily: 'var(--font-mono)', minWidth: '640px' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid #2a2a2a', color: '#555' }}>
+                <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
                   <th style={{ ...thStyle, textAlign: 'left' }}>Date</th>
                   <th style={{ ...thStyle, textAlign: 'left' }}>Product</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Reg.</th>
@@ -485,7 +488,7 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
               </tbody>
             </table>
           </div>
-          <div style={{ marginTop: '4px', fontSize: '0.62rem', color: '#333', fontFamily: 'monospace' }}>
+          <div style={{ marginTop: '4px', fontSize: '0.62rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)' }}>
             n/p = attendance not populated · n/m = purchases not mapped yet
           </div>
         </div>
@@ -512,19 +515,19 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
       {/* Empty state */}
       {noData && (
         <div style={{
-          background: '#0a0a0a', border: '1px dashed #2a2a2a',
+          background: 'var(--surface2)', border: '1px dashed var(--border)',
           borderRadius: '10px', padding: '24px', textAlign: 'center',
         }}>
-          <div style={{ fontSize: '0.78rem', color: '#555', fontFamily: 'monospace', lineHeight: 1.8 }}>
+          <div style={{ fontSize: '0.78rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.8 }}>
             No JSU funnel data.
             <br /><br />
-            Step 1: Run <code style={{ color: '#888' }}>supabase/webinar_funnel_schema.sql</code> in Supabase SQL Editor.
+            Step 1: Run <code style={{ color: 'var(--text2)' }}>supabase/webinar_funnel_schema.sql</code> in Supabase SQL Editor.
             <br />
             Step 2: Connect Make → ClickMeeting → webinar_sessions + webinar_participants.
             <br />
             Step 3: Connect Make → ESP → email_campaigns + email_recipient_events.
             <br /><br />
-            Guide: <code style={{ color: '#888' }}>docs/clickmeeting_make_scenarios.md</code>
+            Guide: <code style={{ color: 'var(--text2)' }}>docs/clickmeeting_make_scenarios.md</code>
           </div>
         </div>
       )}

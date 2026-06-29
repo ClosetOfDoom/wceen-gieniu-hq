@@ -1425,16 +1425,14 @@ export default function App() {
           {/* ── WEBINARS ──────────────────────────────────────────── */}
           {section === 'webinars' && (
             <div className="panel-illuminate card">
-              <div className="dark-panel">
-                <WebinarFunnelPanel
-                  summary={jsuSummary}
-                  participants={jsuParticipants}
-                  participantsLoading={jsuParticipantsLoading}
-                  loading={jsuLoading}
-                  onCommand={handleJsuCommand}
-                  gieniuResponse=""
-                />
-              </div>
+              <WebinarFunnelPanel
+                summary={jsuSummary}
+                participants={jsuParticipants}
+                participantsLoading={jsuParticipantsLoading}
+                loading={jsuLoading}
+                onCommand={handleJsuCommand}
+                gieniuResponse=""
+              />
             </div>
           )}
 

@@ -29,14 +29,14 @@ function fmtTime(d: string | null): string {
 export function ParticipantJourneyTable({ rows, loading, attendancePopulated }: Props) {
   if (loading) {
     return (
-      <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '0.78rem', padding: '12px 0' }}>
+      <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem', padding: '12px 0' }}>
         Loading participants...
       </div>
     )
   }
   if (rows.length === 0) {
     return (
-      <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '0.78rem', padding: '16px 0', lineHeight: 1.6 }}>
+      <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem', padding: '16px 0', lineHeight: 1.6 }}>
         No JSU participant data.
         <br />
         Connect Make → ClickMeeting → Supabase (webinar_participants).
@@ -54,34 +54,34 @@ export function ParticipantJourneyTable({ rows, loading, attendancePopulated }: 
     <div>
       {/* Summary chips */}
       <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '0.72rem', color: '#00ff88', fontFamily: 'monospace' }}>
+        <span style={{ fontSize: '0.72rem', color: 'var(--emerald)', fontFamily: 'var(--font-mono)' }}>
           Bought: {buyers.length}
         </span>
         {attendanceKnown ? (
           <>
-            <span style={{ fontSize: '0.72rem', color: '#e8ff00', fontFamily: 'monospace' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--amber)', fontFamily: 'var(--font-mono)' }}>
               Attended, no purchase: {rows.filter(r => r.attended && r.purchased_at === null).length}
             </span>
-            <span style={{ fontSize: '0.72rem', color: '#555', fontFamily: 'monospace' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
               Attendance: {attendedCount} / {rows.length}
             </span>
           </>
         ) : (
-          <span style={{ fontSize: '0.72rem', color: '#555', fontFamily: 'monospace' }}>
+          <span style={{ fontSize: '0.72rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
             Registrations: {rows.length} · Attendance: not populated
           </span>
         )}
         {buyers.length === 0 && (
-          <span style={{ fontSize: '0.72rem', color: '#555', fontFamily: 'monospace' }}>
+          <span style={{ fontSize: '0.72rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
             Purchases: not mapped yet
           </span>
         )}
       </div>
 
       <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.73rem', fontFamily: 'monospace' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.73rem', fontFamily: 'var(--font-mono)' }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid #2a2a2a', color: '#555', position: 'sticky', top: 0, background: '#111' }}>
+            <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)', position: 'sticky', top: 0, background: 'var(--surface)' }}>
               <th style={th}>Email</th>
               <th style={th}>Webinar</th>
               <th style={th}>Registered</th>
@@ -96,8 +96,8 @@ export function ParticipantJourneyTable({ rows, loading, attendancePopulated }: 
               <tr
                 key={row.participant_id}
                 style={{
-                  borderBottom: '1px solid #1a1a1a',
-                  color: row.purchased_at ? '#00ff88' : row.attended ? '#ccc' : '#555',
+                  borderBottom: '1px solid var(--border)',
+                  color: row.purchased_at ? 'var(--emerald)' : row.attended ? 'var(--text2)' : 'var(--muted)',
                 }}
               >
                 <td style={td}>{maskEmail(row.email)}</td>
@@ -106,27 +106,27 @@ export function ParticipantJourneyTable({ rows, loading, attendancePopulated }: 
                 <td style={{ ...td, textAlign: 'center' }}>
                   {attendanceKnown
                     ? (row.attended ? '✓' : '–')
-                    : <span style={{ color: '#333' }}>n/a</span>}
+                    : <span style={{ color: 'var(--muted2)' }}>n/a</span>}
                 </td>
                 <td style={{ ...td, textAlign: 'right' }}>
-                  {row.attend_duration_min != null ? row.attend_duration_min : <span style={{ color: '#333' }}>—</span>}
+                  {row.attend_duration_min != null ? row.attend_duration_min : <span style={{ color: 'var(--muted2)' }}>—</span>}
                 </td>
                 <td style={{ ...td, textAlign: 'center' }}>
                   {buyers.length > 0
                     ? (row.purchased_at ? '✓' : '–')
-                    : <span style={{ color: '#444', fontSize: '0.65rem' }}>n/m</span>}
+                    : <span style={{ color: 'var(--muted2)', fontSize: '0.65rem' }}>n/m</span>}
                 </td>
                 <td style={{ ...td, textAlign: 'right' }}>
                   {row.purchase_value != null
                     ? row.purchase_value.toFixed(0) + ' PLN'
-                    : buyers.length > 0 ? '—' : <span style={{ color: '#444', fontSize: '0.65rem' }}>n/m</span>}
+                    : buyers.length > 0 ? '—' : <span style={{ color: 'var(--muted2)', fontSize: '0.65rem' }}>n/m</span>}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <div style={{ marginTop: '6px', fontSize: '0.62rem', color: '#333', fontFamily: 'monospace' }}>
+      <div style={{ marginTop: '6px', fontSize: '0.62rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)' }}>
         n/a = attendance not populated · n/m = purchases not mapped yet
       </div>
     </div>

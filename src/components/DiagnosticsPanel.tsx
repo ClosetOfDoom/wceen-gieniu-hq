@@ -282,7 +282,7 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
                       </thead>
                       <tbody>
                         {opsWeekReport.orders.this_week.order_diagnostics!.map((row, i) => (
-                          <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: row.classification_warning ? '#1a0d00' : 'transparent' }}>
+                          <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: row.classification_warning ? 'rgba(194,65,12,0.12)' : 'transparent' }}>
                             <td style={{ padding: '4px 8px', color: 'var(--muted)' }}>{row.external_order_id ?? '—'}</td>
                             <td style={{ padding: '4px 8px', color: 'var(--muted)' }}>{row.email_masked}</td>
                             <td style={{ padding: '4px 8px', color: row.classification_warning ? 'var(--orange)' : 'var(--text2)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.product_name_raw ?? ''}>{row.product_name_raw ?? '—'}</td>
