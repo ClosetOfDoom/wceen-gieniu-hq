@@ -103,24 +103,13 @@ function Sidebar({
   return (
     <aside className="hud-sidebar">
       <div style={{ padding: '20px 18px 12px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
-            border: '1.5px solid var(--border-gold)',
-            // Oak ring + gold glow seats the navy duck into the forest palette
-            boxShadow: '0 0 0 2.5px var(--border-wood), 0 0 9px rgba(238,157,0,0.24)',
-          }}>
-            <img src="/stanley-duck.png" alt="" width={36} height={36}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-              draggable={false} />
+        {/* Wordmark only — the duck lives once, in the STANLEY SAYS panel */}
+        <div>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.92rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.1em' }}>
+            STANLEY
           </div>
-          <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.92rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.1em' }}>
-              STANLEY
-            </div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.55rem', color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-              HQ Command
-            </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.55rem', color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            HQ Command
           </div>
         </div>
       </div>
@@ -415,25 +404,19 @@ function RightPanel({
           <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.78rem', color: 'var(--gold)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>
             Stanley Says
           </div>
+          {/* Mic state only — the duck below shows Speaking…/Thinking… itself */}
           {listening && (
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--teal)', animation: 'pulse-mic 1.2s infinite' }} />
               Listening...
             </div>
           )}
-          {thinking && !listening && (
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span className="rune-thinking" style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)' }} />
-              Thinking...
-            </div>
-          )}
-          {speaking && !listening && !thinking && (
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--teal)', animation: 'pulse-mic 1.2s infinite' }} />
-              Speaking…
-            </div>
-          )}
         </div>
+
+        {/* The ONE talking Stanley — always present at the TOP of the panel, above
+            the response text. Pulses + glow + "Speaking…" when active, calm breathing
+            when idle. Tap to quack. */}
+        <StanleyOwl state={speaking ? 'speaking' : thinking ? 'thinking' : 'idle'} />
 
         {/* Response text */}
         {response ? (
@@ -474,10 +457,7 @@ function RightPanel({
               </div>
             ) : (
             <div style={{ marginTop: chart ? '10px' : '4px' }}>
-              {/* Stanley owl — visual speaking/thinking/idle indicator */}
-              <StanleyOwl state={speaking ? 'speaking' : thinking ? 'thinking' : 'idle'} />
-
-              {/* Controls row below the orb */}
+              {/* Controls row — the duck itself lives at the top of the panel now */}
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: '4px' }}>
                 {speaking ? (
                   <button
