@@ -283,9 +283,11 @@ const CHIPS = [
 ]
 
 function getFallbackBanner(elevenError: string): string {
-  if (!elevenError) return 'ElevenLabs unavailable — using Browser TTS.'
-  if (/missing_api_key/i.test(elevenError))
-    return 'ElevenLabs: No API key set in Netlify env (ELEVENLABS_API_KEY). Using Browser TTS.'
+  if (!elevenError) return 'ElevenLabs paused locally — tap "Try ElevenLabs again" to retest (function not called).'
+  if (/paused locally/i.test(elevenError))
+    return elevenError
+  if (/missing_api_key|api key missing|src:missing|len:0\b/i.test(elevenError))
+    return 'API key missing in env: ELEVENLABS_API_KEY not set in Netlify (keyLen 0). Set it, then "Try ElevenLabs again". Using Browser TTS.'
   if (/elevenStatus 401/i.test(elevenError))
     return 'ElevenLabs: API key rejected (401) — update ELEVENLABS_API_KEY in Netlify env. Using Browser TTS.'
   if (/elevenStatus 429/i.test(elevenError))

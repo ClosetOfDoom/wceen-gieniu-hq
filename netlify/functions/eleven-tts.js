@@ -200,7 +200,14 @@ export const handler = async (event) => {
     }
   }
 
-  console.log(`GIENIU TTS voice used: George ${GEORGE_VOICE_ID} | keySource: ${diagnostics.apiKeySource} | keyLen: ${diagnostics.keyLength}`)
+  // ── Per-attempt log (EVERY TTS request) — shows up in Netlify Function Logs ──
+  // Answers: is the key reaching the function (keyLen/keySource/hasKey), which
+  // voice_id and model_id are actually sent, and what output format.
+  console.log(
+    `GIENIU TTS attempt | voice_id: ${GEORGE_VOICE_ID} (${GEORGE_VOICE_NAME}) | model_id: ${modelId} | outFormat: ${outFormat}` +
+    ` | keySource: ${diagnostics.apiKeySource} | keyLen: ${diagnostics.keyLength} | hasKey: ${diagnostics.hasApiKey}` +
+    ` | textLen: ${text.length}`
+  )
 
   // ── ElevenLabs request ──────────────────────────────────────────────────────
   try {
@@ -237,6 +244,10 @@ export const handler = async (event) => {
     }
 
     const audioBuffer = await elevenRes.arrayBuffer()
+    console.log(
+      `GIENIU TTS success | HTTP ${elevenRes.status} | voice_id: ${GEORGE_VOICE_ID} | model_id: ${modelId}` +
+      ` | keyLen: ${diagnostics.keyLength} | bytes: ${audioBuffer.byteLength}`
+    )
     if (audioBuffer.byteLength === 0) {
       return {
         statusCode: 500,

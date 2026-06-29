@@ -120,6 +120,39 @@ button:disabled {
   overflow: hidden;
 }
 
+/* Base panel rules — MUST precede the responsive media queries below so that
+   their `display: none` overrides win by source order (equal specificity,
+   media queries add none). Previously these lived after the media blocks and
+   silently re-enabled the desktop sidebar on mobile → two menus at once. */
+.hud-sidebar {
+  overflow-y: auto;
+  border-right: 2px solid var(--border-gold);
+  background: var(--bg2);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 2px 0 12px rgba(238,157,0,0.08);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.hud-main {
+  overflow-y: auto;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.25s ease;
+}
+
+.hud-right {
+  overflow: hidden;
+  border-left: 2px solid var(--border-gold);
+  background: var(--bg2);
+  display: flex;
+  flex-direction: column;
+  border-top: 3px solid var(--gold);
+  box-shadow: -2px 0 16px rgba(238,157,0,0.1), inset 0 0 30px rgba(238,157,0,0.02);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
 /* Large desktop */
 @media (min-width: 1600px) {
   .hud-layout { grid-template-columns: 230px 1fr 520px; }
@@ -240,35 +273,6 @@ button:disabled {
 @media (max-width: 430px) {
   .hud-right { min-height: 250px; }
   .card { padding: 12px 10px; }
-}
-
-.hud-sidebar {
-  overflow-y: auto;
-  border-right: 2px solid var(--border-gold);
-  background: var(--bg2);
-  display: flex;
-  flex-direction: column;
-  box-shadow: 2px 0 12px rgba(238,157,0,0.08);
-  transition: background-color 0.25s ease, border-color 0.25s ease;
-}
-
-.hud-main {
-  overflow-y: auto;
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  transition: background-color 0.25s ease;
-}
-
-.hud-right {
-  overflow: hidden;
-  border-left: 2px solid var(--border-gold);
-  background: var(--bg2);
-  display: flex;
-  flex-direction: column;
-  border-top: 3px solid var(--gold);
-  box-shadow: -2px 0 16px rgba(238,157,0,0.1), inset 0 0 30px rgba(238,157,0,0.02);
-  transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
 /* ── Heraldic card ─────────────────────────────────────────────────────────── */

@@ -74,6 +74,22 @@ if (!existsSync(cssPath)) {
   } else {
     fail('global.css mobile-nav may be visible on desktop — should have display:none as default')
   }
+
+  // Cascade-order guard: the base `.hud-sidebar { display: flex }` rule MUST come
+  // BEFORE the `@media (max-width: 699px) { .hud-sidebar { display: none } }`
+  // override. Equal specificity + media queries adding no specificity means the
+  // later source rule wins — if the base flex rule trails the media query, the
+  // desktop sidebar re-appears on mobile and both menus render at once.
+  const sidebarFlexIdx = c.indexOf('.hud-sidebar {')
+  const mobileBlockIdx = c.indexOf('@media (max-width: 699px)')
+  const sidebarHideIdx = c.indexOf('.hud-sidebar { display: none; }', mobileBlockIdx)
+  if (sidebarFlexIdx === -1 || sidebarHideIdx === -1) {
+    fail('global.css missing base .hud-sidebar rule or mobile .hud-sidebar hide rule')
+  } else if (sidebarFlexIdx < sidebarHideIdx) {
+    pass('global.css base .hud-sidebar precedes the mobile display:none override (sidebar stays hidden on mobile)')
+  } else {
+    fail('global.css base ".hud-sidebar { display: flex }" comes AFTER the mobile display:none — desktop sidebar will leak onto mobile (two menus)')
+  }
 }
 
 // 3. DiagnosticsPanel exists

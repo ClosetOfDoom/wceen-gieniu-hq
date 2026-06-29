@@ -54,6 +54,10 @@ export function isElevenLabsPaused(): boolean {
   try { return localStorage.getItem(LS_ELEVEN_PAUSED) === 'true' } catch { return false }
 }
 
+export function getElevenLabsPausedReason(): string {
+  try { return localStorage.getItem(LS_ELEVEN_REASON) ?? '' } catch { return '' }
+}
+
 export function resetElevenLabs(): void {
   try {
     localStorage.removeItem(LS_ELEVEN_PAUSED)
@@ -253,11 +257,22 @@ async function speakBrowser(text: string): Promise<TTSResult> {
 export async function speak(text: string): Promise<TTSResult> {
   stopAudio()
 
-  // If ElevenLabs is paused from a prior quota/auth error, go straight to browser TTS
+  // If ElevenLabs is paused from a prior quota/auth error, go straight to browser TTS.
+  // NOTE: in this state the Netlify function is NOT called, so no fresh logs are
+  // produced and the real ElevenLabs status can't be re-checked until the pause is
+  // cleared (Reset voice / "Try ElevenLabs again" / clear site data). We surface the
+  // stored reason so the UI shows WHY instead of a generic "unavailable".
   if (isElevenLabsPaused()) {
+    const pausedReason = getElevenLabsPausedReason()
     // eslint-disable-next-line no-console
-    console.log('GIENIU TTS: ElevenLabs paused — using browser TTS directly')
-    return speakBrowser(cleanForEnglishTTS(text))
+    console.log(`GIENIU TTS: ElevenLabs paused (${pausedReason || 'unknown reason'}) — using browser TTS directly, function NOT called`)
+    const browserResult = await speakBrowser(cleanForEnglishTTS(text))
+    return {
+      ...browserResult,
+      fallbackFrom: 'elevenlabs',
+      reason:       pausedReason || 'paused',
+      elevenError:  `ElevenLabs paused locally (reason: ${pausedReason || 'unknown'}) — function not called. Tap "Try ElevenLabs again" to retest.`,
+    }
   }
 
   const elevenText = cleanForTTS(text)
