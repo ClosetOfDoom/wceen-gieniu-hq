@@ -21,8 +21,8 @@ export function StanleyOwl({ state, size = 130 }: StanleyOwlProps) {
 
     const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (prefersReduced) {
-      // Static but clearly visible — prominent ring + soft glow
-      wrap.style.boxShadow = '0 0 0 2.5px rgba(238,157,0,0.80), 0 0 20px 5px rgba(238,157,0,0.45)'
+      // Static but clearly visible — gold ring + oak ring (seats duck in forest) + soft glow
+      wrap.style.boxShadow = '0 0 0 2.5px rgba(238,157,0,0.80), 0 0 0 5.5px rgba(107,79,51,0.65), 0 0 20px 5px rgba(238,157,0,0.45)'
       return
     }
 
@@ -78,8 +78,9 @@ export function StanleyOwl({ state, size = 130 }: StanleyOwlProps) {
         scale      = 1   + pulse * 0.018
       }
 
-      // Circular box-shadow = perfect round glow (not drop-shadow which is alpha-contour based)
-      el.style.boxShadow = `0 0 0 2.5px rgba(238,157,0,${ringAlpha.toFixed(2)}), 0 0 ${glowPx.toFixed(0)}px ${glowSpread.toFixed(0)}px rgba(238,157,0,${glowAlpha.toFixed(2)})`
+      // Circular box-shadow = perfect round glow (not drop-shadow which is alpha-contour based).
+      // Middle oak ring seats the navy duck into the forest palette; pulse drives gold ring + glow.
+      el.style.boxShadow = `0 0 0 2.5px rgba(238,157,0,${ringAlpha.toFixed(2)}), 0 0 0 5px rgba(107,79,51,0.55), 0 0 ${glowPx.toFixed(0)}px ${glowSpread.toFixed(0)}px rgba(238,157,0,${glowAlpha.toFixed(2)})`
       el.style.transform = `scale(${scale.toFixed(4)})`
     }
 

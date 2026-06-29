@@ -101,14 +101,15 @@ function Sidebar({
           <div style={{
             width: 36, height: 36, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
             border: '1.5px solid var(--border-gold)',
-            boxShadow: '0 0 8px rgba(238,157,0,0.22)',
+            // Oak ring + gold glow seats the navy duck into the forest palette
+            boxShadow: '0 0 0 2.5px var(--border-wood), 0 0 9px rgba(238,157,0,0.24)',
           }}>
             <img src="/stanley-duck.png" alt="" width={36} height={36}
               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
               draggable={false} />
           </div>
           <div>
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.9rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em' }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.92rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.1em' }}>
               STANLEY
             </div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.55rem', color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
@@ -231,7 +232,7 @@ function TopBar({
     }}>
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '4px' }}>
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.14em' }}>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.35rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.14em' }}>
             STANLEY HQ
           </h1>
           <StatusBadge status={status} />

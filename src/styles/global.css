@@ -5,76 +5,92 @@
 }
 
 :root {
-  /* Palette — deep navy / gold — matched to Stanley's duck colourway */
-  --bg:           #0b1e29;
-  --bg2:          #0d2030;
-  --surface:      #122636;
-  --surface2:     #173040;
-  --surface3:     #1d3a4e;
-  --border:       #2a4860;
+  /* Palette — DARK: enchanted forest at night — deep moss/emerald + warm wood + gold.
+     Green is the leading accent alongside gold; cream text for high contrast. */
+  --bg:           #0e1a12;
+  --bg2:          #122017;
+  --surface:      #16271b;
+  --surface2:     #1c3122;
+  --surface3:     #24412c;
+  --border:       #2f4a35;
   --border-gold:  #8a6228;
+  --border-wood:  #6b4f33;   /* oak ring — seats the navy duck into the forest */
   --gold:         #ee9d00;
   --gold-bright:  #f5b500;
   --gold-dim:     #5a4010;
   --glow-gold:    rgba(238,157,0,0.40);
   --glow-gold-sm: rgba(238,157,0,0.22);
-  --teal:         #2dd4bf;
-  --teal-dim:     #0d4a44;
+  --green:        #5cb874;   /* leading green accent */
+  --green-bright: #7ad492;
+  --green-glow:   rgba(92,184,116,0.28);
+  --teal:         #34d399;
+  --teal-dim:     #0f3d31;
   --emerald:      #4ade80;
-  --emerald-dim:  #064e3b;
-  --text:         #edf2fa;
-  --text2:        #c0cedf;
-  --muted:        #8a9db8;
-  --muted2:       #607288;
+  --emerald-dim:  #08361f;
+  --text:         #eef3e6;
+  --text2:        #cdd9c0;
+  --muted:        #93a589;
+  --muted2:       #69785f;
   --amber:        #fbbf24;
   --red:          #f87171;
   --orange:       #fb923c;
 
-  /* Typography */
+  /* Typography
+     --font-display : Cinzel — storybook engraved caps, for wordmarks only
+     --font-serif   : Cormorant Garamond — fairy-tale-elegant headers (readable)
+     --font-sans    : Inter — clean, readable labels (no decoration)
+     --font-mono    : JetBrains Mono — clean tabular numbers / KPI data */
+  --font-display: 'Cinzel', 'Cormorant Garamond', Georgia, serif;
   --font-serif: 'Cormorant Garamond', 'Cinzel', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
-  --font-sans:  -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans:  'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono:  'JetBrains Mono', 'Fira Mono', 'Cascadia Code', 'Consolas', monospace;
 }
 
-/* ── Light theme — warm cream / parchment ─────────────────────────────────── */
+/* ── Light theme (PRIMARY) — sunlit enchanted forest: cream + sage + oak + gold ── */
 
 [data-theme="light"] {
-  --bg:           #f5f0e6;
-  --bg2:          #ede8dc;
-  --surface:      #fdfaf4;
-  --surface2:     #f2ede3;
-  --surface3:     #e8e2d6;
-  --border:       #d2c9b2;
+  --bg:           #f5f0e6;   /* warm cream */
+  --bg2:          #ece4d3;   /* parchment */
+  --surface:      #fbf7ee;   /* lightest card */
+  --surface2:     #f1ebdd;
+  --surface3:     #e7dfcc;
+  --border:       #cdbfa1;   /* warm wood-tan */
   --border-gold:  #b8920e;
+  --border-wood:  #9c7b4d;   /* oak ring */
   --gold:         #ee9d00;
-  --gold-bright:  #d4870a;
+  --gold-bright:  #c87f08;   /* darker gold — readable on cream */
   --gold-dim:     #c9a460;
-  --glow-gold:    rgba(238,157,0,0.55);
-  --glow-gold-sm: rgba(238,157,0,0.32);
-  --teal:         #0b8578;
-  --teal-dim:     #c0f0e9;
-  --emerald:      #16a34a;
-  --emerald-dim:  #dcfce7;
-  --text:         #0b1e29;
-  --text2:        #1d3a4e;
-  --muted:        #4a6070;
-  --muted2:       #7a8fa0;
-  --amber:        #d97706;
-  --red:          #dc2626;
-  --orange:       #ea580c;
+  --glow-gold:    rgba(238,157,0,0.45);
+  --glow-gold-sm: rgba(238,157,0,0.28);
+  --green:        #3f7d4f;   /* sage forest — leading accent */
+  --green-bright: #2f6b3f;
+  --green-glow:   rgba(63,125,79,0.30);
+  --teal:         #2f8f6f;   /* mossy green-teal */
+  --teal-dim:     #cfeadd;
+  --emerald:      #2e7d4f;
+  --emerald-dim:  #dcefdc;
+  --text:         #26301d;   /* deep bark/moss — high contrast on cream */
+  --text2:        #44523a;
+  --muted:        #66735a;
+  --muted2:       #8a907a;
+  --amber:        #b45309;
+  --red:          #c0392b;
+  --orange:       #c2410c;
 }
 
 [data-theme="light"] body {
   background-image:
-    radial-gradient(ellipse at 50% 0%,   rgba(238,157,0,0.10) 0%, transparent 55%),
-    radial-gradient(ellipse at 0% 100%,  rgba(11,30,41,0.05)  0%, transparent 45%),
-    radial-gradient(ellipse at 100% 50%, rgba(238,157,0,0.06) 0%, transparent 40%),
-    radial-gradient(ellipse at 50% 100%, rgba(240,234,220,0.9) 0%, transparent 70%);
+    radial-gradient(ellipse at 50% 0%,   rgba(63,125,79,0.09)  0%, transparent 55%),
+    radial-gradient(ellipse at 0% 100%,  rgba(156,123,77,0.08) 0%, transparent 45%),
+    radial-gradient(ellipse at 100% 50%, rgba(238,157,0,0.06)  0%, transparent 40%),
+    radial-gradient(ellipse at 50% 100%, rgba(63,125,79,0.05)  0%, transparent 70%),
+    /* faint oak wood-grain — subtle, not garish */
+    repeating-linear-gradient(94deg, rgba(120,90,50,0.018) 0px, rgba(120,90,50,0.018) 2px, transparent 2px, transparent 9px);
 }
 
 /* Dark panel island — for legacy components with hardcoded dark colours */
 [data-theme="light"] .dark-panel {
-  background: #0d2030;
+  background: #16271b;
   border-radius: 6px;
   padding: 16px;
   margin: -4px;
@@ -84,10 +100,12 @@ html, body {
   height: 100%;
   background: var(--bg);
   background-image:
-    radial-gradient(ellipse at 50% 0%,   rgba(238,157,0,0.06)  0%, transparent 55%),
-    radial-gradient(ellipse at 0% 100%,  rgba(45,212,191,0.04) 0%, transparent 45%),
+    radial-gradient(ellipse at 50% 0%,   rgba(238,157,0,0.05)  0%, transparent 55%),
+    radial-gradient(ellipse at 0% 100%,  rgba(92,184,116,0.06) 0%, transparent 45%),
     radial-gradient(ellipse at 100% 50%, rgba(238,157,0,0.04)  0%, transparent 40%),
-    radial-gradient(ellipse at 50% 100%, rgba(11,30,41,0.6)    0%, transparent 70%);
+    radial-gradient(ellipse at 50% 100%, rgba(8,30,18,0.65)    0%, transparent 70%),
+    /* faint wood-grain in the dark too */
+    repeating-linear-gradient(94deg, rgba(120,90,50,0.022) 0px, rgba(120,90,50,0.022) 2px, transparent 2px, transparent 9px);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 18px;
@@ -295,8 +313,8 @@ button:disabled {
   inset: 0;
   border-radius: 6px;
   background:
-    radial-gradient(ellipse at 0% 0%, rgba(201,169,110,0.04) 0%, transparent 60%),
-    radial-gradient(ellipse at 100% 100%, rgba(45,212,191,0.02) 0%, transparent 60%);
+    radial-gradient(ellipse at 0% 0%, rgba(238,157,0,0.04) 0%, transparent 60%),
+    radial-gradient(ellipse at 100% 100%, rgba(92,184,116,0.04) 0%, transparent 60%);
   pointer-events: none;
 }
 
@@ -437,8 +455,8 @@ button:disabled {
 }
 .btn-mic.listening {
   border-color: var(--teal);
-  box-shadow: 0 0 0 10px rgba(45,212,191,0.15);
-  background: rgba(45,212,191,0.08);
+  box-shadow: 0 0 0 10px rgba(92,184,116,0.18);
+  background: rgba(92,184,116,0.10);
   animation: pulse-mic 1.2s ease-in-out infinite;
 }
 
@@ -451,8 +469,8 @@ button:disabled {
 }
 
 @keyframes pulse-mic {
-  0%, 100% { box-shadow: 0 0 0 5px rgba(45,212,191,0.1); }
-  50%       { box-shadow: 0 0 0 16px rgba(45,212,191,0.2); }
+  0%, 100% { box-shadow: 0 0 0 5px rgba(92,184,116,0.12); }
+  50%       { box-shadow: 0 0 0 16px rgba(92,184,116,0.22); }
 }
 
 /* ── Sidebar nav ─────────────────────────────────────────────────────────── */
@@ -476,12 +494,12 @@ button:disabled {
 }
 .nav-item:hover {
   color: var(--text2);
-  background: rgba(201,169,110,0.04);
+  background: rgba(92,184,116,0.06);
 }
 .nav-item.active {
   color: var(--gold);
-  border-left: 2px solid var(--gold);
-  background: rgba(201,169,110,0.06);
+  border-left: 2px solid var(--green);   /* forest-path green accent beside gold text */
+  background: rgba(92,184,116,0.08);
 }
 .nav-item .nav-icon {
   width: 18px;
@@ -522,12 +540,12 @@ button:disabled {
 }
 
 .data-table tbody tr {
-  border-bottom: 1px solid rgba(38, 55, 90, 0.5);
+  border-bottom: 1px solid rgba(47, 74, 53, 0.5);
   transition: background 0.1s;
 }
 
 .data-table tbody tr:hover {
-  background: rgba(201,169,110,0.03);
+  background: rgba(92,184,116,0.05);
 }
 
 .data-table tbody td {

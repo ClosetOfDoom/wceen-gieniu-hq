@@ -10,7 +10,8 @@ export function GieniuAvatar({ size = 68 }: { size?: number }) {
         overflow:     'hidden',
         border:       '1.5px solid var(--border-gold)',
         flexShrink:   0,
-        boxShadow:    '0 0 8px rgba(238,157,0,0.20)',
+        // Oak ring + gold glow seats the navy duck into the forest palette
+        boxShadow:    '0 0 0 3px var(--border-wood), 0 0 10px rgba(238,157,0,0.24)',
       }}
     >
       <img

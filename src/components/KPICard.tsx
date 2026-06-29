@@ -174,11 +174,12 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
       )}
 
       <div style={{
-        fontFamily: 'var(--font-serif)',
-        fontSize: '0.74rem',
+        fontFamily: 'var(--font-sans)',
+        fontSize: '0.72rem',
+        fontWeight: 600,
         color: 'var(--text2)',
         textTransform: 'uppercase',
-        letterSpacing: '0.14em',
+        letterSpacing: '0.09em',
         marginBottom: '10px',
       }}>
         {label}

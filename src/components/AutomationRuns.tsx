@@ -31,7 +31,7 @@ export function AutomationRuns({ runs, loading }: Props) {
           justifyContent: 'space-between',
           alignItems: 'center',
           padding: '6px 0',
-          borderBottom: '1px solid rgba(38, 55, 90, 0.4)',
+          borderBottom: '1px solid rgba(47, 74, 53, 0.4)',
         }}>
           <div>
             <div style={{ fontSize: '0.76rem', color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
