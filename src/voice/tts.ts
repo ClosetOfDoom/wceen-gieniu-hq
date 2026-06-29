@@ -142,55 +142,15 @@ export interface TTSResult {
   elevenError?: string
 }
 
-// ── Duck quack SFX — synthesized via Web Audio, plays after each utterance ────
+// ── Duck quack SFX — plays the real /quack.mp3 (moderate volume) ──────────────
+// Fired after each Stanley utterance (TTS onend) and on tapping the duck avatar.
+// A fresh Audio element per call lets quacks overlap cleanly and avoids state.
 
-function playQuack(volume = 0.28): void {
+export function playQuack(volume = 0.4): void {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const AudioCtx = window.AudioContext ?? (window as any).webkitAudioContext
-    if (!AudioCtx) return
-    const ctx = new AudioCtx() as AudioContext
-    const now = ctx.currentTime
-    const dur = 0.30
-
-    // Sawtooth oscillator: pitch glide 680 → 210 Hz (quack shape)
-    const osc = ctx.createOscillator()
-    osc.type = 'sawtooth'
-    osc.frequency.setValueAtTime(680, now)
-    osc.frequency.exponentialRampToValueAtTime(210, now + 0.20)
-
-    // Noise burst for nasal texture
-    const nBuf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate)
-    const nd   = nBuf.getChannelData(0)
-    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1
-    const noise = ctx.createBufferSource()
-    noise.buffer = nBuf
-
-    const bpf = ctx.createBiquadFilter()
-    bpf.type = 'bandpass'
-    bpf.frequency.value = 1100
-    bpf.Q.value = 4
-
-    // Gain envelopes — sharp attack, quick decay
-    const oscGain   = ctx.createGain()
-    const noiseGain = ctx.createGain()
-
-    oscGain.gain.setValueAtTime(0,           now)
-    oscGain.gain.linearRampToValueAtTime(volume,         now + 0.012)
-    oscGain.gain.setValueAtTime(volume,      now + 0.07)
-    oscGain.gain.exponentialRampToValueAtTime(0.001,     now + dur)
-
-    noiseGain.gain.setValueAtTime(0,                 now)
-    noiseGain.gain.linearRampToValueAtTime(volume * 0.32, now + 0.008)
-    noiseGain.gain.exponentialRampToValueAtTime(0.001,    now + dur * 0.65)
-
-    osc.connect(oscGain);    oscGain.connect(ctx.destination)
-    noise.connect(bpf);      bpf.connect(noiseGain);    noiseGain.connect(ctx.destination)
-
-    osc.start(now);   osc.stop(now + dur)
-    noise.start(now); noise.stop(now + dur)
-
-    setTimeout(() => { try { void ctx.close() } catch { /* ignore */ } }, 1500)
+    const a = new Audio('/quack.mp3')
+    a.volume = Math.max(0, Math.min(1, volume))
+    void a.play().catch(() => { /* autoplay blocked until a user gesture — non-fatal */ })
   } catch { /* non-fatal */ }
 }
 

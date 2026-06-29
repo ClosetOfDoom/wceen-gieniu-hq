@@ -28,14 +28,14 @@ export default defineConfig({
         scope: '/',
         start_url: '/',
         icons: [
-          { src: '/icons/icon-duck.svg',    sizes: 'any',     type: 'image/svg+xml' },
-          { src: '/icons/icon-192.png?v=3', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/icon-512.png?v=3', sizes: '512x512', type: 'image/png' },
-          { src: '/icons/icon-duck.svg',    sizes: 'any',     type: 'image/svg+xml', purpose: 'maskable' },
+          { src: '/icons/icon-192.png?v=4', sizes: '192x192', type: 'image/png' },
+          { src: '/icons/icon-512.png?v=4', sizes: '512x512', type: 'image/png' },
+          { src: '/icons/icon-192.png?v=4', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: '/icons/icon-512.png?v=4', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ]
       },
       workbox: {
-        cacheId: 'gieniu-hq-v10',
+        cacheId: 'gieniu-hq-v11',
         // Exclude large avatar PNGs from SW precache (served via HTTP cache)
         globPatterns: ['**/*.{js,css,html,ico,svg,woff2}', '**/icons/*.png'],
         skipWaiting: true,
