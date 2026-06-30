@@ -888,3 +888,100 @@ button:disabled {
     box-shadow: 0 0 8px var(--glow-gold-sm);
   }
 }
+
+/* ── Reaction System ─────────────────────────────────────────────────────────── */
+
+@keyframes confetti-fall {
+  0%   { transform: translateY(-24px) rotate(0deg); opacity: 1; }
+  78%  { opacity: 1; }
+  100% { transform: translateY(110vh) rotate(740deg); opacity: 0; }
+}
+
+@keyframes coin-rise {
+  0%   { transform: translateY(0) scale(0.55); opacity: 0; }
+  14%  { opacity: 1; }
+  55%  { transform: translateY(-88px) scale(1.05); opacity: 1; }
+  100% { transform: translateY(-68px) scale(0.7); opacity: 0; }
+}
+
+@keyframes duck-enter-left {
+  0%   { transform: translateX(-220px) rotate(-14deg) scale(0.5); opacity: 0; }
+  24%  { transform: translateX(16px) rotate(4deg) scale(1.12); opacity: 1; }
+  55%  { transform: translateX(-6px) rotate(-2deg) scale(1); opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: translateX(-220px) rotate(-12deg) scale(0.5); opacity: 0; }
+}
+
+@keyframes duck-enter-right {
+  0%   { transform: translateX(220px) rotate(14deg) scale(0.5); opacity: 0; }
+  24%  { transform: translateX(-16px) rotate(-4deg) scale(1.12); opacity: 1; }
+  55%  { transform: translateX(6px) rotate(2deg) scale(1); opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: translateX(220px) rotate(12deg) scale(0.5); opacity: 0; }
+}
+
+@keyframes tumbleweed-roll {
+  0%   { transform: translateX(-110px) rotate(0deg); opacity: 0; }
+  7%   { opacity: 1; }
+  93%  { opacity: 1; }
+  100% { transform: translateX(calc(100vw + 110px)) rotate(820deg); opacity: 0; }
+}
+
+@keyframes rain-drop {
+  0%   { transform: translateY(-12px); opacity: 0; }
+  7%   { opacity: 1; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+@keyframes reaction-banner-in {
+  0%   { transform: translateX(-50%) translateY(-22px); opacity: 0; }
+  100% { transform: translateX(-50%) translateY(0);    opacity: 1; }
+}
+
+@keyframes reaction-fade-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes reaction-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* Fixed layer: pointer-events off so the UI below stays interactive */
+.reaction-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9000;
+  overflow: hidden;
+}
+.reaction-layer--exit {
+  animation: reaction-fade-out 0.45s ease forwards;
+}
+
+/* Control buttons rendered OUTSIDE the layer so pointer-events work */
+.reaction-controls {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 9100;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.reaction-stop-btn {
+  pointer-events: all;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1.5px solid var(--gold);
+  color: var(--gold);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 6px 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  transition: background 0.15s;
+}
+.reaction-stop-btn:hover { background: rgba(238, 157, 0, 0.18); }
+.reaction-stop-btn--dim  { border-color: rgba(255,255,255,0.22); color: rgba(255,255,255,0.45); }
+
+@media (prefers-reduced-motion: reduce) {
+  .reaction-layer,
+  .reaction-layer--exit {
+    animation: none !important;
+  }
+}

@@ -1,4 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  ReactionSystem,
+  tryTriggerDayReaction,
+  tryTriggerMicroSales,
+  tryTriggerWebinarFull,
+} from './components/ReactionSystem'
 import { useTheme } from './hooks/useTheme'
 import { KPICard } from './components/KPICard'
 import { StatusBadge } from './components/StatusBadge'
@@ -53,6 +59,11 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const OPENING_TEXT = "At your service, sir. One gesture and I shall commence the operational report."
+
+// Detect queries about today's performance — only these trigger day reactions
+function isDayResultQuery(q: string): boolean {
+  return /\b(today|dzisiaj|morning brief|brief|how are we doing|wyniki|roas dnia|jak idzie|jak posz|podsumowanie|results|how did we do|daily|dziś)\b/i.test(q)
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -817,6 +828,25 @@ export default function App() {
     return () => clearInterval(interval)
   }, [loadData, loadAds, loadRuns, loadJsuFunnel, loadJsuParticipants, loadOpsWeekReport, loadOrdersData, loadProfitData, loadMonthTrend])
 
+  // ── Reaction triggers ────────────────────────────────────────────────────────
+
+  // Micro-sale: watch latest_20_orders for new JSU/JZK orders since last seen
+  useEffect(() => {
+    if (!ordersData?.latest_20_orders) return
+    tryTriggerMicroSales(ordersData.latest_20_orders)
+  }, [ordersData])
+
+  // Webinar full-house: only fires when real attendance data is present
+  useEffect(() => {
+    if (!jsuSummary) return
+    const sessionDate = jsuSummary._debug?.latestSessionDate ?? ''
+    tryTriggerWebinarFull(
+      jsuSummary.totals.attendees,
+      jsuSummary._debug?.attendanceStatus,
+      sessionDate,
+    )
+  }, [jsuSummary])
+
   // ── Opening greeting ─────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -991,11 +1021,19 @@ export default function App() {
         setLlmConnected(true)
       }
       speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText })
+      if (isDayResultQuery(query) && perf?.real_roas != null) {
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+        tryTriggerDayReaction(perf.real_roas, today)
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('gieniu-command failed — falling back to local intent resolve:', err)
       const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData, profitData })
       speakAnswer(result)
+      if (isDayResultQuery(query) && perf?.real_roas != null) {
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+        tryTriggerDayReaction(perf.real_roas, today)
+      }
     } finally {
       setThinking(false)
     }
@@ -1491,6 +1529,9 @@ export default function App() {
       <div className="build-stamp">
         STANLEY build: {__BUILD_HASH__}
       </div>
+
+      {/* Emotional reaction system — fixed overlay, one animation at a time */}
+      <ReactionSystem />
 
     </div>
   )
