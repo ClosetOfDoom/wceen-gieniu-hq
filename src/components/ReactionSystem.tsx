@@ -1,7 +1,10 @@
-// Stanley emotional reaction system.
+// Stanley emotional reaction system — one state at a time, keyed on the day's ROAS.
 // ONE animation at a time (queue). All anti-spam lives in module-level session
-// memory — never localStorage. Audio: celebrate.mp3 (good day), sad.mp3 from
-// 83 s (tragedy). Visual rain stays for tragedy but no separate rain audio.
+// memory — never localStorage. Sharp thresholds, never overlapping:
+//   ROAS ≥ 2.5   → GOOD DAY  : confetti + coins + duck parade + celebrate.mp3
+//   ROAS 1.5–2.5 → NEUTRAL   : nothing (Stanley reports plainly)
+//   ROAS 1.0–1.5 → BAD DAY   : rain + greyed scenery, worried Stanley (NO audio)
+//   ROAS < 1.0   → TRAGEDY   : tumbleweed + darkness + sad.mp3 from 1:23 (83 s)
 // prefers-reduced-motion → static banner only, no particles/audio.
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -10,13 +13,15 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 
 export type ReactionEvent =
   | { kind: 'good-day'; roas: number }
+  | { kind: 'bad-day'; roas: number }
   | { kind: 'tragedy' }
   | { kind: 'micro-sale'; product: 'JSU_COURSE' | 'JZK_LANGUAGE'; amount: number }
   | { kind: 'webinar-full'; count: number }
 
 // ── Session memory (module-scope, NOT localStorage) ───────────────────────────
 
-const celebratedDates   = new Set<string>()   // dates where ROAS≥3 was celebrated
+const celebratedDates   = new Set<string>()   // dates where ROAS≥2.5 was celebrated
+const badDayDates       = new Set<string>()   // dates where ROAS 1–1.5 rain was shown
 const tragedyDates      = new Set<string>()   // dates where ROAS<1 tragedy was shown
 const webinarCelebrated = new Set<string>()   // key = `${sessionDate}:≥20`
 let   seenOrderIds: Set<string> | null = null // null = first load, skip celebration
@@ -37,13 +42,23 @@ function _subscribe(fn: Listener): () => void {
 
 // ── Public guard helpers (called from App.tsx) ────────────────────────────────
 
-// ROAS ≥3 → good day celebration. ROAS <1 → tragedy. ROAS 1–2.99 → no animation.
+// Sharp, non-overlapping thresholds — exactly one state fires per day:
+//   ≥2.5 celebrate · 1.5–2.5 neutral (nothing) · 1.0–1.5 rain · <1.0 tragedy.
 export function tryTriggerDayReaction(roas: number | null, today: string): void {
   if (roas == null) return
-  if (roas >= 3 && !celebratedDates.has(today)) {
+  if (roas >= 2.5) {
+    if (celebratedDates.has(today)) return
     celebratedDates.add(today)
     triggerReaction({ kind: 'good-day', roas })
-  } else if (roas < 1 && !tragedyDates.has(today)) {
+  } else if (roas >= 1.5) {
+    // Neutral band — Stanley just reports the numbers, no animation or sound.
+    return
+  } else if (roas >= 1.0) {
+    if (badDayDates.has(today)) return
+    badDayDates.add(today)
+    triggerReaction({ kind: 'bad-day', roas })
+  } else {
+    if (tragedyDates.has(today)) return
     tragedyDates.add(today)
     triggerReaction({ kind: 'tragedy' })
   }
@@ -90,7 +105,8 @@ interface ConfettiPiece { id: number; x: number; color: string; circle: boolean;
 interface CoinPiece     { id: number; x: number; delay: number; label: string }
 interface RainDrop      { id: number; x: number; delay: number; dur: number; h: number; op: number }
 
-const CONFETTI_COLORS = ['#ee9d00','#f5b500','#5cb874','#34d399','#eef3e6','#fb923c','#ffffff','#4ade80']
+// Blue-pond confetti: gold + water-blues + cream/white (no green).
+const CONFETTI_COLORS = ['#ee9d00','#f5b500','#6cb6dc','#57c8e0','#eaf3f8','#93cce9','#ffffff','#5cc7d6']
 
 function makeConfetti(n: number): ConfettiPiece[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -174,7 +190,8 @@ interface ActiveState {
 function buildActive(ev: ReactionEvent): ActiveState {
   switch (ev.kind) {
     case 'good-day':     return { event: ev, confetti: makeConfetti(50), coins: makeCoins(9) }
-    case 'tragedy':      return { event: ev, rain: makeRain(40) }
+    case 'bad-day':      return { event: ev, rain: makeRain(46) }
+    case 'tragedy':      return { event: ev }
     case 'micro-sale':   return { event: ev, coins: makeCoins(6) }
     case 'webinar-full': return { event: ev }
   }
@@ -183,6 +200,7 @@ function buildActive(ev: ReactionEvent): ActiveState {
 function getDuration(ev: ReactionEvent): number {
   switch (ev.kind) {
     case 'good-day':     return 8500
+    case 'bad-day':      return 8000
     case 'tragedy':      return 8000
     case 'micro-sale':   return 3800
     case 'webinar-full': return 4200
@@ -302,6 +320,7 @@ export function ReactionSystem() {
         aria-atomic="true"
         aria-label={
           ev.kind === 'good-day'     ? `Celebration: ROAS ${ev.roas.toFixed(2)}x` :
+          ev.kind === 'bad-day'      ? `A weak day: ROAS ${ev.roas.toFixed(2)}x` :
           ev.kind === 'tragedy'      ? 'Bleak day: ROAS below 1' :
           ev.kind === 'micro-sale'   ? 'Sale detected' :
           'Webinar full house'
@@ -363,7 +382,7 @@ export function ReactionSystem() {
             <div style={{
               position: 'absolute', top: '14%', left: '50%',
               transform: 'translateX(-50%)',
-              background: 'rgba(8,18,10,0.94)', border: '2px solid var(--gold)',
+              background: 'rgba(11,30,46,0.94)', border: '2px solid var(--gold)',
               borderRadius: '6px', padding: '18px 36px', textAlign: 'center',
               animation: 'reaction-banner-in 0.5s ease forwards',
               boxShadow: '0 0 40px rgba(238,157,0,0.32)',
@@ -383,7 +402,7 @@ export function ReactionSystem() {
         {ev.kind === 'good-day' && red && (
           <div style={{
             position: 'absolute', top: '10%', left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(8,18,10,0.95)', border: '2px solid var(--gold)',
+            background: 'rgba(11,30,46,0.95)', border: '2px solid var(--gold)',
             borderRadius: '6px', padding: '16px 30px', textAlign: 'center', minWidth: '290px',
             boxShadow: '0 0 24px rgba(238,157,0,0.25)',
           }}>
@@ -393,26 +412,68 @@ export function ReactionSystem() {
           </div>
         )}
 
-        {/* ════ TRAGEDY ════ */}
-        {ev.kind === 'tragedy' && !red && (
+        {/* ════ BAD DAY (ROAS 1.0–1.5) — rain + grey, worried Stanley, NO audio ════ */}
+        {ev.kind === 'bad-day' && !red && (
           <>
-            {/* Dark overlay */}
+            {/* Desaturating grey wash — overcast, not the tragedy's blackout */}
             <div style={{
               position: 'absolute', inset: 0,
-              background: 'rgba(2,5,3,0.7)',
-              animation: 'reaction-fade-in 1.1s ease forwards',
+              background: 'linear-gradient(to bottom, rgba(40,54,66,0.34) 0%, rgba(24,34,44,0.42) 100%)',
+              animation: 'reaction-fade-in 1s ease forwards',
             }} />
 
-            {/* Visual rain — subtle drops, no separate audio (sad.mp3 is the audio) */}
+            {/* Rain — the signal of a bad (not tragic) day */}
             {active.rain?.map(r => (
               <div key={r.id} style={{
                 position: 'absolute', left: `${r.x}%`, top: 0,
                 width: 1.5, height: r.h,
-                background: `rgba(70,140,95,${r.op})`,
+                background: `rgba(150,185,210,${r.op})`,
                 animation: `rain-drop ${r.dur}s ${r.delay}s linear infinite`,
                 willChange: 'transform, opacity',
               }} />
             ))}
+
+            {/* Worried banner */}
+            <div style={{
+              position: 'absolute', top: '16%', left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(14,24,34,0.94)',
+              border: '1px solid rgba(120,150,175,0.4)', borderRadius: '5px',
+              padding: '17px 34px', textAlign: 'center', minWidth: '316px',
+              animation: 'reaction-banner-in 0.5s ease forwards',
+              boxShadow: '0 0 26px rgba(0,0,0,0.5)',
+            }}>
+              <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.08rem', color: 'var(--text2)', marginBottom: '6px', letterSpacing: '0.04em' }}>
+                A soggy sort of day, sir.
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--muted)', lineHeight: 1.55 }}>
+                ROAS {ev.roas.toFixed(2)}× — barely above water. Worth a closer look.
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Bad day — reduced motion */}
+        {ev.kind === 'bad-day' && red && (
+          <div style={{
+            position: 'absolute', top: '10%', left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(14,24,34,0.95)', border: '1px solid rgba(120,150,175,0.35)',
+            borderRadius: '5px', padding: '16px 30px', textAlign: 'center', minWidth: '292px',
+          }}>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.04rem', color: 'var(--text2)' }}>
+              A soggy sort of day, sir. ROAS {ev.roas.toFixed(2)}× — worth a closer look.
+            </div>
+          </div>
+        )}
+
+        {/* ════ TRAGEDY (ROAS < 1.0) — tumbleweed + darkness + sad.mp3 from 1:23 ════ */}
+        {ev.kind === 'tragedy' && !red && (
+          <>
+            {/* Deep darkness — the blackout that sets tragedy apart from a bad day */}
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'rgba(2,5,8,0.72)',
+              animation: 'reaction-fade-in 1.1s ease forwards',
+            }} />
 
             {/* Tumbleweed — CSS/SVG only, no external asset */}
             <div style={{
@@ -426,10 +487,10 @@ export function ReactionSystem() {
             {/* Melancholy banner */}
             <div style={{
               position: 'absolute', top: '18%', left: '50%', transform: 'translateX(-50%)',
-              background: 'rgba(2,5,3,0.97)',
-              border: '1px solid rgba(70,130,85,0.32)', borderRadius: '4px',
+              background: 'rgba(2,5,8,0.97)',
+              border: '1px solid rgba(90,110,130,0.32)', borderRadius: '4px',
               padding: '18px 34px', textAlign: 'center', minWidth: '320px',
-              boxShadow: '0 0 30px rgba(0,0,0,0.75)',
+              boxShadow: '0 0 30px rgba(0,0,0,0.8)',
             }}>
               <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.06rem', color: 'var(--muted)', marginBottom: '6px', letterSpacing: '0.04em', fontStyle: 'italic' }}>
                 A rather bleak day, sir.
@@ -445,7 +506,7 @@ export function ReactionSystem() {
         {ev.kind === 'tragedy' && red && (
           <div style={{
             position: 'absolute', top: '10%', left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(2,5,3,0.96)', border: '1px solid rgba(70,130,85,0.28)',
+            background: 'rgba(2,5,8,0.96)', border: '1px solid rgba(90,110,130,0.28)',
             borderRadius: '4px', padding: '16px 30px', textAlign: 'center', minWidth: '286px',
           }}>
             <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.04rem', color: 'var(--muted)', fontStyle: 'italic' }}>
@@ -471,7 +532,7 @@ export function ReactionSystem() {
             ))}
             <div style={{
               position: 'absolute', top: '20%', left: '50%', transform: 'translateX(-50%)',
-              background: 'rgba(8,18,10,0.94)', border: '1.5px solid var(--gold)',
+              background: 'rgba(11,30,46,0.94)', border: '1.5px solid var(--gold)',
               borderRadius: '4px', padding: '13px 28px', textAlign: 'center', minWidth: '274px',
               animation: 'reaction-banner-in 0.42s ease forwards',
               boxShadow: '0 0 22px rgba(238,157,0,0.22)',
@@ -488,7 +549,7 @@ export function ReactionSystem() {
         {ev.kind === 'micro-sale' && red && (
           <div style={{
             position: 'absolute', top: '10%', left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(8,18,10,0.95)', border: '1.5px solid var(--gold)',
+            background: 'rgba(11,30,46,0.95)', border: '1.5px solid var(--gold)',
             borderRadius: '4px', padding: '12px 26px', textAlign: 'center', minWidth: '248px',
           }}>
             <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.95rem', color: 'var(--gold)' }}>
@@ -501,7 +562,7 @@ export function ReactionSystem() {
         {ev.kind === 'webinar-full' && (
           <div style={{
             position: 'absolute', top: '14%', left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(8,18,10,0.94)', border: '1.5px solid var(--teal)',
+            background: 'rgba(11,30,46,0.94)', border: '1.5px solid var(--teal)',
             borderRadius: '4px', padding: '16px 30px', textAlign: 'center', minWidth: '290px',
             animation: red ? undefined : 'reaction-banner-in 0.46s ease forwards',
             boxShadow: '0 0 22px rgba(52,211,153,0.2)',

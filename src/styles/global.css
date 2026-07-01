@@ -5,32 +5,33 @@
 }
 
 :root {
-  /* Palette — DARK: enchanted forest at night — deep moss/emerald + warm wood + gold.
-     Green is the leading accent alongside gold; cream text for high contrast. */
-  --bg:           #0e1a12;
-  --bg2:          #122017;
-  --surface:      #16271b;
-  --surface2:     #1c3122;
-  --surface3:     #24412c;
-  --border:       #2f4a35;
+  /* Palette — DARK: "Blue Pond" at night — deep pond navy + water-blue + gold.
+     Water-blue is the leading accent alongside gold; cream text for high contrast.
+     (No green anywhere — the duck sits on a pond, not in a forest.) */
+  --bg:           #0b1e2e;   /* deep pond */
+  --bg2:          #12283a;   /* pond, lit from within (gradient partner) */
+  --surface:      #163149;
+  --surface2:     #1c3d57;
+  --surface3:     #244c6a;
+  --border:       #2c4a63;
   --border-gold:  #8a6228;
-  --border-wood:  #6b4f33;   /* oak ring — seats the navy duck into the forest */
+  --border-wood:  #6b4f33;   /* warm oak ring — seats the duck on the water */
   --gold:         #ee9d00;
   --gold-bright:  #f5b500;
   --gold-dim:     #5a4010;
   --glow-gold:    rgba(238,157,0,0.40);
   --glow-gold-sm: rgba(238,157,0,0.22);
-  --green:        #5cb874;   /* leading green accent */
-  --green-bright: #7ad492;
-  --green-glow:   rgba(92,184,116,0.28);
-  --teal:         #34d399;
-  --teal-dim:     #0f3d31;
-  --emerald:      #4ade80;
-  --emerald-dim:  #08361f;
-  --text:         #eef3e6;
-  --text2:        #cdd9c0;
-  --muted:        #93a589;
-  --muted2:       #69785f;
+  --green:        #6cb6dc;   /* WATER-BLUE — leading accent (var name kept) */
+  --green-bright: #93cce9;
+  --green-glow:   rgba(108,182,220,0.30);
+  --teal:         #5cc7d6;   /* water cyan — positive / active */
+  --teal-dim:     #0f3a44;
+  --emerald:      #57c8e0;   /* bright water-cyan — "on target" (var name kept) */
+  --emerald-dim:  #082f3a;
+  --text:         #eaf3f8;   /* pond-mist cream */
+  --text2:        #c3d6e2;
+  --muted:        #8ba6b8;
+  --muted2:       #5f7688;
   --amber:        #fbbf24;
   --red:          #f87171;
   --orange:       #fb923c;
@@ -46,33 +47,33 @@
   --font-mono:  'JetBrains Mono', 'Fira Mono', 'Cascadia Code', 'Consolas', monospace;
 }
 
-/* ── Light theme (PRIMARY) — sunlit enchanted forest: cream + sage + oak + gold ── */
+/* ── Light theme (PRIMARY) — "Blue Pond" by day: cream-blue + water + gold ── */
 
 [data-theme="light"] {
-  --bg:           #f5f0e6;   /* warm cream */
-  --bg2:          #ece4d3;   /* parchment */
-  --surface:      #fbf7ee;   /* lightest card */
-  --surface2:     #f1ebdd;
-  --surface3:     #e7dfcc;
-  --border:       #cdbfa1;   /* warm wood-tan */
+  --bg:           #edf4f7;   /* cream-blue sky-water */
+  --bg2:          #e0edf3;   /* shallow water */
+  --surface:      #f7fbfd;   /* lightest card */
+  --surface2:     #eaf3f7;
+  --surface3:     #dcebf2;
+  --border:       #b8d2df;   /* soft water-blue edge */
   --border-gold:  #b8920e;
-  --border-wood:  #9c7b4d;   /* oak ring */
+  --border-wood:  #9c7b4d;   /* warm oak ring — seats the duck on the water */
   --gold:         #ee9d00;
   --gold-bright:  #c87f08;   /* darker gold — readable on cream */
   --gold-dim:     #c9a460;
   --glow-gold:    rgba(238,157,0,0.45);
   --glow-gold-sm: rgba(238,157,0,0.28);
-  --green:        #3f7d4f;   /* sage forest — leading accent */
-  --green-bright: #2f6b3f;
-  --green-glow:   rgba(63,125,79,0.30);
-  --teal:         #2f8f6f;   /* mossy green-teal */
-  --teal-dim:     #cfeadd;
-  --emerald:      #2e7d4f;
-  --emerald-dim:  #dcefdc;
-  --text:         #26301d;   /* deep bark/moss — high contrast on cream */
-  --text2:        #44523a;
-  --muted:        #66735a;
-  --muted2:       #8a907a;
+  --green:        #4a90b8;   /* WATER-BLUE — leading accent (var name kept) */
+  --green-bright: #35759c;
+  --green-glow:   rgba(127,181,213,0.34);
+  --teal:         #2f8faf;   /* water teal — positive / active */
+  --teal-dim:     #cfe6f0;
+  --emerald:      #2e7fa8;   /* water blue — "on target" (var name kept) */
+  --emerald-dim:  #dcecf5;
+  --text:         #0b1e2e;   /* deep pond navy — high contrast on cream */
+  --text2:        #2c4457;
+  --muted:        #5a7284;
+  --muted2:       #869aa8;
   --amber:        #b45309;
   --red:          #c0392b;
   --orange:       #c2410c;
@@ -80,17 +81,17 @@
 
 [data-theme="light"] body {
   background-image:
-    radial-gradient(ellipse at 50% 0%,   rgba(63,125,79,0.09)  0%, transparent 55%),
-    radial-gradient(ellipse at 0% 100%,  rgba(156,123,77,0.08) 0%, transparent 45%),
-    radial-gradient(ellipse at 100% 50%, rgba(238,157,0,0.06)  0%, transparent 40%),
-    radial-gradient(ellipse at 50% 100%, rgba(63,125,79,0.05)  0%, transparent 70%),
-    /* faint oak wood-grain — subtle, not garish */
-    repeating-linear-gradient(94deg, rgba(120,90,50,0.018) 0px, rgba(120,90,50,0.018) 2px, transparent 2px, transparent 9px);
+    radial-gradient(ellipse at 50% 0%,   rgba(127,181,213,0.14) 0%, transparent 55%),
+    radial-gradient(ellipse at 0% 100%,  rgba(74,144,184,0.08)  0%, transparent 45%),
+    radial-gradient(ellipse at 100% 50%, rgba(238,157,0,0.06)   0%, transparent 40%),
+    radial-gradient(ellipse at 50% 100%, rgba(74,144,184,0.06)  0%, transparent 70%),
+    /* faint water-ripple sheen — subtle, not garish */
+    repeating-linear-gradient(94deg, rgba(74,144,184,0.020) 0px, rgba(74,144,184,0.020) 2px, transparent 2px, transparent 9px);
 }
 
 /* Dark panel island — for legacy components with hardcoded dark colours */
 [data-theme="light"] .dark-panel {
-  background: #16271b;
+  background: #163149;
   border-radius: 6px;
   padding: 16px;
   margin: -4px;
@@ -100,12 +101,12 @@ html, body {
   height: 100%;
   background: var(--bg);
   background-image:
-    radial-gradient(ellipse at 50% 0%,   rgba(238,157,0,0.05)  0%, transparent 55%),
-    radial-gradient(ellipse at 0% 100%,  rgba(92,184,116,0.06) 0%, transparent 45%),
-    radial-gradient(ellipse at 100% 50%, rgba(238,157,0,0.04)  0%, transparent 40%),
-    radial-gradient(ellipse at 50% 100%, rgba(8,30,18,0.65)    0%, transparent 70%),
-    /* faint wood-grain in the dark too */
-    repeating-linear-gradient(94deg, rgba(120,90,50,0.022) 0px, rgba(120,90,50,0.022) 2px, transparent 2px, transparent 9px);
+    radial-gradient(ellipse at 50% 0%,   rgba(238,157,0,0.05)   0%, transparent 55%),
+    radial-gradient(ellipse at 0% 100%,  rgba(108,182,220,0.08) 0%, transparent 45%),
+    radial-gradient(ellipse at 100% 50%, rgba(238,157,0,0.04)   0%, transparent 40%),
+    radial-gradient(ellipse at 50% 100%, rgba(6,20,34,0.70)     0%, transparent 70%),
+    /* faint water-ripple sheen in the dark too */
+    repeating-linear-gradient(94deg, rgba(108,182,220,0.020) 0px, rgba(108,182,220,0.020) 2px, transparent 2px, transparent 9px);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 18px;
@@ -314,7 +315,7 @@ button:disabled {
   border-radius: 6px;
   background:
     radial-gradient(ellipse at 0% 0%, rgba(238,157,0,0.04) 0%, transparent 60%),
-    radial-gradient(ellipse at 100% 100%, rgba(92,184,116,0.04) 0%, transparent 60%);
+    radial-gradient(ellipse at 100% 100%, rgba(108,182,220,0.04) 0%, transparent 60%);
   pointer-events: none;
 }
 
@@ -455,8 +456,8 @@ button:disabled {
 }
 .btn-mic.listening {
   border-color: var(--teal);
-  box-shadow: 0 0 0 10px rgba(92,184,116,0.18);
-  background: rgba(92,184,116,0.10);
+  box-shadow: 0 0 0 10px rgba(108,182,220,0.18);
+  background: rgba(108,182,220,0.10);
   animation: pulse-mic 1.2s ease-in-out infinite;
 }
 
@@ -469,8 +470,8 @@ button:disabled {
 }
 
 @keyframes pulse-mic {
-  0%, 100% { box-shadow: 0 0 0 5px rgba(92,184,116,0.12); }
-  50%       { box-shadow: 0 0 0 16px rgba(92,184,116,0.22); }
+  0%, 100% { box-shadow: 0 0 0 5px rgba(108,182,220,0.12); }
+  50%       { box-shadow: 0 0 0 16px rgba(108,182,220,0.22); }
 }
 
 /* ── Sidebar nav ─────────────────────────────────────────────────────────── */
@@ -478,12 +479,13 @@ button:disabled {
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px 18px;
-  font-size: 0.85rem;
+  gap: 11px;
+  padding: 13px 18px;
+  font-size: 1.02rem;
+  font-weight: 600;
   font-family: var(--font-serif);
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: 0.03em;
+  color: var(--text2);
   cursor: pointer;
   border-left: 2px solid transparent;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
@@ -494,17 +496,20 @@ button:disabled {
 }
 .nav-item:hover {
   color: var(--text2);
-  background: rgba(92,184,116,0.06);
+  background: rgba(108,182,220,0.06);
 }
 .nav-item.active {
   color: var(--gold);
   border-left: 2px solid var(--green);   /* forest-path green accent beside gold text */
-  background: rgba(92,184,116,0.08);
+  background: rgba(108,182,220,0.08);
+}
+.nav-item.active {
+  font-weight: 700;
 }
 .nav-item .nav-icon {
-  width: 18px;
+  width: 20px;
   text-align: center;
-  font-size: 0.78rem;
+  font-size: 0.92rem;
   flex-shrink: 0;
 }
 .nav-group-label {
@@ -545,7 +550,7 @@ button:disabled {
 }
 
 .data-table tbody tr:hover {
-  background: rgba(92,184,116,0.05);
+  background: rgba(108,182,220,0.05);
 }
 
 .data-table tbody td {
@@ -771,21 +776,23 @@ button:disabled {
   }
 
   .mobile-nav-icon {
-    font-size: 1.2rem;
+    font-size: 1.35rem;
     position: relative;
     display: inline-block;
     line-height: 1;
   }
 
   .mobile-nav-label {
-    font-family: var(--font-mono);
-    font-size: 0.58rem;
-    letter-spacing: 0.05em;
-    color: var(--muted);
+    font-family: var(--font-sans);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--text2);
     text-transform: uppercase;
   }
   .mobile-nav-item.active .mobile-nav-label {
     color: var(--gold);
+    font-weight: 700;
   }
 
   /* Add bottom padding to scrollable main so content doesn't hide under nav */
@@ -797,9 +804,9 @@ button:disabled {
 /* ── Magic Cybernetics Keyframes ────────────────────────────────────────────── */
 
 @keyframes illuminate {
-  0%   { opacity: 0; box-shadow: none; }
+  0%   { opacity: 0; transform: translateY(8px); box-shadow: none; }
   40%  { opacity: 0.6; box-shadow: 0 0 8px var(--glow-gold-sm); }
-  100% { opacity: 1; box-shadow: 0 0 18px var(--glow-gold-sm); }
+  100% { opacity: 1; transform: translateY(0); box-shadow: 0 0 18px var(--glow-gold-sm); }
 }
 
 @keyframes rune-pulse {
@@ -835,10 +842,18 @@ button:disabled {
 
 /* ── New classes: magic cybernetics UI ──────────────────────────────────────── */
 
-/* Panel entrance — illuminate sequence */
+/* Panel entrance — illuminate sequence (opacity + subtle rise) */
 .panel-illuminate {
   animation: illuminate 0.6s ease-out both;
 }
+
+/* Gentle stagger for KPI cards so the grid fades in like a ripple, not all at once */
+.kpi-grid .kpi-card:nth-child(1) { animation-delay: 0.00s; }
+.kpi-grid .kpi-card:nth-child(2) { animation-delay: 0.06s; }
+.kpi-grid .kpi-card:nth-child(3) { animation-delay: 0.12s; }
+.kpi-grid .kpi-card:nth-child(4) { animation-delay: 0.18s; }
+.kpi-grid .kpi-card:nth-child(5) { animation-delay: 0.24s; }
+.kpi-grid .kpi-card:nth-child(6) { animation-delay: 0.30s; }
 
 /* Rune thinking indicator */
 .rune-thinking {
