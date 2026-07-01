@@ -67,15 +67,15 @@ export function IntroSplash() {
     if (doneRef.current) return
     doneRef.current = true
     setExiting(true)
-    // matches .intro-splash--exit fade-out duration
-    setTimeout(() => setVisible(false), 720)
+    // matches .intro-splash--exit fade-out duration (0.6 s)
+    setTimeout(() => setVisible(false), 600)
   }, [])
 
   useEffect(() => {
     if (!visible) return
-    // Reduced motion: show a still frame briefly, then move on quickly.
-    // Full intro: let the reveal breathe (~3.4 s) inside the 6 s fanfare window.
-    const hold = reduced ? 1200 : 3400
+    // Synced with Fanfares.mp3 (first 6 s): both start on mount and end together.
+    // hold + 0.6 s fade ≈ 6 s total. Reduced motion: short still frame.
+    const hold = reduced ? 1400 : 5400
     const t = setTimeout(finish, hold)
     return () => clearTimeout(t)
   }, [visible, reduced, finish])

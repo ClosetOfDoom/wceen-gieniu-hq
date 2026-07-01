@@ -8,25 +8,25 @@
   /* Palette — DARK: "Sunny Pond" at dusk — the SAME pond as light, at night.
      Deep navy-blue water + dark green depth + gold sun/moon on the water + duck
      cream. Green, blue and gold all present; gold shines harder in the dark. */
-  --bg:           #0d1f26;   /* deep dusk water — navy-green (gradient start) */
-  --bg2:          #122e33;   /* lit shallows — gradient partner */
-  --surface:      #16323a;   /* card / panel */
-  --surface2:     #1c3b44;
-  --surface3:     #24454f;
-  --border:       #2f4e52;   /* delicate blue-green edge */
-  --border-gold:  #8a6228;
+  --bg:           #0c1e23;   /* deep dusk water — green under the navy (gradient start) */
+  --bg2:          #102e30;   /* lit shallows — gradient partner, greener */
+  --surface:      #143035;   /* card / panel */
+  --surface2:     #1a3a40;
+  --surface3:     #22454b;
+  --border:       #345a5e;   /* VISIBLE blue-green edge */
+  --border-gold:  #a9781f;
   --border-wood:  #6b4f33;   /* warm oak ring — seats the duck on the water */
-  --gold:         #f0a81e;   /* sun/moon — stronger in the dark */
-  --gold-bright:  #f7bb3a;
-  --gold-dim:     #5a4010;
-  --glow-gold:    rgba(240,168,30,0.44);
-  --glow-gold-sm: rgba(240,168,30,0.26);
-  --green:        #6fa76d;   /* nature green — glows at dusk */
-  --green-bright: #8bc089;
-  --green-glow:   rgba(111,167,109,0.34);
-  --teal:         #5ba3b8;   /* WATER blue — lighter, a reflection */
-  --teal-dim:     #123842;
-  --emerald:      #66b56b;   /* healthy / on-target green */
+  --gold:         #f0a81e;   /* sun/moon — strong, like moonlight on water */
+  --gold-bright:  #ffc23f;
+  --gold-dim:     #6a4a12;
+  --glow-gold:    rgba(240,168,30,0.48);
+  --glow-gold-sm: rgba(240,168,30,0.28);
+  --green:        #6dae6b;   /* nature green — glows at dusk */
+  --green-bright: #8fce8c;
+  --green-glow:   rgba(109,174,107,0.38);
+  --teal:         #56a8bd;   /* WATER blue — bright, a reflection */
+  --teal-dim:     #123c46;
+  --emerald:      #63b067;   /* healthy / on-target green */
   --emerald-dim:  #0c3a2a;
   --text:         #e8f0ed;   /* pond-mist light */
   --text2:        #c4d6d1;
@@ -51,12 +51,12 @@
    Cream-blue-green sunlit water + fresh green reeds + water blue + gold sun. ── */
 
 [data-theme="light"] {
-  --bg:           #eef4f2;   /* sunlit water — light blue-cream, cool */
-  --bg2:          #e3edea;   /* shallow water in sun */
-  --surface:      #f7faf8;   /* card / panel */
-  --surface2:     #edf3f1;
-  --surface3:     #e0eae7;
-  --border:       #b9d3d6;   /* delicate water-blue edge */
+  --bg:           #e3eeea;   /* sunlit water — clearly blue-green, NOT cream */
+  --bg2:          #d7e8e3;   /* shallow water — a touch deeper */
+  --surface:      #eaf3f0;   /* card / panel — watery, not white */
+  --surface2:     #dfece8;
+  --surface3:     #d1e4de;
+  --border:       #93c0c9;   /* VISIBLE water-blue edge */
   --border-gold:  #b8920e;
   --border-wood:  #9c7b4d;   /* warm oak ring — seats the duck on the water */
   --gold:         #ee9d00;   /* sun */
@@ -64,17 +64,17 @@
   --gold-dim:     #c9a460;
   --glow-gold:    rgba(238,157,0,0.45);
   --glow-gold-sm: rgba(238,157,0,0.28);
-  --green:        #5b8c5a;   /* nature green — vivid vegetation accent */
-  --green-bright: #4c7c4b;
-  --green-glow:   rgba(91,140,90,0.32);
-  --teal:         #4a90a4;   /* WATER blue — vivid, not grey */
-  --teal-dim:     #d2e6ea;
-  --emerald:      #4e8c4d;   /* healthy / on-target green */
-  --emerald-dim:  #dceedb;
-  --text:         #1a2e35;   /* deep pond ink — high contrast */
-  --text2:        #3a4e54;
-  --muted:        #5e747a;
-  --muted2:       #8aa0a4;
+  --green:        #4e8a4c;   /* nature green — strong vegetation accent */
+  --green-bright: #3d763b;
+  --green-glow:   rgba(78,138,76,0.34);
+  --teal:         #3a8296;   /* WATER blue — strong, visible */
+  --teal-dim:     #c3e0e6;
+  --emerald:      #457f42;   /* healthy / on-target green */
+  --emerald-dim:  #d3e9d0;
+  --text:         #14252b;   /* deep pond ink — high contrast */
+  --text2:        #33474d;
+  --muted:        #566d72;
+  --muted2:       #7e989c;
   --amber:        #b45309;
   --red:          #c0392b;
   --orange:       #c2410c;
@@ -82,17 +82,17 @@
 
 [data-theme="light"] body {
   background-image:
-    radial-gradient(ellipse at 50% 0%,   rgba(238,157,0,0.11)  0%, transparent 55%),   /* sun overhead */
-    radial-gradient(ellipse at 0% 100%,  rgba(91,140,90,0.14)  0%, transparent 45%),   /* green reed bank */
-    radial-gradient(ellipse at 100% 50%, rgba(74,144,164,0.13) 0%, transparent 42%),   /* water blue */
-    radial-gradient(ellipse at 50% 100%, rgba(91,140,90,0.06)  0%, transparent 70%),
-    /* faint water-ripple sheen — subtle, not garish */
-    repeating-linear-gradient(94deg, rgba(74,144,164,0.024) 0px, rgba(74,144,164,0.024) 2px, transparent 2px, transparent 9px);
+    radial-gradient(ellipse at 50% -5%,  rgba(238,157,0,0.16)  0%, transparent 50%),   /* sun overhead */
+    radial-gradient(ellipse at 0% 100%,  rgba(78,138,76,0.22)  0%, transparent 48%),   /* green reed bank */
+    radial-gradient(ellipse at 100% 45%, rgba(58,130,150,0.22) 0%, transparent 45%),   /* water blue */
+    radial-gradient(ellipse at 50% 108%, rgba(58,130,150,0.14) 0%, transparent 72%),   /* deep water */
+    /* water-ripple sheen */
+    repeating-linear-gradient(94deg, rgba(58,130,150,0.035) 0px, rgba(58,130,150,0.035) 2px, transparent 2px, transparent 9px);
 }
 
 /* Dark panel island — for legacy components with hardcoded dark colours */
 [data-theme="light"] .dark-panel {
-  background: #16323a;
+  background: #143035;
   border-radius: 6px;
   padding: 16px;
   margin: -4px;
@@ -102,12 +102,12 @@ html, body {
   height: 100%;
   background: var(--bg);
   background-image:
-    radial-gradient(ellipse at 50% 0%,   rgba(240,168,30,0.08)  0%, transparent 55%),   /* sun/moon */
-    radial-gradient(ellipse at 0% 100%,  rgba(111,167,109,0.12) 0%, transparent 46%),   /* green shore depth */
-    radial-gradient(ellipse at 100% 50%, rgba(91,163,184,0.11)  0%, transparent 42%),   /* water-blue reflection */
-    radial-gradient(ellipse at 50% 105%, rgba(18,46,51,0.85)    0%, transparent 72%),   /* deeper shallows → #122e33 */
-    /* faint water-ripple sheen in the dark too */
-    repeating-linear-gradient(94deg, rgba(91,163,184,0.024) 0px, rgba(91,163,184,0.024) 2px, transparent 2px, transparent 9px);
+    radial-gradient(ellipse at 50% -5%,  rgba(240,168,30,0.12)  0%, transparent 50%),   /* moon on water */
+    radial-gradient(ellipse at 0% 100%,  rgba(109,174,107,0.20) 0%, transparent 48%),   /* green shore depth */
+    radial-gradient(ellipse at 100% 45%, rgba(86,168,189,0.18)  0%, transparent 45%),   /* water-blue reflection */
+    radial-gradient(ellipse at 50% 108%, rgba(16,46,48,0.9)     0%, transparent 72%),   /* deep shallows → #102e30 */
+    /* water-ripple sheen in the dark too */
+    repeating-linear-gradient(94deg, rgba(86,168,189,0.03) 0px, rgba(86,168,189,0.03) 2px, transparent 2px, transparent 9px);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 18px;
@@ -383,11 +383,11 @@ button:disabled {
   letter-spacing: 0.06em;
   font-family: var(--font-serif);
   transition: opacity 0.15s, box-shadow 0.15s;
-  box-shadow: 0 2px 8px rgba(201,169,110,0.25);
+  box-shadow: 0 2px 8px rgba(58,130,150,0.25);
 }
 .btn-primary:hover:not(:disabled) {
   opacity: 0.9;
-  box-shadow: 0 4px 14px rgba(201,169,110,0.35);
+  box-shadow: 0 4px 14px rgba(58,130,150,0.35);
 }
 
 .btn-cmd {
@@ -405,7 +405,7 @@ button:disabled {
 .btn-cmd:hover:not(:disabled) {
   border-color: var(--gold-dim);
   color: var(--gold);
-  background: rgba(201,169,110,0.06);
+  background: rgba(58,130,150,0.06);
 }
 
 .btn-sm {
@@ -447,13 +447,13 @@ button:disabled {
   align-items: center;
   justify-content: center;
   transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
-  box-shadow: 0 0 0 0 rgba(201,169,110,0.2);
+  box-shadow: 0 0 0 0 rgba(58,130,150,0.2);
   flex-shrink: 0;
 }
 .btn-mic:hover {
   border-color: var(--gold);
-  box-shadow: 0 0 0 8px rgba(201,169,110,0.12);
-  background: rgba(201,169,110,0.08);
+  box-shadow: 0 0 0 8px rgba(58,130,150,0.12);
+  background: rgba(58,130,150,0.08);
 }
 .btn-mic.listening {
   border-color: var(--teal);
@@ -600,7 +600,7 @@ button:disabled {
 .prompt-chip:hover {
   border-color: var(--gold-dim);
   color: var(--gold);
-  background: rgba(201,169,110,0.06);
+  background: rgba(58,130,150,0.06);
 }
 
 /* ── Status dots ─────────────────────────────────────────────────────────── */
@@ -674,7 +674,7 @@ button:disabled {
   font-size: 0.78rem;
   color: var(--teal);
   padding: 8px 14px;
-  background: rgba(45, 212, 191, 0.06);
+  background: rgba(58,130,150, 0.06);
   border-radius: 3px;
   border-left: 2px solid var(--teal-dim);
   margin-bottom: 12px;
@@ -726,7 +726,7 @@ button:disabled {
 .scope-chip.active {
   border-color: var(--gold);
   color: var(--gold);
-  background: rgba(201, 169, 110, 0.08);
+  background: rgba(58,130,150, 0.08);
 }
 
 @media (max-width: 699px) {
@@ -771,10 +771,10 @@ button:disabled {
   }
   .mobile-nav-item:active,
   .mobile-nav-item:hover {
-    background: rgba(201, 169, 110, 0.06);
+    background: rgba(58,130,150, 0.06);
   }
   .mobile-nav-item.active {
-    background: rgba(201, 169, 110, 0.08);
+    background: rgba(58,130,150, 0.08);
   }
 
   .mobile-nav-icon {
@@ -952,13 +952,13 @@ button:disabled {
   overflow: hidden;
   cursor: pointer;
   background:
-    radial-gradient(ellipse at 74% 18%, rgba(120,175,200,0.16) 0%, transparent 46%),   /* moon on water */
-    radial-gradient(ellipse at 10% 92%, rgba(46,120,80,0.22) 0%, transparent 52%),      /* green reed shore */
-    radial-gradient(ellipse at 50% 108%, rgba(16,52,58,0.55) 0%, transparent 60%),
-    linear-gradient(180deg, #02070a 0%, #06141b 38%, #0a2028 66%, #07161b 100%);
+    radial-gradient(ellipse at 74% 18%, rgba(120,180,200,0.18) 0%, transparent 46%),   /* moon on water */
+    radial-gradient(ellipse at 10% 92%, rgba(52,130,86,0.26) 0%, transparent 52%),      /* green reed shore */
+    radial-gradient(ellipse at 88% 96%, rgba(58,130,150,0.20) 0%, transparent 50%),     /* water-blue depth */
+    linear-gradient(180deg, #04080a 0%, #08181c 40%, #0c1e23 68%, #102e30 100%);
   animation: intro-scene-in 0.7s ease both;
 }
-.intro-splash--exit { animation: reaction-fade-out 0.72s ease forwards; }
+.intro-splash--exit { animation: reaction-fade-out 0.6s ease forwards; }
 
 /* Moon */
 .intro-moon {

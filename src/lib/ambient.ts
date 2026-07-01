@@ -34,6 +34,7 @@ let enabled = true              // default ON
 let started = false
 let suppress = 0                // >0 → duck to silence (speech / effects active)
 let periodTimer: ReturnType<typeof setInterval> | null = null
+let periodOverride = false      // set once the user manually picks a theme/period
 
 function periodForNow(): Period {
   const h = new Date().getHours()
@@ -138,8 +139,20 @@ export function initAmbient(): void {
   tracks = { day: makeTrack('day'), night: makeTrack('night') }
   current = periodForNow()
   applyState(true)
-  // Re-check the clock each minute → crossfade at the day/night boundary.
-  periodTimer = setInterval(() => setPeriod(periodForNow()), 60 * 1000)
+  // Re-check the clock each minute → crossfade at the day/night boundary,
+  // UNLESS the user has manually chosen a theme/period this session.
+  periodTimer = setInterval(() => {
+    if (!periodOverride) setPeriod(periodForNow())
+  }, 60 * 1000)
+}
+
+// Manually pin the ambient period (crossfades). Called when the user toggles the
+// theme, so dark → night bed and light → day bed follow the manual choice, and
+// the clock stops overriding it for the rest of the session.
+export function setAmbientPeriod(period: 'day' | 'night'): void {
+  periodOverride = true
+  if (started) setPeriod(period)
+  else current = period   // init hasn't run yet — remember the choice
 }
 
 export function setAmbientEnabled(on: boolean): void {

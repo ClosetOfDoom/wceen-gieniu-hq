@@ -6,7 +6,7 @@ import {
   tryTriggerWebinarFull,
 } from './components/ReactionSystem'
 import { IntroSplash } from './components/IntroSplash'
-import { initAmbient, setAmbientEnabled } from './lib/ambient'
+import { initAmbient, setAmbientEnabled, setAmbientPeriod } from './lib/ambient'
 import { useTheme } from './hooks/useTheme'
 import { KPICard } from './components/KPICard'
 import { StatusBadge } from './components/StatusBadge'
@@ -662,6 +662,13 @@ export default function App() {
     setAmbientOn(prev => { const next = !prev; setAmbientEnabled(next); return next })
   }
 
+  // Manual theme toggle also switches the ambient bed: dark → night, light → day.
+  function handleToggleTheme() {
+    const next: 'dark' | 'light' = theme === 'dark' ? 'light' : 'dark'
+    toggleTheme()
+    setAmbientPeriod(next === 'dark' ? 'night' : 'day')
+  }
+
   // Dashboard data
   const [perf, setPerf]               = useState<DailyPerformance | null>(null)
   const [trend, setTrend]             = useState<DailyPerformance[]>([])
@@ -1300,7 +1307,7 @@ export default function App() {
           isStale={metaStats.isStale}
           onRefresh={() => { loadData(); loadAds(); loadRuns(); loadJsuFunnel(); loadOrdersData(); loadProfitData(); loadMonthTrend() }}
           theme={theme}
-          onToggleTheme={toggleTheme}
+          onToggleTheme={handleToggleTheme}
           ambientOn={ambientOn}
           onToggleAmbient={toggleAmbient}
         />
