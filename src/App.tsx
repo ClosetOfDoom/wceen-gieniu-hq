@@ -6,6 +6,7 @@ import {
   tryTriggerWebinarFull,
 } from './components/ReactionSystem'
 import { IntroSplash } from './components/IntroSplash'
+import { PondBackground } from './components/PondBackground'
 import { initAmbient, setAmbientEnabled, setAmbientPeriod } from './lib/ambient'
 import { useTheme } from './hooks/useTheme'
 import { KPICard } from './components/KPICard'
@@ -1293,6 +1294,9 @@ export default function App() {
 
   return (
     <div className="hud-layout">
+
+      {/* Subtle animated pond backdrop — under the content, switches with theme */}
+      <PondBackground theme={theme} />
 
       {/* Epic pond-at-dusk intro — plays once per app open, in sync with the fanfare */}
       <IntroSplash />

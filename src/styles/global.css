@@ -145,6 +145,8 @@ button:disabled {
    media queries add none). Previously these lived after the media blocks and
    silently re-enabled the desktop sidebar on mobile → two menus at once. */
 .hud-sidebar {
+  position: relative;
+  z-index: 1;            /* above the animated pond backdrop */
   overflow-y: auto;
   border-right: 2px solid var(--border-gold);
   background: var(--bg2);
@@ -155,14 +157,18 @@ button:disabled {
 }
 
 .hud-main {
+  position: relative;
+  z-index: 1;
   overflow-y: auto;
-  background: var(--bg);
+  background: transparent;   /* let the pond backdrop + body wash show through */
   display: flex;
   flex-direction: column;
   transition: background-color 0.25s ease;
 }
 
 .hud-right {
+  position: relative;
+  z-index: 1;
   overflow: hidden;
   border-left: 2px solid var(--border-gold);
   background: var(--bg2);
@@ -904,6 +910,111 @@ button:disabled {
   .wake-btn-illuminate {
     box-shadow: 0 0 8px var(--glow-gold-sm);
   }
+}
+
+/* ── Animated pond backdrop — under the content, GPU transform/opacity only ──── */
+
+.pond-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;            /* content panels sit at z-index 1 (below) */
+  pointer-events: none;
+  overflow: hidden;
+  transition: opacity 0.6s ease;   /* soft crossfade on theme switch */
+}
+
+/* LIGHT — water ripples + sun shimmer */
+.pond-ripple {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid rgba(58,130,150,0.5);
+  box-shadow: 0 0 14px rgba(120,190,205,0.28) inset;
+  opacity: 0;
+  transform: scale(0.2);
+  animation-name: pond-ripple;
+  animation-timing-function: ease-out;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+@keyframes pond-ripple {
+  0%   { transform: scale(0.2); opacity: 0; }
+  12%  { opacity: 0.42; }
+  100% { transform: scale(1);   opacity: 0; }
+}
+
+.pond-shimmer {
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(ellipse at 30% 22%, rgba(255,240,200,0.10) 0%, transparent 42%),
+    radial-gradient(ellipse at 72% 68%, rgba(120,190,205,0.10) 0%, transparent 46%);
+  animation: pond-shimmer 14s ease-in-out infinite alternate;
+  will-change: opacity, transform;
+}
+@keyframes pond-shimmer {
+  0%   { opacity: 0.5; transform: translate3d(-1.5%, -1%, 0) scale(1.02); }
+  100% { opacity: 1;   transform: translate3d(1.5%, 1%, 0)  scale(1.05); }
+}
+
+/* DARK — stars + moon glow + reflection */
+.pond-star {
+  position: absolute;
+  border-radius: 50%;
+  background: #eaf3f8;
+  box-shadow: 0 0 4px rgba(200,225,240,0.7);
+  animation-name: pond-twinkle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: opacity, transform;
+}
+.pond-star--bright { box-shadow: 0 0 7px rgba(220,235,250,0.9); }
+@keyframes pond-twinkle {
+  0%, 100% { opacity: calc(var(--star-o) * 0.4); transform: scale(0.85); }
+  50%      { opacity: var(--star-o);             transform: scale(1); }
+}
+
+.pond-moon-glow {
+  position: absolute;
+  top: 9%; right: 16%;
+  width: 320px; height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, rgba(240,230,200,0.14) 0%, rgba(200,215,225,0.05) 34%, transparent 66%);
+  animation: pond-moon 10s ease-in-out infinite alternate;
+  will-change: opacity;
+}
+@keyframes pond-moon {
+  0%   { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+.pond-reflection {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 42%;
+  background: linear-gradient(180deg, transparent 0%, rgba(86,168,189,0.05) 60%, rgba(86,168,189,0.09) 100%);
+  animation: pond-reflection 9s ease-in-out infinite alternate;
+  will-change: opacity, transform;
+}
+@keyframes pond-reflection {
+  0%   { opacity: 0.6; transform: translateY(0); }
+  100% { opacity: 1;   transform: translateY(-6px); }
+}
+
+/* Reduced motion → freeze everything; stars stay at base opacity, ripples hidden */
+.pond-bg--reduced .pond-ripple,
+.pond-bg--reduced .pond-shimmer,
+.pond-bg--reduced .pond-star,
+.pond-bg--reduced .pond-moon-glow,
+.pond-bg--reduced .pond-reflection {
+  animation: none !important;
+}
+.pond-bg--reduced .pond-ripple { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pond-ripple, .pond-shimmer, .pond-star, .pond-moon-glow, .pond-reflection {
+    animation: none !important;
+  }
+  .pond-ripple { display: none; }
 }
 
 /* ── Intro splash — pond at dusk, revealed in layers ─────────────────────────── */
