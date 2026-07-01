@@ -6,6 +6,7 @@ import {
   tryTriggerWebinarFull,
 } from './components/ReactionSystem'
 import { IntroSplash } from './components/IntroSplash'
+import { initAmbient, setAmbientEnabled } from './lib/ambient'
 import { useTheme } from './hooks/useTheme'
 import { KPICard } from './components/KPICard'
 import { StatusBadge } from './components/StatusBadge'
@@ -207,6 +208,7 @@ function MobileNav({ active, onNavigate, jsuAlert }: {
 
 function TopBar({
   status, loading, lastRefresh, isStale, onRefresh, theme, onToggleTheme,
+  ambientOn, onToggleAmbient,
 }: {
   status: DataStatus
   loading: boolean
@@ -215,6 +217,8 @@ function TopBar({
   onRefresh: () => void
   theme: 'dark' | 'light'
   onToggleTheme: () => void
+  ambientOn: boolean
+  onToggleAmbient: () => void
 }) {
   const [now, setNow] = useState(new Date())
   useEffect(() => {
@@ -269,10 +273,18 @@ function TopBar({
           <button
             className="btn-sm"
             onClick={onToggleTheme}
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? 'Switch to light mode (auto follows the clock until you override)' : 'Switch to dark mode (auto follows the clock until you override)'}
             style={{ fontSize: '0.95rem', padding: '7px 10px', minWidth: '36px' }}
           >
             {theme === 'dark' ? '☀' : '🌙'}
+          </button>
+          <button
+            className="btn-sm"
+            onClick={onToggleAmbient}
+            title={ambientOn ? 'Ambient nature sound: on — tap to mute' : 'Ambient nature sound: off — tap to enable'}
+            style={{ fontSize: '0.95rem', padding: '7px 10px', minWidth: '36px', opacity: ambientOn ? 1 : 0.42, borderColor: ambientOn ? 'var(--border-gold)' : 'var(--border)' }}
+          >
+            🍃
           </button>
         </div>
       </div>
@@ -642,6 +654,13 @@ function RightPanel({
 export default function App() {
   const { theme, toggleTheme } = useTheme()
   const [section, setSection] = useState<NavSection>('command-center')
+
+  // Ambient nature bed — default ON, session-memory toggle (not localStorage).
+  const [ambientOn, setAmbientOn] = useState(true)
+  useEffect(() => { initAmbient() }, [])
+  function toggleAmbient() {
+    setAmbientOn(prev => { const next = !prev; setAmbientEnabled(next); return next })
+  }
 
   // Dashboard data
   const [perf, setPerf]               = useState<DailyPerformance | null>(null)
@@ -1282,6 +1301,8 @@ export default function App() {
           onRefresh={() => { loadData(); loadAds(); loadRuns(); loadJsuFunnel(); loadOrdersData(); loadProfitData(); loadMonthTrend() }}
           theme={theme}
           onToggleTheme={toggleTheme}
+          ambientOn={ambientOn}
+          onToggleAmbient={toggleAmbient}
         />
 
         <div style={{ flex: 1, padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: '28px', overflowY: 'auto' }}>

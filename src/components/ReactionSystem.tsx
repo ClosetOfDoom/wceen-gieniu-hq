@@ -8,6 +8,7 @@
 // prefers-reduced-motion → static banner only, no particles/audio.
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { suppressAmbient } from '../lib/ambient'
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -277,22 +278,26 @@ export function ReactionSystem() {
     if (!active || reduced.current) return
 
     let audio: HTMLAudioElement | null = null
+    let ambientRelease: (() => void) | null = null
 
     if (active.event.kind === 'good-day') {
       audio = makeAudio('/celebrate.mp3')
       audio.volume = mutedRef.current ? 0 : 0.65
       audio.play().catch(() => {/* autoplay blocked — user must interact first */})
       audioRef.current = audio
+      ambientRelease = suppressAmbient()   // celebration music takes priority over ambient
     } else if (active.event.kind === 'tragedy') {
       // sad.mp3 starting at 1:23 (83 seconds)
       audio = makeAudio('/sad.mp3', 83)
       audio.volume = mutedRef.current ? 0 : 0.6
       audio.play().catch(() => {})
       audioRef.current = audio
+      ambientRelease = suppressAmbient()   // sad theme takes priority over ambient
     }
 
     return () => {
       if (audio) { audio.pause(); audio.currentTime = 0 }
+      if (ambientRelease) { ambientRelease(); ambientRelease = null }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.event.kind])

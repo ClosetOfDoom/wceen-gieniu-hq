@@ -1,7 +1,15 @@
 import { GIENIU_VOICE_ID, GIENIU_VOICE_NAME } from '../config/gieniuVoice'
 import { cleanForTTS, cleanForEnglishTTS } from './textClean'
+import { suppressAmbient } from '../lib/ambient'
 
 console.log(`GIENIU voice: ${GIENIU_VOICE_NAME} ${GIENIU_VOICE_ID}`)
+
+// ── Ambient ducking — hold the ambient bed silent while Stanley speaks ─────────
+// Tied to the real audio lifecycle (playback start → end / interrupt / error),
+// NOT to speak()'s return (which for ElevenLabs resolves when playback *begins*).
+let _ambientDuck: (() => void) | null = null
+function duckStart(): void { if (!_ambientDuck) _ambientDuck = suppressAmbient() }
+function duckEnd(): void { if (_ambientDuck) { _ambientDuck(); _ambientDuck = null } }
 
 // ── localStorage keys ─────────────────────────────────────────────────────────
 
@@ -126,6 +134,7 @@ export function stopAudio(): void {
   } catch { /* non-fatal */ }
   currentUtterance = null
   _analyser = null
+  duckEnd()   // speech interrupted → let ambient come back
   // eslint-disable-next-line no-console
   console.log('GIENIU interrupted')
 }
@@ -196,11 +205,13 @@ async function speakBrowser(text: string): Promise<TTSResult> {
   return new Promise<TTSResult>(resolve => {
     utt.onend = () => {
       if (currentUtterance === utt) currentUtterance = null
+      duckEnd()
       playQuack()
       resolve({ ok: true, provider: 'browser' })
     }
     utt.onerror = (e) => {
       if (currentUtterance === utt) currentUtterance = null
+      duckEnd()
       const err = e.error ?? 'unknown'
       if (err === 'interrupted' || err === 'canceled') {
         resolve({ ok: false, provider: 'browser', aborted: true })
@@ -216,6 +227,7 @@ async function speakBrowser(text: string): Promise<TTSResult> {
 
 export async function speak(text: string): Promise<TTSResult> {
   stopAudio()
+  duckStart()   // begin ducking the ambient bed for the whole utterance
 
   // If ElevenLabs is paused from a prior quota/auth error, go straight to browser TTS.
   // NOTE: in this state the Netlify function is NOT called, so no fresh logs are
@@ -236,7 +248,7 @@ export async function speak(text: string): Promise<TTSResult> {
   }
 
   const elevenText = cleanForTTS(text)
-  if (!elevenText.trim()) return { ok: false, provider: 'elevenlabs', error: 'empty text' }
+  if (!elevenText.trim()) { duckEnd(); return { ok: false, provider: 'elevenlabs', error: 'empty text' } }
 
   // eslint-disable-next-line no-console
   console.log(`GIENIU frontend requested voice: ${GIENIU_VOICE_NAME} ${GIENIU_VOICE_ID}`)
@@ -278,6 +290,7 @@ export async function speak(text: string): Promise<TTSResult> {
         URL.revokeObjectURL(url)
         if (currentAudio === audio) currentAudio = null
         _analyser = null
+        duckEnd()   // ElevenLabs playback finished → restore ambient
         playQuack()
       }
 
@@ -289,6 +302,7 @@ export async function speak(text: string): Promise<TTSResult> {
       } catch (playErr) {
         URL.revokeObjectURL(url)
         if (currentAudio === audio) currentAudio = null
+        duckEnd()
         const msg = String(playErr)
         // eslint-disable-next-line no-console
         console.warn('GIENIU TTS play failed:', msg)
@@ -329,6 +343,7 @@ export async function speak(text: string): Promise<TTSResult> {
         console.warn('GIENIU TTS error — switching to browser TTS:', errorMsg)
         markElevenLabsPaused('quota_or_api_error')
         const browserResult = await speakBrowser(cleanForEnglishTTS(text))
+        // speakBrowser() manages duckEnd via its own onend/onerror
         return {
           ...browserResult,
           fallbackFrom: 'elevenlabs',
@@ -337,10 +352,12 @@ export async function speak(text: string): Promise<TTSResult> {
         }
       }
 
+      duckEnd()
       return { ok: false, provider: 'elevenlabs', error: errorMsg }
     }
   } catch (err) {
     currentFetchAbort = null
+    duckEnd()
     if ((err as Error)?.name === 'AbortError') {
       // eslint-disable-next-line no-console
       console.log('GIENIU TTS fetch aborted')

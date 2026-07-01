@@ -5,6 +5,8 @@
 // If autoplay policy blocks playback (typically mobile), it arms a one-shot listener
 // and plays on the first user gesture instead.
 
+import { suppressAmbient } from './ambient'
+
 let started = false // once-per-open guard (module scope = cleared on full reload)
 
 const TARGET_VOL = 0.3      // subtle
@@ -23,6 +25,7 @@ export function playStartupFanfare(): void {
   let stopped = false
   let fadeTimer: ReturnType<typeof setInterval> | null = null
   let capTimer: ReturnType<typeof setTimeout> | null = null
+  let ambientRelease: (() => void) | null = null   // duck ambient while fanfare plays
 
   const cleanup = () => {
     audio.removeEventListener('timeupdate', onTime)
@@ -38,6 +41,7 @@ export function playStartupFanfare(): void {
     cleanup()
     audio.pause()
     try { audio.currentTime = 0 } catch { /* ignore */ }
+    if (ambientRelease) { ambientRelease(); ambientRelease = null }
   }
 
   const beginFadeOut = () => {
@@ -59,6 +63,8 @@ export function playStartupFanfare(): void {
   }
 
   const onPlaying = () => {
+    // Duck the ambient bed for the duration of the fanfare.
+    if (!ambientRelease && !stopped) ambientRelease = suppressAmbient()
     // Safety net if timeupdate stalls — hard cap slightly past the 6 s window.
     if (!capTimer && !stopped) {
       capTimer = setTimeout(hardStop, (STOP_AT_SEC + 0.5) * 1000)
