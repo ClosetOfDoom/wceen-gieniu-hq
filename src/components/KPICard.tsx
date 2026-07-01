@@ -113,7 +113,7 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
     : warning
       ? 'var(--orange)'
       : positive
-        ? 'var(--teal)'
+        ? 'var(--emerald)'   /* healthy KPI → nature green */
         : accent
           ? 'var(--gold-bright)'
           : dim
@@ -125,7 +125,7 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
     : warning
       ? 'rgba(251, 146, 60, 0.35)'
       : positive
-        ? 'rgba(94, 234, 212, 0.25)'
+        ? 'rgba(91, 140, 90, 0.34)'   /* green edge */
         : accent
           ? 'rgba(238, 157, 0, 0.3)'
           : 'var(--border)'
@@ -135,7 +135,7 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
     : warning
       ? 'var(--orange)'
       : positive
-        ? 'var(--teal)'
+        ? 'var(--emerald)'
         : 'linear-gradient(90deg, var(--gold), transparent)'
 
   const isAccentVariant = accent || warning || positive || danger

@@ -8,30 +8,30 @@
   /* Palette — DARK: "Sunny Pond" at dusk — the SAME pond as light, at night.
      Deep navy-blue water + dark green depth + gold sun/moon on the water + duck
      cream. Green, blue and gold all present; gold shines harder in the dark. */
-  --bg:           #0a1a24;   /* deep dusk water — navy-blue with green depth */
-  --bg2:          #0f2530;   /* water lit from within (gradient partner) */
-  --surface:      #15323c;
-  --surface2:     #1b414c;
-  --surface3:     #244f5b;
-  --border:       #2d4d55;
+  --bg:           #0d1f26;   /* deep dusk water — navy-green (gradient start) */
+  --bg2:          #122e33;   /* lit shallows — gradient partner */
+  --surface:      #16323a;   /* card / panel */
+  --surface2:     #1c3b44;
+  --surface3:     #24454f;
+  --border:       #2f4e52;   /* delicate blue-green edge */
   --border-gold:  #8a6228;
   --border-wood:  #6b4f33;   /* warm oak ring — seats the duck on the water */
-  --gold:         #ee9d00;
-  --gold-bright:  #f5b500;   /* sun/moon on the water — brighter in the dark */
+  --gold:         #f0a81e;   /* sun/moon — stronger in the dark */
+  --gold-bright:  #f7bb3a;
   --gold-dim:     #5a4010;
-  --glow-gold:    rgba(238,157,0,0.42);
-  --glow-gold-sm: rgba(238,157,0,0.24);
-  --green:        #5bc17d;   /* fresh pond green at dusk — vegetation accent */
-  --green-bright: #7ad696;
-  --green-glow:   rgba(91,193,125,0.30);
-  --teal:         #3bb6b0;   /* water teal — green→blue bridge / positive */
-  --teal-dim:     #0f3a3a;
-  --emerald:      #49c987;   /* pond green — "on target" */
-  --emerald-dim:  #08302c;
-  --text:         #e9f4ef;   /* pond-mist cream */
-  --text2:        #c3dcd2;
-  --muted:        #8aa99e;
-  --muted2:       #5e7c74;
+  --glow-gold:    rgba(240,168,30,0.44);
+  --glow-gold-sm: rgba(240,168,30,0.26);
+  --green:        #6fa76d;   /* nature green — glows at dusk */
+  --green-bright: #8bc089;
+  --green-glow:   rgba(111,167,109,0.34);
+  --teal:         #5ba3b8;   /* WATER blue — lighter, a reflection */
+  --teal-dim:     #123842;
+  --emerald:      #66b56b;   /* healthy / on-target green */
+  --emerald-dim:  #0c3a2a;
+  --text:         #e8f0ed;   /* pond-mist light */
+  --text2:        #c4d6d1;
+  --muted:        #8ba8a3;
+  --muted2:       #5e7c78;
   --amber:        #fbbf24;
   --red:          #f87171;
   --orange:       #fb923c;
@@ -51,30 +51,30 @@
    Cream-blue-green sunlit water + fresh green reeds + water blue + gold sun. ── */
 
 [data-theme="light"] {
-  --bg:           #eef5f1;   /* sunlit shallow — cream with green-blue */
-  --bg2:          #e1ede8;   /* shallow water in sun */
-  --surface:      #f8fbf9;   /* lightest card */
-  --surface2:     #e9f2ed;
-  --surface3:     #dbeae2;
-  --border:       #bad4c9;   /* soft reed-water edge (green-blue) */
+  --bg:           #eef4f2;   /* sunlit water — light blue-cream, cool */
+  --bg2:          #e3edea;   /* shallow water in sun */
+  --surface:      #f7faf8;   /* card / panel */
+  --surface2:     #edf3f1;
+  --surface3:     #e0eae7;
+  --border:       #b9d3d6;   /* delicate water-blue edge */
   --border-gold:  #b8920e;
   --border-wood:  #9c7b4d;   /* warm oak ring — seats the duck on the water */
-  --gold:         #ee9d00;
+  --gold:         #ee9d00;   /* sun */
   --gold-bright:  #c87f08;   /* darker gold — readable on cream */
   --gold-dim:     #c9a460;
   --glow-gold:    rgba(238,157,0,0.45);
   --glow-gold-sm: rgba(238,157,0,0.28);
-  --green:        #3f9d5d;   /* fresh pond green — leading vegetation accent */
-  --green-bright: #2f8049;
-  --green-glow:   rgba(63,157,93,0.30);
-  --teal:         #2f92a8;   /* water teal — green→blue bridge / positive */
-  --teal-dim:     #cfe7ec;
-  --emerald:      #2e8b57;   /* sea green — "on target" */
-  --emerald-dim:  #d9efe1;
-  --text:         #133029;   /* deep pond-bark — high contrast on cream */
-  --text2:        #334f47;
-  --muted:        #5f7a70;
-  --muted2:       #8aa39a;
+  --green:        #5b8c5a;   /* nature green — vivid vegetation accent */
+  --green-bright: #4c7c4b;
+  --green-glow:   rgba(91,140,90,0.32);
+  --teal:         #4a90a4;   /* WATER blue — vivid, not grey */
+  --teal-dim:     #d2e6ea;
+  --emerald:      #4e8c4d;   /* healthy / on-target green */
+  --emerald-dim:  #dceedb;
+  --text:         #1a2e35;   /* deep pond ink — high contrast */
+  --text2:        #3a4e54;
+  --muted:        #5e747a;
+  --muted2:       #8aa0a4;
   --amber:        #b45309;
   --red:          #c0392b;
   --orange:       #c2410c;
@@ -82,17 +82,17 @@
 
 [data-theme="light"] body {
   background-image:
-    radial-gradient(ellipse at 50% 0%,   rgba(238,157,0,0.10)  0%, transparent 55%),   /* sun overhead */
-    radial-gradient(ellipse at 0% 100%,  rgba(63,157,93,0.11)  0%, transparent 45%),   /* green reed bank */
-    radial-gradient(ellipse at 100% 50%, rgba(74,144,184,0.09) 0%, transparent 40%),   /* water blue */
-    radial-gradient(ellipse at 50% 100%, rgba(63,157,93,0.05)  0%, transparent 70%),
+    radial-gradient(ellipse at 50% 0%,   rgba(238,157,0,0.11)  0%, transparent 55%),   /* sun overhead */
+    radial-gradient(ellipse at 0% 100%,  rgba(91,140,90,0.14)  0%, transparent 45%),   /* green reed bank */
+    radial-gradient(ellipse at 100% 50%, rgba(74,144,164,0.13) 0%, transparent 42%),   /* water blue */
+    radial-gradient(ellipse at 50% 100%, rgba(91,140,90,0.06)  0%, transparent 70%),
     /* faint water-ripple sheen — subtle, not garish */
-    repeating-linear-gradient(94deg, rgba(74,144,184,0.020) 0px, rgba(74,144,184,0.020) 2px, transparent 2px, transparent 9px);
+    repeating-linear-gradient(94deg, rgba(74,144,164,0.024) 0px, rgba(74,144,164,0.024) 2px, transparent 2px, transparent 9px);
 }
 
 /* Dark panel island — for legacy components with hardcoded dark colours */
 [data-theme="light"] .dark-panel {
-  background: #15323c;
+  background: #16323a;
   border-radius: 6px;
   padding: 16px;
   margin: -4px;
@@ -102,12 +102,12 @@ html, body {
   height: 100%;
   background: var(--bg);
   background-image:
-    radial-gradient(ellipse at 50% 0%,   rgba(238,157,0,0.06)  0%, transparent 55%),   /* sun/moon */
-    radial-gradient(ellipse at 0% 100%,  rgba(91,193,125,0.08) 0%, transparent 45%),   /* green shore depth */
-    radial-gradient(ellipse at 100% 50%, rgba(80,165,205,0.06) 0%, transparent 40%),   /* water blue */
-    radial-gradient(ellipse at 50% 100%, rgba(5,18,24,0.72)    0%, transparent 70%),
+    radial-gradient(ellipse at 50% 0%,   rgba(240,168,30,0.08)  0%, transparent 55%),   /* sun/moon */
+    radial-gradient(ellipse at 0% 100%,  rgba(111,167,109,0.12) 0%, transparent 46%),   /* green shore depth */
+    radial-gradient(ellipse at 100% 50%, rgba(91,163,184,0.11)  0%, transparent 42%),   /* water-blue reflection */
+    radial-gradient(ellipse at 50% 105%, rgba(18,46,51,0.85)    0%, transparent 72%),   /* deeper shallows → #122e33 */
     /* faint water-ripple sheen in the dark too */
-    repeating-linear-gradient(94deg, rgba(90,160,180,0.020) 0px, rgba(90,160,180,0.020) 2px, transparent 2px, transparent 9px);
+    repeating-linear-gradient(94deg, rgba(91,163,184,0.024) 0px, rgba(91,163,184,0.024) 2px, transparent 2px, transparent 9px);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 18px;
@@ -316,7 +316,7 @@ button:disabled {
   border-radius: 6px;
   background:
     radial-gradient(ellipse at 0% 0%, rgba(238,157,0,0.04) 0%, transparent 60%),
-    radial-gradient(ellipse at 100% 100%, rgba(63,157,93,0.04) 0%, transparent 60%);
+    radial-gradient(ellipse at 100% 100%, rgba(91,140,90,0.04) 0%, transparent 60%);
   pointer-events: none;
 }
 
@@ -457,8 +457,8 @@ button:disabled {
 }
 .btn-mic.listening {
   border-color: var(--teal);
-  box-shadow: 0 0 0 10px rgba(63,157,93,0.18);
-  background: rgba(63,157,93,0.10);
+  box-shadow: 0 0 0 10px rgba(91,140,90,0.18);
+  background: rgba(91,140,90,0.10);
   animation: pulse-mic 1.2s ease-in-out infinite;
 }
 
@@ -471,8 +471,8 @@ button:disabled {
 }
 
 @keyframes pulse-mic {
-  0%, 100% { box-shadow: 0 0 0 5px rgba(63,157,93,0.12); }
-  50%       { box-shadow: 0 0 0 16px rgba(63,157,93,0.22); }
+  0%, 100% { box-shadow: 0 0 0 5px rgba(91,140,90,0.12); }
+  50%       { box-shadow: 0 0 0 16px rgba(91,140,90,0.22); }
 }
 
 /* ── Sidebar nav ─────────────────────────────────────────────────────────── */
@@ -497,12 +497,13 @@ button:disabled {
 }
 .nav-item:hover {
   color: var(--text2);
-  background: rgba(63,157,93,0.06);
+  background: rgba(91,140,90,0.07);   /* green — nature detail on hover */
 }
 .nav-item.active {
   color: var(--gold);
-  border-left: 2px solid var(--green);   /* forest-path green accent beside gold text */
-  background: rgba(63,157,93,0.08);
+  border-left: 3px solid var(--teal);   /* water-blue active path */
+  background: linear-gradient(90deg, var(--teal-dim), transparent 80%);
+  box-shadow: inset 0 0 0 9999px rgba(74,144,164,0.05);
 }
 .nav-item.active {
   font-weight: 700;
@@ -551,7 +552,7 @@ button:disabled {
 }
 
 .data-table tbody tr:hover {
-  background: rgba(63,157,93,0.05);
+  background: rgba(91,140,90,0.05);
 }
 
 .data-table tbody td {

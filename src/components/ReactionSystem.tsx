@@ -107,7 +107,7 @@ interface CoinPiece     { id: number; x: number; delay: number; label: string }
 interface RainDrop      { id: number; x: number; delay: number; dur: number; h: number; op: number }
 
 // Sunny-pond confetti: gold sun + fresh green + water blue + cream/white.
-const CONFETTI_COLORS = ['#ee9d00','#f5b500','#5bc17d','#49c987','#6cb6dc','#eaf3f8','#ffffff','#3bb6b0']
+const CONFETTI_COLORS = ['#ee9d00','#f0a81e','#5b8c5a','#6fa76d','#4a90a4','#5ba3b8','#eaf3f8','#ffffff']
 
 function makeConfetti(n: number): ConfettiPiece[] {
   return Array.from({ length: n }, (_, i) => ({
