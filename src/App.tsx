@@ -5,6 +5,7 @@ import {
   tryTriggerMicroSales,
   tryTriggerWebinarFull,
 } from './components/ReactionSystem'
+import { IntroSplash } from './components/IntroSplash'
 import { useTheme } from './hooks/useTheme'
 import { KPICard } from './components/KPICard'
 import { StatusBadge } from './components/StatusBadge'
@@ -1266,6 +1267,9 @@ export default function App() {
 
   return (
     <div className="hud-layout">
+
+      {/* Epic pond-at-dusk intro — plays once per app open, in sync with the fanfare */}
+      <IntroSplash />
 
       <Sidebar active={section} onNavigate={setSection} jsuAlert={jsuAlert} onInstall={installPrompt ? handleInstall : undefined} />
 
