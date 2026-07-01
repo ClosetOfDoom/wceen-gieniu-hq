@@ -1,15 +1,24 @@
 import { GIENIU_VOICE_ID, GIENIU_VOICE_NAME } from '../config/gieniuVoice'
 import { cleanForTTS, cleanForEnglishTTS } from './textClean'
 import { suppressAmbient } from '../lib/ambient'
+import { beginSpeech, endSpeech } from '../lib/speechGate'
 
 console.log(`GIENIU voice: ${GIENIU_VOICE_NAME} ${GIENIU_VOICE_ID}`)
 
-// ── Ambient ducking — hold the ambient bed silent while Stanley speaks ─────────
+// ── Speech ducking — hold ambient AND celebration music down while Stanley speaks.
 // Tied to the real audio lifecycle (playback start → end / interrupt / error),
 // NOT to speak()'s return (which for ElevenLabs resolves when playback *begins*).
+// The speech gate lets reaction music duck too, so his answer is always audible.
 let _ambientDuck: (() => void) | null = null
-function duckStart(): void { if (!_ambientDuck) _ambientDuck = suppressAmbient() }
-function duckEnd(): void { if (_ambientDuck) { _ambientDuck(); _ambientDuck = null } }
+let _speechOpen = false
+function duckStart(): void {
+  if (!_ambientDuck) _ambientDuck = suppressAmbient()
+  if (!_speechOpen) { _speechOpen = true; beginSpeech() }
+}
+function duckEnd(): void {
+  if (_ambientDuck) { _ambientDuck(); _ambientDuck = null }
+  if (_speechOpen) { _speechOpen = false; endSpeech() }
+}
 
 // ── localStorage keys ─────────────────────────────────────────────────────────
 

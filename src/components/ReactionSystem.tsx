@@ -9,6 +9,11 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { suppressAmbient } from '../lib/ambient'
+import { isSpeaking, onSpeechChange } from '../lib/speechGate'
+
+// Celebration/sad music ducks to this while Stanley is speaking, so his answer
+// (information) is always audible; it rises to full volume once he finishes.
+const MUSIC_DUCK_VOL = 0.12
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -223,7 +228,30 @@ export function ReactionSystem() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mutedRef = useRef(false)
+  const fullVolRef = useRef(0.6)                              // this reaction's un-ducked volume
+  const fadeRef = useRef<ReturnType<typeof setInterval> | null>(null)
   useEffect(() => { mutedRef.current = muted }, [muted])
+
+  // Target volume respects mute, then whether Stanley is speaking (music yields to
+  // his voice). Fades so transitions are smooth, never a hard cut.
+  const applyMusicVolume = useCallback((fade: boolean) => {
+    const audio = audioRef.current
+    if (!audio) return
+    const target = mutedRef.current ? 0 : (isSpeaking() ? MUSIC_DUCK_VOL : fullVolRef.current)
+    if (fadeRef.current) { clearInterval(fadeRef.current); fadeRef.current = null }
+    if (!fade) { audio.volume = target; return }
+    const from = audio.volume
+    const steps = 16
+    let i = 0
+    fadeRef.current = setInterval(() => {
+      i++
+      audio.volume = Math.max(0, Math.min(1, from + (target - from) * (i / steps)))
+      if (i >= steps) {
+        audio.volume = target
+        if (fadeRef.current) { clearInterval(fadeRef.current); fadeRef.current = null }
+      }
+    }, 22)
+  }, [])
 
   const stopAudio = useCallback(() => {
     if (!audioRef.current) return
@@ -279,33 +307,41 @@ export function ReactionSystem() {
 
     let audio: HTMLAudioElement | null = null
     let ambientRelease: (() => void) | null = null
+    let unsubSpeech: (() => void) | null = null
 
     if (active.event.kind === 'good-day') {
       audio = makeAudio('/celebrate.mp3')
-      audio.volume = mutedRef.current ? 0 : 0.65
-      audio.play().catch(() => {/* autoplay blocked — user must interact first */})
+      fullVolRef.current = 0.6
       audioRef.current = audio
-      ambientRelease = suppressAmbient()   // celebration music takes priority over ambient
+      audio.volume = 0
+      applyMusicVolume(false)              // start ducked if Stanley is already speaking
+      audio.play().catch(() => {/* autoplay blocked — user must interact first */})
+      ambientRelease = suppressAmbient()   // celebration music still outranks ambient
+      // Music yields to Stanley's voice: duck while he speaks, rise when he's done.
+      unsubSpeech = onSpeechChange(() => applyMusicVolume(true))
     } else if (active.event.kind === 'tragedy') {
       // sad.mp3 starting at 1:23 (83 seconds)
       audio = makeAudio('/sad.mp3', 83)
-      audio.volume = mutedRef.current ? 0 : 0.6
-      audio.play().catch(() => {})
+      fullVolRef.current = 0.55
       audioRef.current = audio
-      ambientRelease = suppressAmbient()   // sad theme takes priority over ambient
+      audio.volume = 0
+      applyMusicVolume(false)
+      audio.play().catch(() => {})
+      ambientRelease = suppressAmbient()
+      unsubSpeech = onSpeechChange(() => applyMusicVolume(true))
     }
 
     return () => {
+      if (fadeRef.current) { clearInterval(fadeRef.current); fadeRef.current = null }
+      if (unsubSpeech) unsubSpeech()
       if (audio) { audio.pause(); audio.currentTime = 0 }
       if (ambientRelease) { ambientRelease(); ambientRelease = null }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.event.kind])
 
-  // Volume sync
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = muted ? 0 : 0.65
-  }, [muted])
+  // Mute toggle → re-apply the speech-aware target volume (fade)
+  useEffect(() => { applyMusicVolume(true) }, [muted, applyMusicVolume])
 
   if (!active) return null
 

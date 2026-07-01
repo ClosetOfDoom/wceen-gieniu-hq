@@ -8,6 +8,7 @@ import {
 import { IntroSplash } from './components/IntroSplash'
 import { PondBackground } from './components/PondBackground'
 import { initAmbient, setAmbientEnabled, setAmbientPeriod } from './lib/ambient'
+import { isFanfareEnabled, setFanfareEnabled } from './lib/startupFanfare'
 import { useTheme } from './hooks/useTheme'
 import { KPICard } from './components/KPICard'
 import { StatusBadge } from './components/StatusBadge'
@@ -209,7 +210,7 @@ function MobileNav({ active, onNavigate, jsuAlert }: {
 
 function TopBar({
   status, loading, lastRefresh, isStale, onRefresh, theme, onToggleTheme,
-  ambientOn, onToggleAmbient,
+  ambientOn, onToggleAmbient, fanfareOn, onToggleFanfare,
 }: {
   status: DataStatus
   loading: boolean
@@ -220,6 +221,8 @@ function TopBar({
   onToggleTheme: () => void
   ambientOn: boolean
   onToggleAmbient: () => void
+  fanfareOn: boolean
+  onToggleFanfare: () => void
 }) {
   const [now, setNow] = useState(new Date())
   useEffect(() => {
@@ -286,6 +289,14 @@ function TopBar({
             style={{ fontSize: '0.95rem', padding: '7px 10px', minWidth: '36px', opacity: ambientOn ? 1 : 0.42, borderColor: ambientOn ? 'var(--border-gold)' : 'var(--border)' }}
           >
             🍃
+          </button>
+          <button
+            className="btn-sm"
+            onClick={onToggleFanfare}
+            title={fanfareOn ? 'Startup fanfare: on — tap to silence next open' : 'Startup fanfare: off — tap to enable'}
+            style={{ fontSize: '0.95rem', padding: '7px 10px', minWidth: '36px', opacity: fanfareOn ? 1 : 0.42, borderColor: fanfareOn ? 'var(--border-gold)' : 'var(--border)' }}
+          >
+            🎺
           </button>
         </div>
       </div>
@@ -661,6 +672,12 @@ export default function App() {
   useEffect(() => { initAmbient() }, [])
   function toggleAmbient() {
     setAmbientOn(prev => { const next = !prev; setAmbientEnabled(next); return next })
+  }
+
+  // Startup fanfare on/off — session memory (sessionStorage), affects next open.
+  const [fanfareOn, setFanfareOn] = useState(isFanfareEnabled())
+  function toggleFanfare() {
+    setFanfareOn(prev => { const next = !prev; setFanfareEnabled(next); return next })
   }
 
   // Manual theme toggle also switches the ambient bed: dark → night, light → day.
@@ -1314,6 +1331,8 @@ export default function App() {
           onToggleTheme={handleToggleTheme}
           ambientOn={ambientOn}
           onToggleAmbient={toggleAmbient}
+          fanfareOn={fanfareOn}
+          onToggleFanfare={toggleFanfare}
         />
 
         <div style={{ flex: 1, padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: '28px', overflowY: 'auto' }}>

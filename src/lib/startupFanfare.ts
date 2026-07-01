@@ -8,6 +8,20 @@
 import { suppressAmbient } from './ambient'
 
 let started = false // once-per-open guard (module scope = cleared on full reload)
+let activeStop: (() => void) | null = null   // stops a fanfare that's mid-play
+
+// On/off preference in SESSION memory (sessionStorage): survives reloads within the
+// same tab session so it can silence the NEXT startup, but clears when the tab closes.
+const FANFARE_KEY = 'stanleyFanfareEnabled'
+
+export function isFanfareEnabled(): boolean {
+  try { return sessionStorage.getItem(FANFARE_KEY) !== 'off' } catch { return true }
+}
+
+export function setFanfareEnabled(on: boolean): void {
+  try { sessionStorage.setItem(FANFARE_KEY, on ? 'on' : 'off') } catch { /* non-fatal */ }
+  if (!on && activeStop) activeStop()   // also silence one that's currently playing
+}
 
 const TARGET_VOL = 0.3      // subtle
 const STOP_AT_SEC = 6       // play only the first 6 s
@@ -17,6 +31,7 @@ export function playStartupFanfare(): void {
   if (started) return
   started = true
   if (typeof window === 'undefined') return
+  if (!isFanfareEnabled()) return   // user turned startup fanfare off (this session)
 
   const audio = new Audio('/Fanfares.mp3')
   audio.volume = TARGET_VOL
@@ -42,7 +57,9 @@ export function playStartupFanfare(): void {
     audio.pause()
     try { audio.currentTime = 0 } catch { /* ignore */ }
     if (ambientRelease) { ambientRelease(); ambientRelease = null }
+    activeStop = null
   }
+  activeStop = hardStop   // let setFanfareEnabled(false) silence it mid-play
 
   const beginFadeOut = () => {
     if (fadeTimer || stopped) return
