@@ -2,36 +2,26 @@
 // the first 6 seconds (short fade-out just before the cut so it never chops mid-note).
 // Anti-repeat is module-scope session memory (NOT localStorage) — a page refresh
 // re-opens the app and may play again; navigating within the SPA does not.
-// If autoplay policy blocks playback (typically mobile), it arms a one-shot listener
-// and plays on the first user gesture instead.
+//
+// No on/off toggle: if the user doesn't want it, ANY click/tap/keypress while it's
+// playing stops it immediately ("ok, enough"). If they don't interact, it finishes
+// its 6 s on its own. If autoplay is blocked (mobile), it plays on the first gesture
+// and only arms the stop-on-interaction listener afterwards, so that same unblocking
+// gesture doesn't instantly kill it.
 
 import { suppressAmbient } from './ambient'
 
 let started = false // once-per-open guard (module scope = cleared on full reload)
-let activeStop: (() => void) | null = null   // stops a fanfare that's mid-play
-
-// On/off preference in SESSION memory (sessionStorage): survives reloads within the
-// same tab session so it can silence the NEXT startup, but clears when the tab closes.
-const FANFARE_KEY = 'stanleyFanfareEnabled'
-
-export function isFanfareEnabled(): boolean {
-  try { return sessionStorage.getItem(FANFARE_KEY) !== 'off' } catch { return true }
-}
-
-export function setFanfareEnabled(on: boolean): void {
-  try { sessionStorage.setItem(FANFARE_KEY, on ? 'on' : 'off') } catch { /* non-fatal */ }
-  if (!on && activeStop) activeStop()   // also silence one that's currently playing
-}
 
 const TARGET_VOL = 0.3      // subtle
 const STOP_AT_SEC = 6       // play only the first 6 s
 const FADE_MS = 300         // gentle fade-out length just before the hard stop
+const STOP_EVENTS: (keyof WindowEventMap)[] = ['pointerdown', 'keydown', 'touchstart']
 
 export function playStartupFanfare(): void {
   if (started) return
   started = true
   if (typeof window === 'undefined') return
-  if (!isFanfareEnabled()) return   // user turned startup fanfare off (this session)
 
   const audio = new Audio('/Fanfares.mp3')
   audio.volume = TARGET_VOL
@@ -41,11 +31,15 @@ export function playStartupFanfare(): void {
   let fadeTimer: ReturnType<typeof setInterval> | null = null
   let capTimer: ReturnType<typeof setTimeout> | null = null
   let ambientRelease: (() => void) | null = null   // duck ambient while fanfare plays
+  let stopArmed = false
+
+  const onInteract = () => hardStop()   // any click/tap/key while playing → stop
 
   const cleanup = () => {
     audio.removeEventListener('timeupdate', onTime)
     audio.removeEventListener('playing', onPlaying)
     audio.removeEventListener('ended', hardStop)
+    STOP_EVENTS.forEach(e => window.removeEventListener(e, onInteract))
     if (fadeTimer) { clearInterval(fadeTimer); fadeTimer = null }
     if (capTimer) { clearTimeout(capTimer); capTimer = null }
   }
@@ -57,9 +51,7 @@ export function playStartupFanfare(): void {
     audio.pause()
     try { audio.currentTime = 0 } catch { /* ignore */ }
     if (ambientRelease) { ambientRelease(); ambientRelease = null }
-    activeStop = null
   }
-  activeStop = hardStop   // let setFanfareEnabled(false) silence it mid-play
 
   const beginFadeOut = () => {
     if (fadeTimer || stopped) return
@@ -82,6 +74,12 @@ export function playStartupFanfare(): void {
   const onPlaying = () => {
     // Duck the ambient bed for the duration of the fanfare.
     if (!ambientRelease && !stopped) ambientRelease = suppressAmbient()
+    // Arm "click anywhere to stop" only once playback is actually running, so the
+    // gesture that unblocked autoplay (if any) doesn't immediately stop it.
+    if (!stopArmed && !stopped) {
+      stopArmed = true
+      STOP_EVENTS.forEach(e => window.addEventListener(e, onInteract, { once: true }))
+    }
     // Safety net if timeupdate stalls — hard cap slightly past the 6 s window.
     if (!capTimer && !stopped) {
       capTimer = setTimeout(hardStop, (STOP_AT_SEC + 0.5) * 1000)
@@ -95,11 +93,10 @@ export function playStartupFanfare(): void {
 
   audio.play().catch(() => {
     // Autoplay blocked — play on the first user gesture instead.
-    const events: (keyof WindowEventMap)[] = ['pointerdown', 'keydown', 'touchstart']
     const onGesture = () => {
-      events.forEach(e => window.removeEventListener(e, onGesture))
+      STOP_EVENTS.forEach(e => window.removeEventListener(e, onGesture))
       if (!stopped) audio.play().catch(() => {/* give up quietly */})
     }
-    events.forEach(e => window.addEventListener(e, onGesture, { once: true }))
+    STOP_EVENTS.forEach(e => window.addEventListener(e, onGesture, { once: true }))
   })
 }

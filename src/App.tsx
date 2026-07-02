@@ -8,7 +8,6 @@ import {
 import { IntroSplash } from './components/IntroSplash'
 import { PondBackground } from './components/PondBackground'
 import { initAmbient, setAmbientEnabled, setAmbientPeriod } from './lib/ambient'
-import { isFanfareEnabled, setFanfareEnabled } from './lib/startupFanfare'
 import { useTheme } from './hooks/useTheme'
 import { KPICard } from './components/KPICard'
 import { StatusBadge } from './components/StatusBadge'
@@ -60,9 +59,68 @@ import {
   startListening, type SttResult,
 } from './voice/stt'
 
+import { warsawToday, warsawYesterday } from './utils/warsawDate'
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const OPENING_TEXT = "At your service, sir. One gesture and I shall commence the operational report."
+
+// ── Time range (panel-wide) ─────────────────────────────────────────────────────
+
+type TimeRange = 'today' | 'yesterday' | 'week'
+
+const RANGE_LABELS: Record<TimeRange, string> = {
+  today: 'DZIŚ', yesterday: 'WCZORAJ', week: 'TYDZIEŃ (7 dni)',
+}
+
+// Sum a numeric field across rows (nulls treated as 0).
+function sumField(rows: DailyPerformance[], f: keyof DailyPerformance): number {
+  return rows.reduce((s, r) => s + (Number(r[f] ?? 0) || 0), 0)
+}
+
+// Aggregate up to 7 recent days into one DailyPerformance-shaped total.
+function aggregatePerf(rows: DailyPerformance[]): DailyPerformance | null {
+  if (rows.length === 0) return null
+  const orders  = sumField(rows, 'wix_orders')
+  const revenue = sumField(rows, 'wix_revenue')
+  const spend   = sumField(rows, 'meta_spend')
+  const sorted  = [...rows].sort((a, b) => a.date.localeCompare(b.date))
+  return {
+    date: `${sorted[0].date} → ${sorted[sorted.length - 1].date}`,
+    wix_orders: orders,
+    wix_revenue: revenue,
+    meta_spend: spend,
+    real_cpa:  orders > 0 ? spend / orders : null,
+    real_roas: spend > 0 ? revenue / spend : null,
+    impressions: sumField(rows, 'impressions'),
+    clicks:      sumField(rows, 'clicks'),
+    link_clicks: sumField(rows, 'link_clicks'),
+    ads_count:   0,
+    meta_purchases:      sumField(rows, 'meta_purchases'),
+    meta_purchase_value: sumField(rows, 'meta_purchase_value'),
+  }
+}
+
+// Resolve the performance row for the selected range from today's row + the recent
+// trend (all Warsaw-tz). Returns { perf, sub } where sub is a small date sublabel.
+function resolveRangePerf(
+  range: TimeRange,
+  today: DailyPerformance | null,
+  trend: DailyPerformance[],
+): { perf: DailyPerformance | null; sub: string } {
+  if (range === 'today') {
+    // Fall back to the latest available day (stale note shown separately).
+    const p = today ?? (trend.length > 0 ? trend[0] : null)
+    return { perf: p, sub: today ? warsawToday() : (trend[0]?.date ?? warsawToday()) }
+  }
+  if (range === 'yesterday') {
+    const y = warsawYesterday()
+    return { perf: trend.find(r => r.date === y) ?? null, sub: y }
+  }
+  // week — last 7 available days
+  const week = trend.slice(0, 7)
+  return { perf: aggregatePerf(week), sub: week.length ? `${week[week.length - 1].date} → ${week[0].date}` : '' }
+}
 
 // Detect queries about today's performance — only these trigger day reactions
 function isDayResultQuery(q: string): boolean {
@@ -210,7 +268,7 @@ function MobileNav({ active, onNavigate, jsuAlert }: {
 
 function TopBar({
   status, loading, lastRefresh, isStale, onRefresh, theme, onToggleTheme,
-  ambientOn, onToggleAmbient, fanfareOn, onToggleFanfare,
+  ambientOn, onToggleAmbient,
 }: {
   status: DataStatus
   loading: boolean
@@ -221,8 +279,6 @@ function TopBar({
   onToggleTheme: () => void
   ambientOn: boolean
   onToggleAmbient: () => void
-  fanfareOn: boolean
-  onToggleFanfare: () => void
 }) {
   const [now, setNow] = useState(new Date())
   useEffect(() => {
@@ -289,14 +345,6 @@ function TopBar({
             style={{ fontSize: '0.95rem', padding: '7px 10px', minWidth: '36px', opacity: ambientOn ? 1 : 0.42, borderColor: ambientOn ? 'var(--border-gold)' : 'var(--border)' }}
           >
             🍃
-          </button>
-          <button
-            className="btn-sm"
-            onClick={onToggleFanfare}
-            title={fanfareOn ? 'Startup fanfare: on — tap to silence next open' : 'Startup fanfare: off — tap to enable'}
-            style={{ fontSize: '0.95rem', padding: '7px 10px', minWidth: '36px', opacity: fanfareOn ? 1 : 0.42, borderColor: fanfareOn ? 'var(--border-gold)' : 'var(--border)' }}
-          >
-            🎺
           </button>
         </div>
       </div>
@@ -666,18 +714,13 @@ function RightPanel({
 export default function App() {
   const { theme, toggleTheme } = useTheme()
   const [section, setSection] = useState<NavSection>('command-center')
+  const [range, setRange] = useState<TimeRange>('today')   // panel-wide time range
 
   // Ambient nature bed — default ON, session-memory toggle (not localStorage).
   const [ambientOn, setAmbientOn] = useState(true)
   useEffect(() => { initAmbient() }, [])
   function toggleAmbient() {
     setAmbientOn(prev => { const next = !prev; setAmbientEnabled(next); return next })
-  }
-
-  // Startup fanfare on/off — session memory (sessionStorage), affects next open.
-  const [fanfareOn, setFanfareOn] = useState(isFanfareEnabled())
-  function toggleFanfare() {
-    setFanfareOn(prev => { const next = !prev; setFanfareEnabled(next); return next })
   }
 
   // Manual theme toggle also switches the ambient bed: dark → night, light → day.
@@ -1281,8 +1324,12 @@ export default function App() {
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
-  const displayPerf = perf ?? (trend.length > 0 ? trend[0] : null)
-  const perfIsStale  = !perf && trend.length > 0
+  // Panel-wide time range (DZIŚ / WCZORAJ / TYDZIEŃ) — every KPI below reads the
+  // same range so the panel is never a mix of periods.
+  const { perf: rangePerf, sub: rangeSub } = resolveRangePerf(range, perf, trend)
+  const displayPerf = rangePerf
+  const isToday      = range === 'today'
+  const perfIsStale  = isToday && !perf && trend.length > 0
   const cpaHigh      = displayPerf?.real_cpa != null && displayPerf.real_cpa > 50
   const jsuAlert     = !!jsuSummary && jsuSummary.bottleneck !== 'OK' && jsuSummary.bottleneck !== 'NO_DATA' && jsuSummary.bottleneck !== 'NO_SOURCES'
 
@@ -1331,8 +1378,6 @@ export default function App() {
           onToggleTheme={handleToggleTheme}
           ambientOn={ambientOn}
           onToggleAmbient={toggleAmbient}
-          fanfareOn={fanfareOn}
-          onToggleFanfare={toggleFanfare}
         />
 
         <div style={{ flex: 1, padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: '28px', overflowY: 'auto' }}>
@@ -1340,6 +1385,29 @@ export default function App() {
           {/* ── COMMAND CENTER ─────────────────────────────────────── */}
           {section === 'command-center' && (
             <>
+              {/* Time-range switcher — governs every KPI in this panel (Warsaw tz) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: 'var(--font-serif)', fontSize: '0.72rem', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+                  Zakres
+                </span>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {(['today', 'yesterday', 'week'] as TimeRange[]).map(r => (
+                    <button
+                      key={r}
+                      className={`scope-chip${range === r ? ' active' : ''}`}
+                      onClick={() => setRange(r)}
+                    >
+                      {RANGE_LABELS[r]}
+                    </button>
+                  ))}
+                </div>
+                {displayPerf && rangeSub && (
+                  <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)' }}>
+                    {rangeSub}
+                  </span>
+                )}
+              </div>
+
               {loading ? (
                 <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>Loading data…</div>
               ) : (
@@ -1349,19 +1417,26 @@ export default function App() {
                       No data for today yet — showing latest available: {trend[0]?.date}
                     </div>
                   )}
+                  {!perfIsStale && !displayPerf && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--muted)', padding: '8px 14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '3px' }}>
+                      Brak danych dla zakresu: {RANGE_LABELS[range]}{rangeSub ? ` (${rangeSub})` : ''}.
+                    </div>
+                  )}
                   {/* Row 1: core metrics + profit */}
                   <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                     <KPICard label="Wix Orders" value={fmtNum(displayPerf?.wix_orders)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
                     <KPICard label="Wix Revenue" value={fmtPln(displayPerf?.wix_revenue)} accent sublabel={perfIsStale ? trend[0]?.date : undefined} />
                     <KPICard label="Ad Spend" value={fmtPln(displayPerf?.meta_spend)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
-                    <KPICard
-                      label="Est. Profit"
-                      value={profitEst != null ? fmtPln(profitEst) : '—'}
-                      positive={profitPositive}
-                      warning={profitWarning}
-                      danger={profitDanger}
-                      sublabel="Margin − ad spend"
-                    />
+                    {isToday && (
+                      <KPICard
+                        label="Est. Profit"
+                        value={profitEst != null ? fmtPln(profitEst) : '—'}
+                        positive={profitPositive}
+                        warning={profitWarning}
+                        danger={profitDanger}
+                        sublabel="Margin − ad spend"
+                      />
+                    )}
                     <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Meta spend / Wix orders" />
                     <KPICard label="Real ROAS" value={fmtRoas(displayPerf?.real_roas)} sublabel="Wix revenue / Meta spend" />
                   </div>
@@ -1404,46 +1479,53 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Row 2: margin detail + warnings */}
-                  <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
-                    <KPICard
-                      label="Margin Before Ads"
-                      value={profitSummary ? fmtPln(profitSummary.marginBeforeAds) : '—'}
-                      sublabel="Known contribution margin"
-                    />
-                    <KPICard
-                      label="Profit / Order"
-                      value={profitSummary && (profitData?.ordersCount ?? 0) > 0 ? fmtPln(profitSummary.profitPerOrder) : '—'}
-                      positive={profitPositive}
-                      danger={profitDanger}
-                      sublabel="After ad spend"
-                    />
-                    <KPICard
-                      label="True CPA"
-                      value={profitSummary?.realCpa != null ? fmtPln(profitSummary.realCpa) : '—'}
-                      warning={profitSummary?.realCpa != null && profitSummary.realCpa > 50}
-                      sublabel="Ad spend ÷ paid orders"
-                    />
-                    <KPICard
-                      label="Margin ROAS"
-                      value={profitSummary?.realRoas != null ? `${profitSummary.realRoas.toFixed(2)}×` : '—'}
-                      sublabel="Revenue ÷ ad spend"
-                    />
-                    <KPICard
-                      label="Unmapped Revenue"
-                      value={profitData?.ok ? fmtPln(profitData.unknownRevenue) : '—'}
-                      warning={hasUnknownRevenue}
-                      sublabel={hasUnknownRevenue ? 'Needs margin mapping' : 'All products mapped'}
-                    />
-                    <KPICard label="Meta Attr." value={fmtNum(metaStats.meta_purchases)} dim sublabel="Meta-reported purchases" />
-                  </div>
+                  {/* Row 2: margin/profit detail — the profit endpoint is TODAY-scoped,
+                      so it only shows for the DZIŚ range (keeps the panel consistent). */}
+                  {isToday ? (
+                    <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
+                      <KPICard
+                        label="Margin Before Ads"
+                        value={profitSummary ? fmtPln(profitSummary.marginBeforeAds) : '—'}
+                        sublabel="Known contribution margin"
+                      />
+                      <KPICard
+                        label="Profit / Order"
+                        value={profitSummary && (profitData?.ordersCount ?? 0) > 0 ? fmtPln(profitSummary.profitPerOrder) : '—'}
+                        positive={profitPositive}
+                        danger={profitDanger}
+                        sublabel="After ad spend"
+                      />
+                      <KPICard
+                        label="True CPA"
+                        value={profitSummary?.realCpa != null ? fmtPln(profitSummary.realCpa) : '—'}
+                        warning={profitSummary?.realCpa != null && profitSummary.realCpa > 50}
+                        sublabel="Ad spend ÷ paid orders"
+                      />
+                      <KPICard
+                        label="Margin ROAS"
+                        value={profitSummary?.realRoas != null ? `${profitSummary.realRoas.toFixed(2)}×` : '—'}
+                        sublabel="Revenue ÷ ad spend"
+                      />
+                      <KPICard
+                        label="Unmapped Revenue"
+                        value={profitData?.ok ? fmtPln(profitData.unknownRevenue) : '—'}
+                        warning={hasUnknownRevenue}
+                        sublabel={hasUnknownRevenue ? 'Needs margin mapping' : 'All products mapped'}
+                      />
+                    </div>
+                  ) : (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', padding: '6px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '3px' }}>
+                      ℹ Rozbicie zysku (marża, zysk/zamówienie, True CPA, Margin ROAS) liczone jest dla bieżącego dnia — dostępne w zakresie DZIŚ.
+                    </div>
+                  )}
 
-                  {/* Row 3: Meta ad efficiency metrics */}
-                  {ads.length > 0 && (() => {
-                    const totalClicks      = ads.reduce((s, a) => s + (a.clicks ?? 0), 0)
-                    const totalLinkClicks  = ads.reduce((s, a) => s + (a.link_clicks ?? 0), 0)
-                    const totalImpressions = ads.reduce((s, a) => s + (a.impressions ?? 0), 0)
-                    const totalSpend       = ads.reduce((s, a) => s + a.spend, 0)
+                  {/* Row 3: Meta ad efficiency — range-aware, derived from the daily
+                      performance view (impressions/clicks/spend) for the chosen range. */}
+                  {displayPerf && (displayPerf.impressions > 0 || displayPerf.clicks > 0) && (() => {
+                    const totalClicks      = displayPerf.clicks ?? 0
+                    const totalLinkClicks  = displayPerf.link_clicks ?? 0
+                    const totalImpressions = displayPerf.impressions ?? 0
+                    const totalSpend       = displayPerf.meta_spend ?? 0
                     const ctr  = totalImpressions > 0 ? totalLinkClicks / totalImpressions * 100 : null
                     const cpc  = totalClicks > 0      ? totalSpend / totalClicks : null
                     const cpm  = totalImpressions > 0 ? totalSpend / totalImpressions * 1000 : null
@@ -1454,22 +1536,23 @@ export default function App() {
                         <KPICard label="CPM" value={fmtPln(cpm)} sublabel="Spend / 1 000 impr." />
                         <KPICard label="Total Clicks" value={fmtNum(totalClicks)} dim sublabel="All Meta campaigns" />
                         <KPICard label="Impressions" value={fmtNum(totalImpressions)} dim sublabel="All Meta campaigns" />
+                        <KPICard label="Meta Attr." value={fmtNum(displayPerf.meta_purchases ?? 0)} dim sublabel="Meta-reported purchases" />
                       </div>
                     )
                   })()}
 
-                  {/* Profit data warnings */}
-                  {profitMismatch && (
+                  {/* Profit data warnings — today-scoped like the profit endpoint */}
+                  {isToday && profitMismatch && (
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)', padding: '6px 12px', background: 'rgba(251,146,60,0.06)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: '3px' }}>
                       ⚠ Profit endpoint returned 0 orders but ordersData shows orders today — filter mismatch or stale cache.
                     </div>
                   )}
-                  {hasUnknownRevenue && !profitMismatch && (
+                  {isToday && hasUnknownRevenue && !profitMismatch && (
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)', padding: '6px 12px', background: 'rgba(251,146,60,0.06)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: '3px' }}>
                       ⚠ {fmtPln(profitData!.unknownRevenue)} revenue from unmapped products — contribution margin not included in Est. Profit.
                     </div>
                   )}
-                  {(profitData?.emailNormReclassified ?? 0) > 0 && (
+                  {isToday && (profitData?.emailNormReclassified ?? 0) > 0 && (
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', padding: '6px 12px', background: 'rgba(99,211,199,0.06)', border: '1px solid rgba(99,211,199,0.2)', borderRadius: '3px' }}>
                       ℹ {profitData!.emailNormReclassified} order(s) classified via email→webinar match — treated as JSU.
                     </div>

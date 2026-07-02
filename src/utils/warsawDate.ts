@@ -4,6 +4,14 @@ export function warsawToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
 }
 
+// The previous full Warsaw calendar day (YYYY-MM-DD). Computed by date-string
+// arithmetic (noon UTC anchor) so it's stable across DST — no offset drift.
+export function warsawYesterday(): string {
+  const d = new Date(warsawToday() + 'T12:00:00Z')
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
 // Convert any ISO timestamp to a Warsaw calendar date string (YYYY-MM-DD).
 // DST-safe: uses the Intl API which applies the correct offset for each instant.
 export function toWarsawDate(isoOrUnix: string | number | null | undefined): string {
