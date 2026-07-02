@@ -128,6 +128,24 @@ export async function fetchTopAds(date?: string): Promise<MetaAdDaily[]> {
   return (data ?? []) as MetaAdDaily[]
 }
 
+// Raw per-ad rows across a Warsaw date range [from, to] inclusive — used for the
+// campaign inspector (grouped/aggregated client-side per the selected time range).
+export async function fetchAdRowsBetween(from: string, to: string): Promise<MetaAdDaily[]> {
+  const { data, error } = await supabase
+    .from('meta_ads_daily')
+    .select('*')
+    .gte('date', from)
+    .lte('date', to)
+    .order('spend', { ascending: false })
+    .limit(1000)
+
+  if (error) {
+    console.error('fetchAdRowsBetween error', error)
+    return []
+  }
+  return (data ?? []) as MetaAdDaily[]
+}
+
 export async function fetchAutomationRuns(limit = 5): Promise<AutomationRun[]> {
   const { data, error } = await supabase
     .from('automation_runs')

@@ -19,6 +19,7 @@ import { InsightChart } from './components/InsightChart'
 import { CampaignsPanel } from './components/CampaignsPanel'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { StanleyOwl } from './components/StanleyOwl'
+import { CampaignInspector } from './components/CampaignInspector'
 import { GoalBar } from './components/GoalBar'
 import {
   ppOrdersGoal, monthlyRevenueGoal, cpaGoal, roasGoal,
@@ -27,7 +28,7 @@ import {
 } from './lib/goalProgress'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
-  fetchRecentPerformance, fetchMetaStatsToday,
+  fetchRecentPerformance, fetchMetaStatsToday, fetchAdRowsBetween,
   computeStatus,
   type DailyPerformance, type MetaAdDaily, type AutomationRun,
   type DataStatus, type MetaStatsToday,
@@ -59,7 +60,14 @@ import {
   startListening, type SttResult,
 } from './voice/stt'
 
-import { warsawToday, warsawYesterday } from './utils/warsawDate'
+import { warsawToday, warsawYesterday, warsawDaysAgo } from './utils/warsawDate'
+
+// Warsaw date bounds [from, to] for a panel time range.
+function rangeDates(range: TimeRange): { from: string; to: string } {
+  if (range === 'yesterday') { const y = warsawYesterday(); return { from: y, to: y } }
+  if (range === 'week')      return { from: warsawDaysAgo(6), to: warsawToday() }
+  return { from: warsawToday(), to: warsawToday() }
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -715,6 +723,18 @@ export default function App() {
   const { theme, toggleTheme } = useTheme()
   const [section, setSection] = useState<NavSection>('command-center')
   const [range, setRange] = useState<TimeRange>('today')   // panel-wide time range
+
+  // Per-range campaign rows for the campaign inspector dropdown.
+  const [campaignRows, setCampaignRows] = useState<MetaAdDaily[]>([])
+  const [campaignRowsLoading, setCampaignRowsLoading] = useState(true)
+  useEffect(() => {
+    const { from, to } = rangeDates(range)
+    setCampaignRowsLoading(true)
+    fetchAdRowsBetween(from, to)
+      .then(setCampaignRows)
+      .catch(() => setCampaignRows([]))
+      .finally(() => setCampaignRowsLoading(false))
+  }, [range])
 
   // Ambient nature bed — default ON, session-memory toggle (not localStorage).
   const [ambientOn, setAmbientOn] = useState(true)
@@ -1559,6 +1579,13 @@ export default function App() {
                   )}
                 </>
               )}
+
+              {/* Campaign inspector — pick a campaign (or All) for the selected range */}
+              <CampaignInspector
+                rows={campaignRows}
+                loading={campaignRowsLoading}
+                rangeLabel={RANGE_LABELS[range]}
+              />
 
               <div className="panel-illuminate card">
                 <div className="section-title section-title-gold" style={{ marginBottom: '10px' }}>Revenue Trend — 7 Days</div>
