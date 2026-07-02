@@ -69,6 +69,70 @@ export const handler = async (event) => {
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
 
+  // ── Range mode: /campaign-data?from=YYYY-MM-DD&to=YYYY-MM-DD ───────────────
+  // Aggregates meta_ads_daily per creative across the [from,to] window so the
+  // Campaigns view can show today / yesterday / week / month. The header then
+  // reflects the REAL dates present in the data (no date vs data mismatch).
+  const qp = event.queryStringParameters || {}
+  const from = qp.from
+  const to   = qp.to
+  if (from && to) {
+    const rangeRes = await tryGet(supabaseUrl, serviceKey, 'meta_ads_daily', {
+      select: '*',
+      date:   [`gte.${from}`, `lte.${to}`],
+      order:  'date.desc',
+      limit:  '3000',
+    })
+    const raw = rangeRes.data ?? []
+    // Group per creative (campaign + ad) and sum the daily rows.
+    const map = new Map()
+    const dates = new Set()
+    for (const r of raw) {
+      if (r.date) dates.add(r.date)
+      const key = `${r.campaign_id || ''}|${r.ad_name || r.campaign_name || ''}`
+      const g = map.get(key) || {
+        campaign_id: r.campaign_id ?? null,
+        campaign_name: r.campaign_name ?? null,
+        ad_name: r.ad_name ?? null,
+        spend: 0, impressions: 0, clicks: 0, link_clicks: 0,
+        meta_purchases: 0, meta_purchase_value: 0,
+      }
+      g.spend              += Number(r.spend) || 0
+      g.impressions        += Number(r.impressions) || 0
+      g.clicks             += Number(r.clicks) || 0
+      g.link_clicks        += Number(r.link_clicks) || 0
+      g.meta_purchases     += Number(r.meta_purchases ?? r.purchases) || 0
+      g.meta_purchase_value += Number(r.meta_purchase_value) || 0
+      map.set(key, g)
+    }
+    const datesPresent = [...dates].sort()
+    const aggRows = [...map.values()]
+      .map(g => ({ ...g, date: datesPresent[datesPresent.length - 1] ?? to }))
+      .sort((a, b) => b.spend - a.spend)
+
+    return {
+      statusCode: 200,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ok: true,
+        rows: aggRows,
+        usedDate: datesPresent[datesPresent.length - 1] ?? '',
+        requestedDate: to,
+        rangeFrom: from,
+        rangeTo: to,
+        datesPresent,
+        rawRowCount: raw.length,
+        sourceTable: 'meta_ads_daily',
+        aggregateMetaSpendExists: aggRows.length > 0,
+        aggregateLatestDate: datesPresent[datesPresent.length - 1] ?? null,
+        aggregateSpendTotal: aggRows.reduce((s, g) => s + g.spend, 0),
+        sourceMismatch: false,
+        sourceMismatchExplanation: null,
+        errors: { meta_ads_daily: rangeRes.error, v_daily_wix_meta_performance: null },
+      }),
+    }
+  }
+
   // ── Fetch today's campaign rows from meta_ads_daily ───────────────────────
 
   const todayRes = await tryGet(supabaseUrl, serviceKey, 'meta_ads_daily', {

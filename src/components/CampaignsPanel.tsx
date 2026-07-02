@@ -5,6 +5,8 @@ import {
   type CampaignFetchResult,
 } from '../lib/campaignDiagnosis'
 import type { MetaAdDaily } from '../services/data'
+import { RangeSwitcher } from './RangeSwitcher'
+import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from '../lib/timeRange'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -241,18 +243,29 @@ export function CampaignsPanel() {
   const [requestedDate, setRequestedDate] = useState('')
   const [loading, setLoading] = useState(true)
   const [scope, setScope] = useState<CampaignScope>('JSU')
+  const [range, setRange] = useState<TimeRange>('today')
+  const [datesPresent, setDatesPresent] = useState<string[]>([])
   const [fetchResult, setFetchResult] = useState<CampaignFetchResult | null>(null)
 
+  // Refetch (aggregated per creative) whenever the time range changes.
   useEffect(() => {
     setLoading(true)
-    fetchCampaignRows().then((result) => {
+    fetchCampaignRows(rangeDates(range)).then((result) => {
       setFetchResult(result)
       setAllRows(result.rows)
       setUsedDate(result.usedDate)
       setRequestedDate(result.requestedDate)
+      setDatesPresent(result.datesPresent ?? [])
       setLoading(false)
     })
-  }, [])
+  }, [range])
+
+  // Actual data coverage — what dates the rows really span (fixes header vs data).
+  const coverage = datesPresent.length === 0
+    ? '—'
+    : datesPresent.length === 1
+      ? datesPresent[0]
+      : `${datesPresent[0]} → ${datesPresent[datesPresent.length - 1]} (${datesPresent.length} dni)`
 
   const diagnosis: CampaignDiagnosis = useMemo(
     () => buildCampaignDiagnosis(allRows, scope, requestedDate, usedDate),
@@ -277,17 +290,22 @@ export function CampaignsPanel() {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
         <div className="section-title section-title-gold" style={{ margin: 0 }}>
           Campaigns
         </div>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted)' }}>
           {loading ? 'Loading…' : hasRows
-            ? (isStale ? `Stale — showing ${usedDate}` : `Live — ${usedDate}`)
+            ? `${rangeSubLabel(range)} · dane: ${coverage}`
             : sourceMismatch
               ? `Aggregate spend found, no campaign rows · source: v_daily_wix_meta_performance`
-              : 'No Meta data found'}
+              : `Brak danych reklam dla zakresu ${RANGE_LABELS[range]}`}
         </span>
+      </div>
+
+      {/* Time-range switcher — same control as Command Center */}
+      <div style={{ marginBottom: '16px' }}>
+        <RangeSwitcher range={range} onChange={setRange} showSub={false} />
       </div>
 
       {/* Stale notice */}

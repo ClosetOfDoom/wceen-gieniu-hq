@@ -223,9 +223,14 @@ export interface CampaignFetchResult {
   sourceMismatch: boolean
   sourceMismatchExplanation: string | null
   fetchError: string | null  // null = success or empty; non-null = network/auth error
+  datesPresent?: string[]     // real dates in the data (range mode) — fixes header mismatch
+  rangeFrom?: string
+  rangeTo?: string
 }
 
-export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
+// Pass { from, to } (Warsaw YYYY-MM-DD) to aggregate a range per creative; omit
+// for the legacy today/latest single-day behaviour.
+export async function fetchCampaignRows(range?: { from: string; to: string }): Promise<CampaignFetchResult> {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
   const empty: CampaignFetchResult = {
     rows: [], usedDate: '', requestedDate: today,
@@ -235,7 +240,10 @@ export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
   }
 
   try {
-    const res = await fetch(bustUrl('/.netlify/functions/campaign-data'), {
+    const base = range
+      ? `/.netlify/functions/campaign-data?from=${range.from}&to=${range.to}`
+      : '/.netlify/functions/campaign-data'
+    const res = await fetch(bustUrl(base), {
       headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
     })
     if (!res.ok) {
@@ -253,6 +261,9 @@ export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
       aggregateSpendTotal: number
       sourceMismatch: boolean
       sourceMismatchExplanation: string | null
+      datesPresent?: string[]
+      rangeFrom?: string
+      rangeTo?: string
       errors?: { meta_ads_daily?: string | null; v_daily_wix_meta_performance?: string | null }
     }
     if (!json.ok) {
@@ -273,6 +284,9 @@ export async function fetchCampaignRows(): Promise<CampaignFetchResult> {
       aggregateSpendTotal:       json.aggregateSpendTotal ?? 0,
       sourceMismatch:            json.sourceMismatch ?? false,
       sourceMismatchExplanation: json.sourceMismatchExplanation ?? null,
+      datesPresent:              json.datesPresent,
+      rangeFrom:                 json.rangeFrom,
+      rangeTo:                   json.rangeTo,
       fetchError:                (json.rows ?? []).length === 0 && dbError ? dbError : null,
     }
   } catch (e) {

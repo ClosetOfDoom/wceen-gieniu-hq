@@ -17,6 +17,11 @@ export function warsawYesterday(): string {
   return warsawDaysAgo(1)
 }
 
+// First day of the current Warsaw calendar month (YYYY-MM-01).
+export function warsawMonthStart(): string {
+  return warsawToday().slice(0, 7) + '-01'
+}
+
 // Convert any ISO timestamp to a Warsaw calendar date string (YYYY-MM-DD).
 // DST-safe: uses the Intl API which applies the correct offset for each instant.
 export function toWarsawDate(isoOrUnix: string | number | null | undefined): string {

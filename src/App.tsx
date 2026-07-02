@@ -28,7 +28,7 @@ import {
 } from './lib/goalProgress'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
-  fetchRecentPerformance, fetchMetaStatsToday, fetchAdRowsBetween,
+  fetchRecentPerformance, fetchMetaStatsToday,
   computeStatus,
   type DailyPerformance, type MetaAdDaily, type AutomationRun,
   type DataStatus, type MetaStatsToday,
@@ -49,6 +49,7 @@ import {
   type GieniuResponse,
   type InsightChartSpec,
 } from './brain/responses'
+import { fetchCampaignRows } from './lib/campaignDiagnosis'
 import { resolveIntent } from './brain/intent'
 import {
   speak, stopAudio, prewarmAudio, isElevenLabsPaused, resetElevenLabs,
@@ -60,26 +61,15 @@ import {
   startListening, type SttResult,
 } from './voice/stt'
 
-import { warsawToday, warsawYesterday, warsawDaysAgo } from './utils/warsawDate'
-
-// Warsaw date bounds [from, to] for a panel time range.
-function rangeDates(range: TimeRange): { from: string; to: string } {
-  if (range === 'yesterday') { const y = warsawYesterday(); return { from: y, to: y } }
-  if (range === 'week')      return { from: warsawDaysAgo(6), to: warsawToday() }
-  return { from: warsawToday(), to: warsawToday() }
-}
+import { warsawToday, warsawYesterday } from './utils/warsawDate'
+import { RangeSwitcher } from './components/RangeSwitcher'
+import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from './lib/timeRange'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const OPENING_TEXT = "At your service, sir. One gesture and I shall commence the operational report."
 
-// ── Time range (panel-wide) ─────────────────────────────────────────────────────
-
-type TimeRange = 'today' | 'yesterday' | 'week'
-
-const RANGE_LABELS: Record<TimeRange, string> = {
-  today: 'DZIŚ', yesterday: 'WCZORAJ', week: 'TYDZIEŃ (7 dni)',
-}
+// ── Time range (panel-wide) — aggregation helpers over the daily performance view ─
 
 // Sum a numeric field across rows (nulls treated as 0).
 function sumField(rows: DailyPerformance[], f: keyof DailyPerformance): number {
@@ -110,24 +100,27 @@ function aggregatePerf(rows: DailyPerformance[]): DailyPerformance | null {
 }
 
 // Resolve the performance row for the selected range from today's row + the recent
-// trend (all Warsaw-tz). Returns { perf, sub } where sub is a small date sublabel.
+// daily rows (all Warsaw-tz). `rows` should be the widest window available (up to
+// 31 days) so week AND month can both be aggregated from it.
 function resolveRangePerf(
   range: TimeRange,
   today: DailyPerformance | null,
-  trend: DailyPerformance[],
-): { perf: DailyPerformance | null; sub: string } {
+  rows: DailyPerformance[],
+): DailyPerformance | null {
   if (range === 'today') {
     // Fall back to the latest available day (stale note shown separately).
-    const p = today ?? (trend.length > 0 ? trend[0] : null)
-    return { perf: p, sub: today ? warsawToday() : (trend[0]?.date ?? warsawToday()) }
+    return today ?? (rows.length > 0 ? rows[0] : null)
   }
   if (range === 'yesterday') {
     const y = warsawYesterday()
-    return { perf: trend.find(r => r.date === y) ?? null, sub: y }
+    return rows.find(r => r.date === y) ?? null
   }
-  // week — last 7 available days
-  const week = trend.slice(0, 7)
-  return { perf: aggregatePerf(week), sub: week.length ? `${week[week.length - 1].date} → ${week[0].date}` : '' }
+  if (range === 'week') {
+    return aggregatePerf(rows.slice(0, 7))   // rows are date-desc → last 7 days
+  }
+  // month — current calendar month to date
+  const ym = warsawToday().slice(0, 7)
+  return aggregatePerf(rows.filter(r => r.date.startsWith(ym)))
 }
 
 // Detect queries about today's performance — only these trigger day reactions
@@ -728,10 +721,9 @@ export default function App() {
   const [campaignRows, setCampaignRows] = useState<MetaAdDaily[]>([])
   const [campaignRowsLoading, setCampaignRowsLoading] = useState(true)
   useEffect(() => {
-    const { from, to } = rangeDates(range)
     setCampaignRowsLoading(true)
-    fetchAdRowsBetween(from, to)
-      .then(setCampaignRows)
+    fetchCampaignRows(rangeDates(range))
+      .then(r => setCampaignRows(r.rows))
       .catch(() => setCampaignRows([]))
       .finally(() => setCampaignRowsLoading(false))
   }, [range])
@@ -1344,10 +1336,12 @@ export default function App() {
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
-  // Panel-wide time range (DZIŚ / WCZORAJ / TYDZIEŃ) — every KPI below reads the
-  // same range so the panel is never a mix of periods.
-  const { perf: rangePerf, sub: rangeSub } = resolveRangePerf(range, perf, trend)
-  const displayPerf = rangePerf
+  // Panel-wide time range — every KPI below reads the same range so the panel is
+  // never a mix of periods. monthTrend (≤31 days) feeds week AND month; fall back
+  // to the 7-day trend before it loads.
+  const rangeRows    = monthTrend.length > 0 ? monthTrend : trend
+  const displayPerf  = resolveRangePerf(range, perf, rangeRows)
+  const rangeSub     = rangeSubLabel(range)
   const isToday      = range === 'today'
   const perfIsStale  = isToday && !perf && trend.length > 0
   const cpaHigh      = displayPerf?.real_cpa != null && displayPerf.real_cpa > 50
@@ -1406,27 +1400,7 @@ export default function App() {
           {section === 'command-center' && (
             <>
               {/* Time-range switcher — governs every KPI in this panel (Warsaw tz) */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <span style={{ fontFamily: 'var(--font-serif)', fontSize: '0.72rem', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-                  Zakres
-                </span>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {(['today', 'yesterday', 'week'] as TimeRange[]).map(r => (
-                    <button
-                      key={r}
-                      className={`scope-chip${range === r ? ' active' : ''}`}
-                      onClick={() => setRange(r)}
-                    >
-                      {RANGE_LABELS[r]}
-                    </button>
-                  ))}
-                </div>
-                {displayPerf && rangeSub && (
-                  <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)' }}>
-                    {rangeSub}
-                  </span>
-                )}
-              </div>
+              <RangeSwitcher range={range} onChange={setRange} />
 
               {loading ? (
                 <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>Loading data…</div>
