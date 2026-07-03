@@ -76,6 +76,23 @@ export const handler = async (event) => {
   const qp = event.queryStringParameters || {}
   const from = qp.from
   const to   = qp.to
+
+  // ── Diagnostic: raw rows (incl. raw_payload) for a range, no aggregation ───
+  // TEMP — used to audit whether meta_ads_daily stores full conversion actions.
+  if (qp.raw === '1' && from && to) {
+    const r = await tryGet(supabaseUrl, serviceKey, 'meta_ads_daily', {
+      select: 'date,ad_name,spend,impressions,clicks,link_clicks,meta_purchases,meta_purchase_value,raw_payload',
+      date:   [`gte.${from}`, `lte.${to}`],
+      order:  'date.desc',
+      limit:  '400',
+    })
+    return {
+      statusCode: 200,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ok: true, rows: r.data ?? [], error: r.error }),
+    }
+  }
+
   if (from && to) {
     const rangeRes = await tryGet(supabaseUrl, serviceKey, 'meta_ads_daily', {
       select: '*',
