@@ -400,6 +400,13 @@ export function CampaignsPanel() {
           <SpendBarChart campaigns={diagnosis.campaigns} />
           <CampaignTable campaigns={diagnosis.campaigns} />
           <DiagnosisCard text={diagnosis.diagnosisText} scope={scope} />
+          {/* Honest provenance — conversions are what the sync stored, not a live Meta pull */}
+          <div style={{ marginTop: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted2)', lineHeight: 1.7 }}>
+            Purch. = kolumna <span style={{ color: 'var(--muted)' }}>meta_purchases</span> z meta_ads_daily (sync Make).
+            Może różnić się od Meta Ads Manager „Wyniki / Zakupy w witrynie" (inna atrybucja / typ akcji / dosync konwersji).
+            {usedDate ? ` Najnowsza data w danych: ${usedDate}.` : ''}
+            {' '}Spend i konwersje sumowane po dacie dla wybranego zakresu — jeśli różni się od Meta, źródłem jest sync (meta_ads_daily), nie agregacja.
+          </div>
         </>
       )}
     </div>

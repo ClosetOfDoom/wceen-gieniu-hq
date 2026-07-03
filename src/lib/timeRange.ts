@@ -13,14 +13,15 @@ export const RANGE_LABELS: Record<TimeRange, string> = {
 }
 
 // Warsaw date bounds [from, to] inclusive for a range.
-//   today     = current day (in progress)
+//   today     = current day (in progress — partial)
 //   yesterday = previous full day
-//   week      = last 7 days (today − 6 … today)
+//   week      = last 7 FULL days, ending yesterday (today is partial, so excluded).
+//               This matches how you compare against Meta Ads Manager (full days).
 //   month     = current calendar month to date (1st … today) — matches the 30k goal
 export function rangeDates(range: TimeRange): { from: string; to: string } {
   switch (range) {
     case 'yesterday': { const y = warsawYesterday(); return { from: y, to: y } }
-    case 'week':      return { from: warsawDaysAgo(6), to: warsawToday() }
+    case 'week':      return { from: warsawDaysAgo(7), to: warsawYesterday() }
     case 'month':     return { from: warsawMonthStart(), to: warsawToday() }
     default:          return { from: warsawToday(), to: warsawToday() }
   }
@@ -31,6 +32,7 @@ export function rangeSubLabel(range: TimeRange): string {
   const { from, to } = rangeDates(range)
   if (range === 'today')     return `${to} · w toku`
   if (range === 'yesterday') return to
+  if (range === 'week')      return `${from} → ${to} · 7 pełnych dni`
   if (range === 'month')     return `${from} → ${to} · w toku`
   return `${from} → ${to}`
 }

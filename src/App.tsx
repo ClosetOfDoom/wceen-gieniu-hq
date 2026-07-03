@@ -61,7 +61,6 @@ import {
   startListening, type SttResult,
 } from './voice/stt'
 
-import { warsawToday, warsawYesterday } from './utils/warsawDate'
 import { RangeSwitcher } from './components/RangeSwitcher'
 import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from './lib/timeRange'
 
@@ -100,27 +99,23 @@ function aggregatePerf(rows: DailyPerformance[]): DailyPerformance | null {
 }
 
 // Resolve the performance row for the selected range from today's row + the recent
-// daily rows (all Warsaw-tz). `rows` should be the widest window available (up to
-// 31 days) so week AND month can both be aggregated from it.
+// daily rows (all Warsaw-tz). Filters by the SAME rangeDates() bounds the campaign
+// data uses, so Command Center KPIs and the Campaigns panel can never drift apart.
 function resolveRangePerf(
   range: TimeRange,
   today: DailyPerformance | null,
   rows: DailyPerformance[],
 ): DailyPerformance | null {
+  const { from, to } = rangeDates(range)
   if (range === 'today') {
     // Fall back to the latest available day (stale note shown separately).
     return today ?? (rows.length > 0 ? rows[0] : null)
   }
   if (range === 'yesterday') {
-    const y = warsawYesterday()
-    return rows.find(r => r.date === y) ?? null
+    return rows.find(r => r.date === from) ?? null
   }
-  if (range === 'week') {
-    return aggregatePerf(rows.slice(0, 7))   // rows are date-desc → last 7 days
-  }
-  // month — current calendar month to date
-  const ym = warsawToday().slice(0, 7)
-  return aggregatePerf(rows.filter(r => r.date.startsWith(ym)))
+  // week / month — aggregate every day inside [from, to]
+  return aggregatePerf(rows.filter(r => r.date >= from && r.date <= to))
 }
 
 // Detect queries about today's performance — only these trigger day reactions
