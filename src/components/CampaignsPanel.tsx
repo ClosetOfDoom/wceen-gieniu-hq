@@ -400,12 +400,19 @@ export function CampaignsPanel() {
           <SpendBarChart campaigns={diagnosis.campaigns} />
           <CampaignTable campaigns={diagnosis.campaigns} />
           <DiagnosisCard text={diagnosis.diagnosisText} scope={scope} />
-          {/* Honest provenance — conversions are what the sync stored, not a live Meta pull */}
-          <div style={{ marginTop: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted2)', lineHeight: 1.7 }}>
-            Purch. = kolumna <span style={{ color: 'var(--muted)' }}>meta_purchases</span> z meta_ads_daily (sync Make).
-            Może różnić się od Meta Ads Manager „Wyniki / Zakupy w witrynie" (inna atrybucja / typ akcji / dosync konwersji).
-            {usedDate ? ` Najnowsza data w danych: ${usedDate}.` : ''}
-            {' '}Spend i konwersje sumowane po dacie dla wybranego zakresu — jeśli różni się od Meta, źródłem jest sync (meta_ads_daily), nie agregacja.
+          {/* Honest provenance — audited: the sync undercounts Meta conversions */}
+          <div style={{
+            marginTop: '14px', fontFamily: 'var(--font-mono)', fontSize: '0.68rem',
+            color: 'var(--text2)', lineHeight: 1.75, padding: '12px 14px',
+            background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.25)',
+            borderRadius: '4px',
+          }}>
+            <span style={{ color: 'var(--amber)', fontWeight: 600 }}>⚠ „Purch." zaniża konwersje Meta.</span>{' '}
+            Stanley sumuje kolumnę <span style={{ color: 'var(--muted)' }}>meta_purchases</span> z <span style={{ color: 'var(--muted)' }}>meta_ads_daily</span> — i pokazuje ją wiernie.
+            Audyt bazy: konwersje są zapisane jako <b>0 w ~95% dni</b> (spend jest, zakupów brak), a <span style={{ color: 'var(--muted)' }}>raw_payload</span> jest pusty — więc pełnej liczby (Meta Ads Manager „Wyniki") <b>nie ma w Supabase</b> i kod jej nie odtworzy.
+            Źródło = <b>zapis z Make</b> (brak dosyncu atrybutowanych konwersji), nie agregacja Stanleya.
+            {' '}Realne konwersje/sprzedaż licz z <b>Wix orders / revenue</b> (Command Center, Real ROAS/CPA) — to dane transakcyjne, niezależne od atrybucji Meta.
+            {usedDate ? ` Najnowsza data w meta_ads_daily: ${usedDate}.` : ''}
           </div>
         </>
       )}

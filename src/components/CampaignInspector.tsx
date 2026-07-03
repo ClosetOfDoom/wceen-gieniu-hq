@@ -131,8 +131,9 @@ export function CampaignInspector({
             <KPICard label="CPM" value={fmtPln(cpm)} dim sublabel="Spend / 1 000 impr." />
             <KPICard label="Impressions" value={fmtNum(current.impressions)} dim sublabel={rangeLabel} />
           </div>
-          <div style={{ marginTop: '10px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted2)' }}>
-            ROAS/CPA to metryki atrybucji Meta (nie Wix). Zakres: {rangeLabel}.
+          <div style={{ marginTop: '10px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted2)', lineHeight: 1.6 }}>
+            ROAS/CPA/Purchases = atrybucja Meta z meta_ads_daily (sync Make) — zaniża realne konwersje
+            (zakupy zapisane jako 0 w większości dni). Prawda transakcyjna: Wix orders/revenue. Zakres: {rangeLabel}.
           </div>
         </>
       )}
