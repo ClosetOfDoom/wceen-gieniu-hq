@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   ReactionSystem,
-  tryTriggerDayReaction,
   tryTriggerMicroSales,
   tryTriggerWebinarFull,
 } from './components/ReactionSystem'
@@ -712,6 +711,20 @@ export default function App() {
   const [section, setSection] = useState<NavSection>('command-center')
   const [range, setRange] = useState<TimeRange>('today')   // panel-wide time range
 
+  // Subtle, SILENT mood accent for result queries — information always comes first;
+  // this is a quiet visual background signal, never audio, never a full-screen event.
+  const [resultMood, setResultMood]     = useState<'good' | 'bad' | null>(null)
+  const [resultMoodSeq, setResultMoodSeq] = useState(0)
+  const moodTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const showResultMood = useCallback((roas: number | null) => {
+    // ≥2.5 → good (gold), <1.5 → bad (muted), 1.5–2.5 → neutral (no accent).
+    const mood = roas == null ? null : roas >= 2.5 ? 'good' : roas < 1.5 ? 'bad' : null
+    setResultMood(mood)
+    setResultMoodSeq(s => s + 1)
+    if (moodTimerRef.current) clearTimeout(moodTimerRef.current)
+    if (mood) moodTimerRef.current = setTimeout(() => setResultMood(null), 2800)
+  }, [])
+
   // Per-range campaign rows for the campaign inspector dropdown.
   const [campaignRows, setCampaignRows] = useState<MetaAdDaily[]>([])
   const [campaignRowsLoading, setCampaignRowsLoading] = useState(true)
@@ -1115,20 +1128,16 @@ export default function App() {
       } else if (cmdResult.llmUsed) {
         setLlmConnected(true)
       }
+      // Information first — the answer text/voice is delivered by speakAnswer above.
       speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText })
-      if (isDayResultQuery(query) && perf?.real_roas != null) {
-        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-        tryTriggerDayReaction(perf.real_roas, today)
-      }
+      // Then a subtle, silent visual mood accent (never audio, never blocking).
+      if (isDayResultQuery(query) && perf?.real_roas != null) showResultMood(perf.real_roas)
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('gieniu-command failed — falling back to local intent resolve:', err)
       const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData, profitData })
       speakAnswer(result)
-      if (isDayResultQuery(query) && perf?.real_roas != null) {
-        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-        tryTriggerDayReaction(perf.real_roas, today)
-      }
+      if (isDayResultQuery(query) && perf?.real_roas != null) showResultMood(perf.real_roas)
     } finally {
       setThinking(false)
     }
@@ -1396,6 +1405,11 @@ export default function App() {
             <>
               {/* Time-range switcher — governs every KPI in this panel (Warsaw tz) */}
               <RangeSwitcher range={range} onChange={setRange} />
+
+              {/* Subtle, silent result-mood accent — appears AFTER the answer, fades out */}
+              {resultMood && (
+                <div key={resultMoodSeq} className={`result-mood result-mood--${resultMood}`} aria-hidden="true" />
+              )}
 
               {loading ? (
                 <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>Loading data…</div>

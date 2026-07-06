@@ -912,6 +912,38 @@ button:disabled {
   }
 }
 
+/* ── Result-mood accent — subtle, silent background signal after the answer ──── */
+
+@keyframes result-mood-in {
+  0%   { opacity: 0; transform: scaleX(0.6); }
+  18%  { opacity: 1; }
+  70%  { opacity: 0.85; }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+.result-mood {
+  height: 3px;
+  border-radius: 3px;
+  margin: -8px 2px 0;
+  transform-origin: center;
+  pointer-events: none;
+  animation: result-mood-in 2.6s ease-out forwards;
+  will-change: opacity, transform;
+}
+/* good day → soft gold; bad day → muted, no drama */
+.result-mood--good {
+  background: linear-gradient(90deg, transparent 0%, var(--gold) 50%, transparent 100%);
+  box-shadow: 0 0 16px var(--glow-gold), 0 0 4px var(--glow-gold-sm);
+}
+.result-mood--bad {
+  background: linear-gradient(90deg, transparent 0%, var(--muted) 50%, transparent 100%);
+  box-shadow: 0 0 10px rgba(120,150,175,0.28);
+  opacity: 0.7;
+}
+@media (prefers-reduced-motion: reduce) {
+  .result-mood { animation: none; opacity: 0.5; }
+}
+
 /* ── Animated pond backdrop — under the content, GPU transform/opacity only ──── */
 
 .pond-bg {
