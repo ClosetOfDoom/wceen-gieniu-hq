@@ -59,6 +59,7 @@ import { fetchGieniuCommand, type GieniuCommandContext } from './lib/gieniuComma
 import {
   startListening, type SttResult,
 } from './voice/stt'
+import { isSpeaking as sttIsStanleySpeaking, onSpeechChange } from './lib/speechGate'
 
 import { RangeSwitcher } from './components/RangeSwitcher'
 import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from './lib/timeRange'
@@ -1183,8 +1184,15 @@ export default function App() {
     setVoiceUnlocked(true)
     voiceUnlockedRef.current = true  // update ref immediately so speakAnswer sees it
     await handleIntentQuery('morning brief')
-    // After brief is delivered, activate mic for hands-free follow-up
-    if (!listening) handleMic()
+    // Activate the mic for hands-free follow-up — but ONLY once Stanley has finished
+    // speaking, otherwise the mic catches his own voice and cuts the brief short.
+    if (!listening) {
+      if (sttIsStanleySpeaking()) {
+        const unsub = onSpeechChange(sp => { if (!sp) { unsub(); handleMic() } })
+      } else {
+        handleMic()
+      }
+    }
   }
 
   // ── Retry ElevenLabs ─────────────────────────────────────────────────────────
@@ -1309,6 +1317,15 @@ export default function App() {
         const normalized = normalizeSpeech(result.transcript)
         if (isStopCommand(normalized)) {
           stopSpeaking()
+          return
+        }
+
+        // Guard against self-interruption: if Stanley is still speaking, this final
+        // is almost certainly his own voice/echo caught by the mic. Ignore it so he
+        // is never cut off mid-sentence. (To interrupt on purpose, tap the mic — that
+        // path calls stopSpeaking explicitly.)
+        if (sttIsStanleySpeaking()) {
+          setThinking(false)
           return
         }
 

@@ -1311,23 +1311,13 @@ exports.handler = async (event) => {
   // 1 — Detect intent
   const { intent, confidence, matchedTerms } = detectIntent(message)
 
-  // 2 — Deterministic answer for known high-confidence intents
-  if (confidence >= 0.4 && intent !== 'normal_chat') {
-    const det = buildDeterministicAnswer(intent, ctx)
-    if (det) {
-      return success({
-        answerText: det.text,
-        speechText: det.speech,
-        intent,
-        confidence,
-        language: 'en',
-        dataSourcesUsed: det.sources,
-        warnings: det.warnings ?? [],
-        llmUsed: false,
-        llm: { active: llmActive, provider: llmProviderEnv ?? null, used: false, model: null },
-      })
-    }
-  }
+  // 2 — Deterministic answer (verified numbers). We NO LONGER return this verbatim:
+  //     the fixed templates were repetitive ("the same, phoned-in"). Instead it
+  //     GROUNDS the LLM (step 5), which rephrases the exact figures freshly in
+  //     persona, and it stays as the fallback when the LLM is off or fails.
+  const det = (confidence >= 0.4 && intent !== 'normal_chat')
+    ? buildDeterministicAnswer(intent, ctx)   // null for morning_brief (LLM-only path)
+    : null
 
   // 3 — Morning brief: always goes through LLM (temperature 0.85 for variety)
   if (intent === 'morning_brief') {
@@ -1396,8 +1386,22 @@ exports.handler = async (event) => {
     }
   }
 
-  // 4 — LLM fallback
+  // 4 — No LLM configured → deterministic answer (correct numbers, fixed wording),
+  //     or the conversational-unavailable notice for free chat with no template.
   if (!llmProviderEnv || (!openaiKeyEnv && !anthropicKeyEnv)) {
+    if (det) {
+      return success({
+        answerText: det.text,
+        speechText: det.speech,
+        intent,
+        confidence,
+        language: 'en',
+        dataSourcesUsed: det.sources,
+        warnings: det.warnings ?? [],
+        llmUsed: false,
+        llm: { active: false, provider: null, used: false, model: null },
+      })
+    }
     const noLLMMsg = 'I can answer operational dashboard commands, but conversational AI is not connected yet. Configure LLM_PROVIDER and API key in Netlify environment variables.'
     return success({
       answerText: noLLMMsg,
@@ -1416,9 +1420,16 @@ exports.handler = async (event) => {
   // Await service-role per-ad data (fetched in parallel with intent detection above)
   const serverAds = await serverAdsPromise
 
-  // Build LLM user message with context
+  // Build LLM user message with context. When we have a deterministic answer for
+  // this intent, hand the LLM those EXACT numbers as a verified anchor and ask it
+  // to rephrase them freshly — varied persona wording, identical figures.
   const contextText = buildContextText(ctx, serverAds)
-  const userMessage = `${contextText}\n\n=== USER QUESTION ===\n${message}\n\n(Detected intent: ${intent}, confidence: ${confidence.toFixed(2)}, matched: ${matchedTerms.join(', ') || 'none'})`
+  const grounding = det
+    ? `\n\n=== VERIFIED ANSWER (these numbers are correct — rephrase FRESHLY in your persona; vary the wording every time, keep EVERY figure exactly, and introduce no number that is not here or in the context above) ===\n${det.text}`
+    : ''
+  const userMessage = `${contextText}${grounding}\n\n=== USER QUESTION ===\n${message}\n\n(Detected intent: ${intent}, confidence: ${confidence.toFixed(2)}, matched: ${matchedTerms.join(', ') || 'none'})`
+  // A touch of temperature for variety, kept low so numbers stay disciplined.
+  const opts = { temperature: 0.55, max_tokens: 700 }
 
   try {
     let rawLLM
@@ -1426,15 +1437,15 @@ exports.handler = async (event) => {
     let usedModel
 
     if (llmProviderEnv === 'openai' && openaiKeyEnv) {
-      rawLLM = await callOpenAI(userMessage, openaiKeyEnv)
+      rawLLM = await callOpenAI(userMessage, openaiKeyEnv, opts)
       usedProvider = 'openai'
       usedModel = process.env.OPENAI_MODEL || 'gpt-4o-mini'
     } else if (anthropicKeyEnv) {
-      rawLLM = await callAnthropic(userMessage, anthropicKeyEnv)
+      rawLLM = await callAnthropic(userMessage, anthropicKeyEnv, opts)
       usedProvider = 'anthropic'
       usedModel = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
     } else if (openaiKeyEnv) {
-      rawLLM = await callOpenAI(userMessage, openaiKeyEnv)
+      rawLLM = await callOpenAI(userMessage, openaiKeyEnv, opts)
       usedProvider = 'openai'
       usedModel = process.env.OPENAI_MODEL || 'gpt-4o-mini'
     } else {
@@ -1449,13 +1460,28 @@ exports.handler = async (event) => {
       intent,
       confidence,
       language: 'en',
-      dataSourcesUsed: ['llm', ...(contextText.includes('Today KPIs') ? ['todayKPIs'] : [])],
-      warnings: [],
+      dataSourcesUsed: ['llm', ...(det ? det.sources : []), ...(contextText.includes('Today KPIs') ? ['todayKPIs'] : [])],
+      warnings: det?.warnings ?? [],
       llmUsed: true,
       llmProvider: usedProvider,
       llm: { active: true, provider: usedProvider, used: true, model: usedModel },
     })
   } catch (err) {
+    // LLM failed — if we have a deterministic answer, serve it so the user still
+    // gets the correct numbers (just in fixed wording) instead of an error.
+    if (det) {
+      return success({
+        answerText: det.text,
+        speechText: det.speech,
+        intent,
+        confidence,
+        language: 'en',
+        dataSourcesUsed: det.sources,
+        warnings: [...(det.warnings ?? []), `LLM error (deterministic fallback): ${String(err).slice(0, 80)}`],
+        llmUsed: false,
+        llm: { active: llmActive, provider: llmProviderEnv ?? null, used: false, model: null },
+      })
+    }
     const errMsg = `AI error: ${String(err).slice(0, 100)}. Retry or check your API key.`
     return success({
       answerText: errMsg,
