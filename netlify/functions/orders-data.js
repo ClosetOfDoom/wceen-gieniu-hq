@@ -49,11 +49,20 @@ function warsawWeekStart() {
   return monday.toISOString().slice(0, 10)
 }
 
+// Convert any order date value to a Warsaw calendar date (YYYY-MM-DD). Fixes
+// UTC-vs-Warsaw off-by-one that dropped evening/early orders from "today".
+function toWarsawDate(val) {
+  if (val == null) return ''
+  const s = String(val)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  try { return new Date(s).toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' }) }
+  catch { return s.slice(0, 10) }
+}
+
 function extractOrderDate(row) {
-  return (
-    row.order_created_at ?? row.order_date ?? row.created_at ??
-    row.date ?? row.created ?? ''
-  ).slice(0, 10)
+  return toWarsawDate(
+    row.order_created_at ?? row.order_date ?? row.created_at ?? row.date ?? row.created ?? '',
+  )
 }
 
 function extractAmount(row) {

@@ -1,8 +1,13 @@
 // Netlify Function: profit-data
-// Estimated operational profit for today (Warsaw timezone).
+// Estimated operational profit for a Warsaw date range (default: today).
 // Uses service role key — bypasses RLS.
-// Methodology: contribution margin per product - ad spend today.
+// Methodology: contribution margin per product − ad spend, over the range.
 // See docs/profit_metrics.md for full explanation.
+//
+// Query params (all optional):
+//   ?from=YYYY-MM-DD&to=YYYY-MM-DD  → aggregate the inclusive Warsaw range
+//   ?date=YYYY-MM-DD                → a single day (shortcut for from=to=date)
+//   ?debug=1                        → also return the raw matched orders
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -10,18 +15,57 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 }
 
-// ── Margin rules (KEEP IN SYNC with src/services/productMargins.ts) ─────────
-// JSU: 549→500, Językozak: 347→320, Pamięciowy: 119→70, Językowy: 114→40
+// ── Product classification for MARGIN — amount FIRST, then name (robust to
+//    discounted/variant prices). KEEP IN SYNC with orders-data.js classifyOrder
+//    and src/services/productMargins.ts. Margins: JSU 500 | JZK AI 320 |
+//    Pakiet Pamięciowy 70 | Pakiet Językowy 40. ─────────────────────────────────
 
-const MARGIN_RULES = [
-  { amount: 549, productKey: 'jsu_course',    displayName: 'Kurs Jak się uczyć', contributionMargin: 500 },
-  { amount: 347, productKey: 'jzk_ai',        displayName: 'Językozak AI',        contributionMargin: 320 },
-  { amount: 119, productKey: 'memory_pack',   displayName: 'Pakiet Pamięciowy',   contributionMargin: 70  },
-  { amount: 114, productKey: 'language_pack', displayName: 'Pakiet Językowy',     contributionMargin: 40  },
-]
+// Narrow, deliberate patterns (see orders-data.js for the rationale).
+// JSU requires "kurs" so a PP bundle that merely lists "Jak się uczyć" as a bonus
+// is NEVER classified as JSU.
+const JSU_NAME_PATTERNS  = ['kurs jak sie uczyc', 'kurs jak', 'jsu', 'nauka uczenia']
+const JZK_MAIN_PATTERNS  = ['jezykozak', 'jzk', 'nauka jezykow', 'nauka jezyk']
+const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy']
+const MEMORY_PATTERNS    = ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']
 
-function getMarginRule(amount) {
-  return MARGIN_RULES.find(r => r.amount === amount) ?? null
+const PRODUCTS = {
+  jsu_course:    { displayName: 'Kurs Jak się uczyć', margin: 500 },
+  jzk_ai:        { displayName: 'Językozak AI',        margin: 320 },
+  memory_pack:   { displayName: 'Pakiet Pamięciowy',   margin: 70  },
+  language_pack: { displayName: 'Pakiet Językowy',     margin: 40  },
+}
+
+function normalizeText(s) {
+  return String(s ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function anyMatch(norm, patterns) {
+  return patterns.some(p => norm.includes(p))
+}
+
+// Returns { productKey, displayName, margin, matchedBy } or null (unmapped).
+function classifyForMargin(amount, rawName) {
+  // 1 — absolute price rule (fast, unambiguous)
+  if (amount === 549) return { productKey: 'jsu_course',    ...PRODUCTS.jsu_course,    matchedBy: 'price 549' }
+  if (amount === 347) return { productKey: 'jzk_ai',        ...PRODUCTS.jzk_ai,        matchedBy: 'price 347' }
+  if (amount === 119) return { productKey: 'memory_pack',   ...PRODUCTS.memory_pack,   matchedBy: 'price 119' }
+  if (amount === 114) return { productKey: 'language_pack', ...PRODUCTS.language_pack, matchedBy: 'price 114' }
+
+  // 2 — name fallback (handles discounts / variant prices that are not the list price)
+  const norm = normalizeText(rawName)
+  if (norm) {
+    if (anyMatch(norm, JSU_NAME_PATTERNS))  return { productKey: 'jsu_course',    ...PRODUCTS.jsu_course,    matchedBy: `name "${norm.slice(0, 30)}"` }
+    if (anyMatch(norm, JZK_MAIN_PATTERNS))  return { productKey: 'jzk_ai',        ...PRODUCTS.jzk_ai,        matchedBy: `name "${norm.slice(0, 30)}"` }
+    if (anyMatch(norm, MEMORY_PATTERNS))    return { productKey: 'memory_pack',   ...PRODUCTS.memory_pack,   matchedBy: `name "${norm.slice(0, 30)}"` }
+    if (anyMatch(norm, LANG_PACK_PATTERNS)) return { productKey: 'language_pack', ...PRODUCTS.language_pack, matchedBy: `name "${norm.slice(0, 30)}"` }
+  }
+  return null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -30,22 +74,22 @@ function warsawToday() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
 }
 
-function warsawDayBoundaries(dateStr) {
-  // Returns ISO UTC start/end for the full Warsaw calendar day
-  const start = new Date(`${dateStr}T00:00:00+02:00`)
-  const end   = new Date(`${dateStr}T23:59:59+02:00`)
-  // Try CET (UTC+1) fallback if offset is wrong; simpler: just do date prefix filter
-  return { start: start.toISOString(), end: end.toISOString() }
+// Convert any order date value to a Warsaw calendar date (YYYY-MM-DD). If already
+// a plain date, keep it. This fixes UTC-vs-Warsaw off-by-one bucketing that made
+// evening/early orders fall on the wrong day and vanish from "today".
+function toWarsawDate(val) {
+  if (val == null) return ''
+  const s = String(val)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  try { return new Date(s).toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' }) }
+  catch { return s.slice(0, 10) }
 }
 
 async function supabaseGet(supabaseUrl, serviceKey, table, params = {}) {
   const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
   for (const [k, v] of Object.entries(params)) {
-    if (Array.isArray(v)) {
-      for (const item of v) url.searchParams.append(k, item)
-    } else {
-      url.searchParams.set(k, String(v))
-    }
+    if (Array.isArray(v)) { for (const item of v) url.searchParams.append(k, item) }
+    else { url.searchParams.set(k, String(v)) }
   }
   const res = await fetch(url.toString(), {
     headers: {
@@ -63,10 +107,9 @@ async function supabaseGet(supabaseUrl, serviceKey, table, params = {}) {
 }
 
 function extractOrderDate(row) {
-  return (
-    row.order_created_at ?? row.order_date ?? row.created_at ??
-    row.date ?? row.created ?? ''
-  ).slice(0, 10)
+  return toWarsawDate(
+    row.order_created_at ?? row.order_date ?? row.created_at ?? row.date ?? row.created ?? '',
+  )
 }
 
 function extractAmount(row) {
@@ -83,9 +126,7 @@ function extractProductNameRaw(row) {
 }
 
 function extractOrderEmail(row) {
-  const raw = String(
-    row.buyer_email ?? row.email ?? row.customer_email ?? row.contact_email ?? ''
-  ).trim().toLowerCase()
+  const raw = String(row.buyer_email ?? row.email ?? row.customer_email ?? row.contact_email ?? '').trim().toLowerCase()
   const m = raw.match(/[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/)
   return m ? m[0] : ''
 }
@@ -99,9 +140,7 @@ function normalizeEmail(raw) {
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export const handler = async (event) => {
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers: CORS, body: '' }
-  }
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
   if (event.httpMethod !== 'GET') {
     return {
       statusCode: 405,
@@ -112,10 +151,8 @@ export const handler = async (event) => {
 
   const supabaseUrl = process.env.SUPABASE_URL
   const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY
-
   if (!supabaseUrl || !serviceKey) {
-    const missing = [!supabaseUrl && 'SUPABASE_URL', !serviceKey && 'SUPABASE_SERVICE_ROLE_KEY']
-      .filter(Boolean).join(', ')
+    const missing = [!supabaseUrl && 'SUPABASE_URL', !serviceKey && 'SUPABASE_SERVICE_ROLE_KEY'].filter(Boolean).join(', ')
     return {
       statusCode: 500,
       headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
@@ -123,21 +160,19 @@ export const handler = async (event) => {
     }
   }
 
+  const qp = event.queryStringParameters || {}
   const today = warsawToday()
+  const from  = qp.from || qp.date || today
+  const to    = qp.to   || qp.date || from
+  const debug = qp.debug === '1'
   const errors = []
 
-  // ── Fetch today's orders (service role) ───────────────────────────────────
-
+  // ── Fetch orders (service role) ───────────────────────────────────────────
   let allOrders = []
   let usedOrdersTable = 'none'
-
   for (const tableName of ['orders', 'wix_orders']) {
     try {
-      const data = await supabaseGet(supabaseUrl, serviceKey, tableName, {
-        select: '*',
-        limit:  '500',
-      })
-      allOrders = data
+      allOrders = await supabaseGet(supabaseUrl, serviceKey, tableName, { select: '*', limit: '1000' })
       usedOrdersTable = tableName
       break
     } catch (e) {
@@ -145,110 +180,65 @@ export const handler = async (event) => {
     }
   }
 
-  // Filter to today (Warsaw)
-  const todayOrders = allOrders.filter(row => extractOrderDate(row) === today)
+  // Filter to the requested Warsaw range [from, to]
+  const rangeOrders = allOrders.filter(row => {
+    const d = extractOrderDate(row)
+    return d >= from && d <= to
+  })
 
   // ── Classify and compute margins ──────────────────────────────────────────
+  const productAccum = {}
+  let knownMargin = 0, unknownRevenue = 0, unknownOrdersCount = 0, totalRevenue = 0
+  const unmappedOrders = []
+  const debugOrders = []
 
-  const productAccum = {}  // productKey → { displayName, orders, revenue, margin, marginTotal }
-  let knownMargin       = 0
-  let unknownRevenue    = 0
-  let unknownOrdersCount = 0
-  let totalRevenue      = 0
-  const unmappedOrders  = []
-
-  for (const row of todayOrders) {
+  for (const row of rangeOrders) {
     const amount = extractAmount(row)
+    const name   = extractProductNameRaw(row)
     totalRevenue += amount
-    const rule = getMarginRule(amount)
+    const rule = classifyForMargin(amount, name)
+
+    if (debug) debugOrders.push({ amount, product_name_raw: name ?? '—', order_date: extractOrderDate(row), matched: rule ? `${rule.productKey} (${rule.matchedBy})` : 'UNMAPPED', margin: rule?.margin ?? 0 })
 
     if (!rule) {
-      // Amount doesn't match any known product
-      unknownRevenue     += amount
+      unknownRevenue += amount
       unknownOrdersCount++
-      unmappedOrders.push({
-        amount,
-        product_name_raw: extractProductNameRaw(row) ?? '—',
-        order_date:       extractOrderDate(row),
-        note:             'no margin rule for this price',
-      })
+      unmappedOrders.push({ amount, product_name_raw: name ?? '—', order_date: extractOrderDate(row), note: 'no price or name match' })
       continue
     }
-
-    if (rule.contributionMargin != null) {
-      knownMargin += rule.contributionMargin
-    }
-
+    knownMargin += rule.margin
     if (!productAccum[rule.productKey]) {
-      productAccum[rule.productKey] = {
-        productKey:          rule.productKey,
-        displayName:         rule.displayName,
-        orders:              0,
-        revenue:             0,
-        contributionMargin:  rule.contributionMargin,
-        marginTotal:         0,
-      }
+      productAccum[rule.productKey] = { productKey: rule.productKey, displayName: rule.displayName, orders: 0, revenue: 0, contributionMargin: rule.margin, marginTotal: 0 }
     }
     productAccum[rule.productKey].orders++
     productAccum[rule.productKey].revenue += amount
-    if (rule.contributionMargin !== null) {
-      productAccum[rule.productKey].marginTotal += rule.contributionMargin
-    }
+    productAccum[rule.productKey].marginTotal += rule.margin
   }
 
-  const productBreakdown = Object.values(productAccum)
-
-  // ── Email-norm join: reclassify unmatched orders via webinar participants ─
-  // Only runs if there are unclassified orders — avoids an extra DB call otherwise.
+  // ── Email-norm join: reclassify unmapped orders via webinar participants → JSU
   let emailNormReclassified = 0
-  const emailNormWarnings   = []
-
+  const emailNormWarnings = []
   if (unmappedOrders.length > 0) {
     try {
-      const participants = await supabaseGet(supabaseUrl, serviceKey, 'webinar_participants', {
-        select: 'email',
-        limit:  '2000',
-      })
-      const participantEmailSet = new Set(
-        participants.map(p => normalizeEmail(p.email)).filter(e => e.includes('@'))
-      )
-
-      // Collect unclassified raw orders from todayOrders
-      const jsuRule = MARGIN_RULES.find(r => r.productKey === 'jsu_course')
-      if (jsuRule && participantEmailSet.size > 0) {
+      const participants = await supabaseGet(supabaseUrl, serviceKey, 'webinar_participants', { select: 'email', limit: '2000' })
+      const participantEmailSet = new Set(participants.map(p => normalizeEmail(p.email)).filter(e => e.includes('@')))
+      if (participantEmailSet.size > 0) {
         const stillUnmapped = []
-        for (const raw of todayOrders) {
+        for (const raw of rangeOrders) {
           const amount = extractAmount(raw)
-          if (getMarginRule(amount)) continue  // already classified by price
+          if (classifyForMargin(amount, extractProductNameRaw(raw))) continue  // already classified
           const email = extractOrderEmail(raw)
           if (email && participantEmailSet.has(email)) {
-            // Webinar participant → classify as JSU, emit warning
-            knownMargin        += jsuRule.contributionMargin
+            knownMargin += PRODUCTS.jsu_course.margin
             emailNormReclassified++
-            emailNormWarnings.push({
-              email_masked: email.replace(/(?<=.).(?=[^@]*@)/, '*'),
-              amount,
-              classification: 'jsu_course',
-              reason:         'email_norm_join: email found in webinar_participants',
-            })
-            if (!productAccum[jsuRule.productKey]) {
-              productAccum[jsuRule.productKey] = {
-                productKey:         jsuRule.productKey,
-                displayName:        jsuRule.displayName,
-                orders:             0,
-                revenue:            0,
-                contributionMargin: jsuRule.contributionMargin,
-                marginTotal:        0,
-              }
-            }
-            productAccum[jsuRule.productKey].orders++
-            productAccum[jsuRule.productKey].revenue += amount
-            productAccum[jsuRule.productKey].marginTotal += jsuRule.contributionMargin
+            emailNormWarnings.push({ email_masked: email.replace(/(?<=.).(?=[^@]*@)/, '*'), amount, classification: 'jsu_course', reason: 'email_norm_join: email found in webinar_participants' })
+            const k = 'jsu_course'
+            if (!productAccum[k]) productAccum[k] = { productKey: k, displayName: PRODUCTS.jsu_course.displayName, orders: 0, revenue: 0, contributionMargin: PRODUCTS.jsu_course.margin, marginTotal: 0 }
+            productAccum[k].orders++; productAccum[k].revenue += amount; productAccum[k].marginTotal += PRODUCTS.jsu_course.margin
           } else {
-            stillUnmapped.push({ amount, product_name_raw: extractProductNameRaw(raw) ?? '—', order_date: extractOrderDate(raw), note: 'no margin rule for this price' })
+            stillUnmapped.push({ amount, product_name_raw: extractProductNameRaw(raw) ?? '—', order_date: extractOrderDate(raw), note: 'no price or name match' })
           }
         }
-        // Recount true unknowns after reclassification
         unknownOrdersCount = stillUnmapped.length
         unknownRevenue = stillUnmapped.reduce((s, o) => s + o.amount, 0)
         unmappedOrders.length = 0
@@ -259,36 +249,29 @@ export const handler = async (event) => {
     }
   }
 
-  // ── Fetch today's ad spend ────────────────────────────────────────────────
-
-  let adSpend       = 0
+  // ── Ad spend over the range ───────────────────────────────────────────────
+  let adSpend = 0
   let adSpendSource = 'none'
-
-  // Prefer v_daily_wix_meta_performance (same source as Command Center)
   try {
     const perfRows = await supabaseGet(supabaseUrl, serviceKey, 'v_daily_wix_meta_performance', {
       select: 'date,meta_spend',
-      'date': `eq.${today}`,
-      limit:  '1',
+      date:   [`gte.${from}`, `lte.${to}`],
+      limit:  '400',
     })
-    if (perfRows.length > 0 && perfRows[0].meta_spend != null) {
-      adSpend       = Number(perfRows[0].meta_spend) || 0
+    if (perfRows.length > 0) {
+      adSpend = perfRows.reduce((s, r) => s + (Number(r.meta_spend) || 0), 0)
       adSpendSource = 'v_daily_wix_meta_performance'
     }
   } catch (e) {
     errors.push(`v_daily_wix_meta_performance: ${String(e?.message ?? e)}`)
   }
-
-  // Fallback to meta_ads_daily sum if aggregated view had no data
   if (adSpendSource === 'none') {
     try {
       const adsRows = await supabaseGet(supabaseUrl, serviceKey, 'meta_ads_daily', {
-        select: 'spend',
-        date:   `eq.${today}`,
-        limit:  '200',
+        select: 'spend', date: [`gte.${from}`, `lte.${to}`], limit: '2000',
       })
       if (adsRows.length > 0) {
-        adSpend       = adsRows.reduce((s, r) => s + (Number(r.spend) || 0), 0)
+        adSpend = adsRows.reduce((s, r) => s + (Number(r.spend) || 0), 0)
         adSpendSource = 'meta_ads_daily'
       }
     } catch (e) {
@@ -297,26 +280,23 @@ export const handler = async (event) => {
   }
 
   // ── Compute profit ────────────────────────────────────────────────────────
-
   const productBreakdownFinal   = Object.values(productAccum)
   const marginBeforeAds         = knownMargin
   const estimatedProfitAfterAds = knownMargin - adSpend
-  const ordersCount             = todayOrders.length
+  const ordersCount             = rangeOrders.length
   const estimatedProfitPerOrder = ordersCount > 0 ? estimatedProfitAfterAds / ordersCount : 0
 
   return {
     statusCode: 200,
-    headers: {
-      ...CORS,
-      'Content-Type':  'application/json',
-      'Cache-Control': 'no-store',
-    },
+    headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     body: JSON.stringify({
-      ok:                    true,
-      timestamp:             new Date().toISOString(),
-      dateWarsaw:            today,
+      ok: true,
+      timestamp: new Date().toISOString(),
+      dateWarsaw: to,
+      rangeFrom: from,
+      rangeTo: to,
       ordersCount,
-      revenue:               totalRevenue,
+      revenue: totalRevenue,
       adSpend,
       adSpendSource,
       knownMargin,
@@ -325,12 +305,13 @@ export const handler = async (event) => {
       marginBeforeAds,
       estimatedProfitAfterAds,
       estimatedProfitPerOrder,
-      productBreakdown:      productBreakdownFinal,
+      productBreakdown: productBreakdownFinal,
       unmappedOrders,
       emailNormReclassified,
-      emailNormWarnings:     emailNormWarnings.length > 0 ? emailNormWarnings : undefined,
-      sourceTable:           usedOrdersTable,
-      errors:                errors.length > 0 ? errors : undefined,
+      emailNormWarnings: emailNormWarnings.length > 0 ? emailNormWarnings : undefined,
+      sourceTable: usedOrdersTable,
+      debugOrders: debug ? debugOrders : undefined,
+      errors: errors.length > 0 ? errors : undefined,
     }),
   }
 }
