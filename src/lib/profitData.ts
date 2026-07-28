@@ -50,19 +50,23 @@ export function mapProfitToSummary(pd: ProfitData): ProfitSummary {
   }
 }
 
-let _cache: { data: ProfitData; ts: number } | null = null
+const _cache = new Map<string, { data: ProfitData; ts: number }>()
 const CACHE_TTL = 55 * 1000  // 55 s — just under 60 s auto-refresh interval
 
-export async function fetchProfitData(): Promise<ProfitData | null> {
-  if (_cache && Date.now() - _cache.ts < CACHE_TTL) return _cache.data
+// Pass { from, to } (Warsaw YYYY-MM-DD) for a range; omit for today.
+export async function fetchProfitData(range?: { from: string; to: string }): Promise<ProfitData | null> {
+  const key = range ? `${range.from}_${range.to}` : 'today'
+  const cached = _cache.get(key)
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data
   try {
-    const res = await fetch(bustUrl('/.netlify/functions/profit-data'), {
-      headers: { 'Cache-Control': 'no-store' },
-    })
+    const base = range
+      ? `/.netlify/functions/profit-data?from=${range.from}&to=${range.to}`
+      : '/.netlify/functions/profit-data'
+    const res = await fetch(bustUrl(base), { headers: { 'Cache-Control': 'no-store' } })
     if (!res.ok) return null
     const data = await res.json() as ProfitData
     if (!data.ok) return data   // return error payload so callers can inspect
-    _cache = { data, ts: Date.now() }
+    _cache.set(key, { data, ts: Date.now() })
     return data
   } catch {
     return null

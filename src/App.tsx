@@ -726,6 +726,10 @@ export default function App() {
     if (mood) moodTimerRef.current = setTimeout(() => setResultMood(null), 2800)
   }, [])
 
+  // Track the current range in a ref so range-agnostic loaders (profit) can read it.
+  const rangeRef = useRef(range)
+  useEffect(() => { rangeRef.current = range }, [range])
+
   // Per-range campaign rows for the campaign inspector dropdown.
   const [campaignRows, setCampaignRows] = useState<MetaAdDaily[]>([])
   const [campaignRowsLoading, setCampaignRowsLoading] = useState(true)
@@ -900,12 +904,16 @@ export default function App() {
 
   const loadProfitData = useCallback(async () => {
     try {
-      setProfitData(await fetchProfitData())
+      // Profit KPIs follow the selected panel range (same bounds as everything else).
+      setProfitData(await fetchProfitData(rangeDates(rangeRef.current)))
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn('GIENIU profit-data failed:', e)
     }
   }, [])
+
+  // Reload profit whenever the range changes.
+  useEffect(() => { loadProfitData() }, [range, loadProfitData])
 
   const refreshVoiceInfo = useCallback(() => {
     setEnglishVoiceCount(getAvailableVoices().length)
@@ -1447,16 +1455,14 @@ export default function App() {
                     <KPICard label="Wix Orders" value={fmtNum(displayPerf?.wix_orders)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
                     <KPICard label="Wix Revenue" value={fmtPln(displayPerf?.wix_revenue)} accent sublabel={perfIsStale ? trend[0]?.date : undefined} />
                     <KPICard label="Ad Spend" value={fmtPln(displayPerf?.meta_spend)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
-                    {isToday && (
-                      <KPICard
-                        label="Est. Profit"
-                        value={profitEst != null ? fmtPln(profitEst) : '—'}
-                        positive={profitPositive}
-                        warning={profitWarning}
-                        danger={profitDanger}
-                        sublabel="Margin − ad spend"
-                      />
-                    )}
+                    <KPICard
+                      label="Est. Profit"
+                      value={profitEst != null ? fmtPln(profitEst) : '—'}
+                      positive={profitPositive}
+                      warning={profitWarning}
+                      danger={profitDanger}
+                      sublabel="Margin − ad spend"
+                    />
                     <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Meta spend / Wix orders" />
                     <KPICard label="Real ROAS" value={fmtRoas(displayPerf?.real_roas)} sublabel="Wix revenue / Meta spend" />
                   </div>
@@ -1499,45 +1505,39 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Row 2: margin/profit detail — the profit endpoint is TODAY-scoped,
-                      so it only shows for the DZIŚ range (keeps the panel consistent). */}
-                  {isToday ? (
-                    <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
-                      <KPICard
-                        label="Margin Before Ads"
-                        value={profitSummary ? fmtPln(profitSummary.marginBeforeAds) : '—'}
-                        sublabel="Known contribution margin"
-                      />
-                      <KPICard
-                        label="Profit / Order"
-                        value={profitSummary && (profitData?.ordersCount ?? 0) > 0 ? fmtPln(profitSummary.profitPerOrder) : '—'}
-                        positive={profitPositive}
-                        danger={profitDanger}
-                        sublabel="After ad spend"
-                      />
-                      <KPICard
-                        label="True CPA"
-                        value={profitSummary?.realCpa != null ? fmtPln(profitSummary.realCpa) : '—'}
-                        warning={profitSummary?.realCpa != null && profitSummary.realCpa > 50}
-                        sublabel="Ad spend ÷ paid orders"
-                      />
-                      <KPICard
-                        label="Margin ROAS"
-                        value={profitSummary?.realRoas != null ? `${profitSummary.realRoas.toFixed(2)}×` : '—'}
-                        sublabel="Revenue ÷ ad spend"
-                      />
-                      <KPICard
-                        label="Unmapped Revenue"
-                        value={profitData?.ok ? fmtPln(profitData.unknownRevenue) : '—'}
-                        warning={hasUnknownRevenue}
-                        sublabel={hasUnknownRevenue ? 'Needs margin mapping' : 'All products mapped'}
-                      />
-                    </div>
-                  ) : (
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', padding: '6px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '3px' }}>
-                      ℹ Rozbicie zysku (marża, zysk/zamówienie, True CPA, Margin ROAS) liczone jest dla bieżącego dnia — dostępne w zakresie DZIŚ.
-                    </div>
-                  )}
+                  {/* Row 2: margin/profit detail — now range-aware (profit endpoint
+                      accepts from/to), so it shows for every range. */}
+                  <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
+                    <KPICard
+                      label="Margin Before Ads"
+                      value={profitSummary ? fmtPln(profitSummary.marginBeforeAds) : '—'}
+                      sublabel="Known contribution margin"
+                    />
+                    <KPICard
+                      label="Profit / Order"
+                      value={profitSummary && (profitData?.ordersCount ?? 0) > 0 ? fmtPln(profitSummary.profitPerOrder) : '—'}
+                      positive={profitPositive}
+                      danger={profitDanger}
+                      sublabel="After ad spend"
+                    />
+                    <KPICard
+                      label="True CPA"
+                      value={profitSummary?.realCpa != null ? fmtPln(profitSummary.realCpa) : '—'}
+                      warning={profitSummary?.realCpa != null && profitSummary.realCpa > 50}
+                      sublabel="Ad spend ÷ paid orders"
+                    />
+                    <KPICard
+                      label="Margin ROAS"
+                      value={profitSummary?.realRoas != null ? `${profitSummary.realRoas.toFixed(2)}×` : '—'}
+                      sublabel="Revenue ÷ ad spend"
+                    />
+                    <KPICard
+                      label="Unmapped Revenue"
+                      value={profitData?.ok ? fmtPln(profitData.unknownRevenue) : '—'}
+                      warning={hasUnknownRevenue}
+                      sublabel={hasUnknownRevenue ? 'Needs margin mapping' : 'All products mapped'}
+                    />
+                  </div>
 
                   {/* Row 3: Meta ad efficiency — range-aware, derived from the daily
                       performance view (impressions/clicks/spend) for the chosen range. */}
@@ -1567,12 +1567,12 @@ export default function App() {
                       ⚠ Profit endpoint returned 0 orders but ordersData shows orders today — filter mismatch or stale cache.
                     </div>
                   )}
-                  {isToday && hasUnknownRevenue && !profitMismatch && (
+                  {hasUnknownRevenue && !profitMismatch && (
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)', padding: '6px 12px', background: 'rgba(251,146,60,0.06)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: '3px' }}>
                       ⚠ {fmtPln(profitData!.unknownRevenue)} revenue from unmapped products — contribution margin not included in Est. Profit.
                     </div>
                   )}
-                  {isToday && (profitData?.emailNormReclassified ?? 0) > 0 && (
+                  {(profitData?.emailNormReclassified ?? 0) > 0 && (
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', padding: '6px 12px', background: 'rgba(99,211,199,0.06)', border: '1px solid rgba(99,211,199,0.2)', borderRadius: '3px' }}>
                       ℹ {profitData!.emailNormReclassified} order(s) classified via email→webinar match — treated as JSU.
                     </div>

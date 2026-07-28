@@ -214,9 +214,12 @@ export const handler = async (event) => {
 
   for (const tableName of ['orders', 'wix_orders']) {
     try {
+      // Generous limit — a plain limit:500 with no ordering returned the OLDEST
+      // rows once the table exceeded 500, so today's orders were never fetched and
+      // "today" counts collapsed to 0. Fetch all (a few hundred) and sort client-side.
       const data = await supabaseGet(supabaseUrl, serviceKey, tableName, {
         select: '*',
-        limit:  '500',
+        limit:  '5000',
       })
       allOrders = data
       usedTable = tableName

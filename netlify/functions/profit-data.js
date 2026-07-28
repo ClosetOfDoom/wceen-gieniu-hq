@@ -172,7 +172,9 @@ export const handler = async (event) => {
   let usedOrdersTable = 'none'
   for (const tableName of ['orders', 'wix_orders']) {
     try {
-      allOrders = await supabaseGet(supabaseUrl, serviceKey, tableName, { select: '*', limit: '1000' })
+      // Fetch all orders (a plain small limit returned the oldest rows once the
+      // table grew, so recent/today orders were missed → margin computed on 0 orders).
+      allOrders = await supabaseGet(supabaseUrl, serviceKey, tableName, { select: '*', limit: '5000' })
       usedOrdersTable = tableName
       break
     } catch (e) {
