@@ -23,6 +23,8 @@ export interface ProfitData {
   knownMargin: number
   unknownRevenue: number
   unknownOrdersCount: number
+  ambiguousRevenue?: number
+  ambiguousOrdersCount?: number
   marginBeforeAds: number
   estimatedProfitAfterAds: number
   estimatedProfitPerOrder: number

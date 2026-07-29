@@ -34,11 +34,37 @@ const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy', 'zadziwiajace technik
 const WSZTP_PATTERNS     = ['wsztp', 'wakacyjna', 'treningu pamieci', 'szko a treningu']
 const MEMORY_PATTERNS    = ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']
 
+// Cost-based margin model. unit_cost = catalog price − briefing margin.
+//   PP  119 − 70  = 49    PL  114 − 40  = 74
+//   JSU 549 − 500 = 49    JZK 347 − 320 = 27
+// The orders table has NO quantity column (verified), so quantity is INFERRED from
+// the order value (see bucketize). Order margin = value − unit_cost × quantity.
 const PRODUCTS = {
-  jsu_course:    { displayName: 'Kurs Jak się uczyć', margin: 500 },
-  jzk_ai:        { displayName: 'Językozak AI',        margin: 320 },
-  memory_pack:   { displayName: 'Pakiet Pamięciowy',   margin: 70  },
-  language_pack: { displayName: 'Pakiet Językowy',     margin: 40  },
+  jsu_course:    { displayName: 'Kurs Jak się uczyć', price: 549, unitCost: 49 },
+  jzk_ai:        { displayName: 'Językozak AI',        price: 347, unitCost: 27 },
+  memory_pack:   { displayName: 'Pakiet Pamięciowy',   price: 119, unitCost: 49 },
+  language_pack: { displayName: 'Pakiet Językowy',     price: 114, unitCost: 74 },
+}
+const QTY_TOLERANCE = 0.15  // value must be within 15% of a whole multiple of price
+
+// Decide the bucket for an order already matched (by name/price) to a product.
+//   MAPPED    — value ≈ qty × catalog price (qty = round(value/price), qty≥1,
+//               within 15%). margin = value − unit_cost × qty.
+//   AMBIGUOUS — value is not explained by any whole multiple of the matched
+//               product's price within 15%, OR it exactly equals a DIFFERENT
+//               product's catalog price (cross-product price collision, e.g. a
+//               "Pamięć…" order at 347 = Językozak's price). AMBIGUOUS counts as
+//               revenue but NOT margin, and is surfaced in the UI like UNMAPPED.
+function bucketize(productKey, value) {
+  const p = PRODUCTS[productKey]
+  // cross-product exact price collision → ambiguous (can't tell which product)
+  const collides = Object.entries(PRODUCTS).some(([k, q]) => k !== productKey && Math.abs(value - q.price) < 1)
+  if (collides) return { bucket: 'AMBIGUOUS', reason: `value ${value} equals another product's catalog price` }
+  const qty = Math.round(value / p.price)
+  if (qty >= 1 && Math.abs(value - qty * p.price) < QTY_TOLERANCE * (qty * p.price)) {
+    return { bucket: 'MAPPED', qty, margin: value - p.unitCost * qty }
+  }
+  return { bucket: 'AMBIGUOUS', reason: `value ${value} is not within 15% of any whole ×${p.price}` }
 }
 
 function normalizeText(s) {
@@ -200,33 +226,19 @@ export const handler = async (event) => {
     }
   }
 
-  // TEMP raw-schema dump: ?rawdump=1 → full raw columns for "Pamięć. Trening
-  // Interaktywny" orders at the requested amounts, so we can see whether a quantity
-  // column exists and whether `amount` is a line value or the whole-order total.
-  if (qp.rawdump === '1') {
-    const targets = new Set([347, 275.5, 265, 180.5, 115, 105.5, 99, 75])
-    const hit = allOrders.filter(r => {
-      const nm = normalizeText(extractProductNameRaw(r))
-      return nm.includes('trening interaktywny') && targets.has(extractAmount(r))
-    })
-    const columns = allOrders.length ? Object.keys(allOrders[0]) : []
-    return {
-      statusCode: 200,
-      headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-      body: JSON.stringify({ ok: true, sourceTable: usedOrdersTable, columns, count: hit.length, rows: hit.slice(0, 30) }),
-    }
-  }
-
   // Filter to the requested Warsaw range [from, to]
   const rangeOrders = allOrders.filter(row => {
     const d = extractOrderDate(row)
     return d >= from && d <= to
   })
 
-  // ── Classify and compute margins ──────────────────────────────────────────
+  // ── Classify → bucket (MAPPED / AMBIGUOUS / UNMAPPED) and compute margins ──
   const productAccum = {}
-  let knownMargin = 0, unknownRevenue = 0, unknownOrdersCount = 0, totalRevenue = 0
+  let knownMargin = 0, totalRevenue = 0
+  let unknownRevenue = 0, unknownOrdersCount = 0       // UNMAPPED
+  let ambiguousRevenue = 0, ambiguousOrdersCount = 0   // AMBIGUOUS (revenue, no margin)
   const unmappedOrders = []
+  const ambiguousOrders = []
   const debugOrders = []
 
   for (const row of rangeOrders) {
@@ -234,22 +246,35 @@ export const handler = async (event) => {
     const name   = extractProductNameRaw(row)
     totalRevenue += amount
     const rule = classifyForMargin(amount, name)
-
-    if (debug) debugOrders.push({ amount, product_name_raw: name ?? '—', order_date: extractOrderDate(row), matched: rule ? `${rule.productKey} (${rule.matchedBy})` : 'UNMAPPED', margin: rule?.margin ?? 0 })
+    const dbgBase = { amount, product_name_raw: name ?? '—', order_date: extractOrderDate(row) }
 
     if (!rule) {
       unknownRevenue += amount
       unknownOrdersCount++
-      unmappedOrders.push({ amount, product_name_raw: name ?? '—', order_date: extractOrderDate(row), note: 'no price or name match' })
+      unmappedOrders.push({ ...dbgBase, note: 'no price or name match' })
+      if (debug) debugOrders.push({ ...dbgBase, matched: 'UNMAPPED', bucket: 'UNMAPPED', qty: 0, margin: 0 })
       continue
     }
-    knownMargin += rule.margin
+
+    const b = bucketize(rule.productKey, amount)
+    if (b.bucket === 'AMBIGUOUS') {
+      ambiguousRevenue += amount
+      ambiguousOrdersCount++
+      ambiguousOrders.push({ ...dbgBase, matched: rule.productKey, note: b.reason })
+      if (debug) debugOrders.push({ ...dbgBase, matched: `${rule.productKey} (${rule.matchedBy})`, bucket: 'AMBIGUOUS', qty: null, margin: 0, reason: b.reason })
+      continue
+    }
+
+    // MAPPED
+    knownMargin += b.margin
     if (!productAccum[rule.productKey]) {
-      productAccum[rule.productKey] = { productKey: rule.productKey, displayName: rule.displayName, orders: 0, revenue: 0, contributionMargin: rule.margin, marginTotal: 0 }
+      productAccum[rule.productKey] = { productKey: rule.productKey, displayName: PRODUCTS[rule.productKey].displayName, orders: 0, units: 0, revenue: 0, unitCost: PRODUCTS[rule.productKey].unitCost, contributionMargin: null, marginTotal: 0 }
     }
     productAccum[rule.productKey].orders++
+    productAccum[rule.productKey].units += b.qty
     productAccum[rule.productKey].revenue += amount
-    productAccum[rule.productKey].marginTotal += rule.margin
+    productAccum[rule.productKey].marginTotal += b.margin
+    if (debug) debugOrders.push({ ...dbgBase, matched: `${rule.productKey} (${rule.matchedBy})`, bucket: 'MAPPED', qty: b.qty, margin: b.margin })
   }
 
   // ── Email-norm join: reclassify unmapped orders via webinar participants → JSU
@@ -266,12 +291,19 @@ export const handler = async (event) => {
           if (classifyForMargin(amount, extractProductNameRaw(raw))) continue  // already classified
           const email = extractOrderEmail(raw)
           if (email && participantEmailSet.has(email)) {
-            knownMargin += PRODUCTS.jsu_course.margin
+            // Webinar participant → treat as JSU, then bucketize like any order.
             emailNormReclassified++
             emailNormWarnings.push({ email_masked: email.replace(/(?<=.).(?=[^@]*@)/, '*'), amount, classification: 'jsu_course', reason: 'email_norm_join: email found in webinar_participants' })
-            const k = 'jsu_course'
-            if (!productAccum[k]) productAccum[k] = { productKey: k, displayName: PRODUCTS.jsu_course.displayName, orders: 0, revenue: 0, contributionMargin: PRODUCTS.jsu_course.margin, marginTotal: 0 }
-            productAccum[k].orders++; productAccum[k].revenue += amount; productAccum[k].marginTotal += PRODUCTS.jsu_course.margin
+            const b = bucketize('jsu_course', amount)
+            if (b.bucket === 'MAPPED') {
+              knownMargin += b.margin
+              const k = 'jsu_course'
+              if (!productAccum[k]) productAccum[k] = { productKey: k, displayName: PRODUCTS.jsu_course.displayName, orders: 0, units: 0, revenue: 0, unitCost: PRODUCTS.jsu_course.unitCost, contributionMargin: null, marginTotal: 0 }
+              productAccum[k].orders++; productAccum[k].units += b.qty; productAccum[k].revenue += amount; productAccum[k].marginTotal += b.margin
+            } else {
+              ambiguousRevenue += amount; ambiguousOrdersCount++
+              ambiguousOrders.push({ amount, product_name_raw: extractProductNameRaw(raw) ?? '—', order_date: extractOrderDate(raw), matched: 'jsu_course', note: b.reason })
+            }
           } else {
             stillUnmapped.push({ amount, product_name_raw: extractProductNameRaw(raw) ?? '—', order_date: extractOrderDate(raw), note: 'no price or name match' })
           }
@@ -339,11 +371,14 @@ export const handler = async (event) => {
       knownMargin,
       unknownRevenue,
       unknownOrdersCount,
+      ambiguousRevenue,
+      ambiguousOrdersCount,
       marginBeforeAds,
       estimatedProfitAfterAds,
       estimatedProfitPerOrder,
       productBreakdown: productBreakdownFinal,
       unmappedOrders,
+      ambiguousOrders,
       emailNormReclassified,
       emailNormWarnings: emailNormWarnings.length > 0 ? emailNormWarnings : undefined,
       sourceTable: usedOrdersTable,

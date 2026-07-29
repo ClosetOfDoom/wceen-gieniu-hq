@@ -1395,6 +1395,8 @@ export default function App() {
   const profitWarning     = profitEst != null && profitEst >= 0 && profitEst <= 100
   const profitDanger      = profitEst != null && profitEst < 0
   const hasUnknownRevenue = (profitData?.unknownRevenue ?? 0) > 0
+  const ambiguousRev      = profitData?.ambiguousRevenue ?? 0
+  const hasAmbiguous      = ambiguousRev > 0
   const profitMismatch    = profitData?.ok && profitData.ordersCount === 0 && (ordersData?.totals.today_orders ?? 0) > 0
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -1537,6 +1539,12 @@ export default function App() {
                       warning={hasUnknownRevenue}
                       sublabel={hasUnknownRevenue ? 'Needs margin mapping' : 'All products mapped'}
                     />
+                    <KPICard
+                      label="Ambiguous Rev."
+                      value={profitData?.ok ? fmtPln(ambiguousRev) : '—'}
+                      warning={hasAmbiguous}
+                      sublabel={hasAmbiguous ? `In revenue, not in margin (${profitData?.ambiguousOrdersCount ?? 0} orders)` : 'No ambiguous orders'}
+                    />
                   </div>
 
                   {/* Row 3: Meta ad efficiency — range-aware, derived from the daily
@@ -1570,6 +1578,11 @@ export default function App() {
                   {hasUnknownRevenue && !profitMismatch && (
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)', padding: '6px 12px', background: 'rgba(251,146,60,0.06)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: '3px' }}>
                       ⚠ {fmtPln(profitData!.unknownRevenue)} revenue from unmapped products — contribution margin not included in Est. Profit.
+                    </div>
+                  )}
+                  {hasAmbiguous && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--amber)', padding: '6px 12px', background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '3px' }}>
+                      ⚠ {fmtPln(ambiguousRev)} z {profitData?.ambiguousOrdersCount ?? 0} zamówień AMBIGUOUS — wartość nie pasuje do całkowitej wielokrotności ceny (±15%) lub koliduje z ceną innego produktu. Wchodzi do przychodu, NIE do marży.
                     </div>
                   )}
                   {(profitData?.emailNormReclassified ?? 0) > 0 && (
