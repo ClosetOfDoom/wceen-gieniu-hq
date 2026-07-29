@@ -288,7 +288,11 @@ export const handler = async (event) => {
         const stillUnmapped = []
         for (const raw of rangeOrders) {
           const amount = extractAmount(raw)
-          if (classifyForMargin(amount, extractProductNameRaw(raw))) continue  // already classified
+          const rawName = extractProductNameRaw(raw)
+          if (classifyForMargin(amount, rawName)) continue  // already classified
+          // Do NOT reclassify WSZTP (a recognized high-ticket product with unknown
+          // margin) as JSU just because the buyer attended a webinar.
+          if (anyMatch(normalizeText(rawName), WSZTP_PATTERNS)) continue
           const email = extractOrderEmail(raw)
           if (email && participantEmailSet.has(email)) {
             // Webinar participant → treat as JSU, then bucketize like any order.
