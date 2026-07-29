@@ -929,7 +929,7 @@ CRITICAL: Use ONLY the numbers from VERIFIED DATA. Respond only in English. "Sir
 
 // ── Context serialization for LLM ─────────────────────────────────────────────
 
-function buildContextText(context, serverAds = []) {
+function buildContextText(context, serverAds = [], creativeAnalyticsText = '') {
   const { todayKPIs: kpi, profitData: p, dataHealth: dh, jsuSummary: jsu } = context
   const lines = ['=== STANLEY DASHBOARD CONTEXT ===']
   lines.push(`Date (Warsaw): ${dh?.today ?? 'unknown'}`)
@@ -1073,7 +1073,156 @@ function buildContextText(context, serverAds = []) {
     lines.push('  NOTE: blended CPA is all-products; per-campaign CPA is not in this context. If asked to scale a specific campaign, ask sir for its current CPA/budget and when it was last changed.')
   }
 
+  if (creativeAnalyticsText) {
+    lines.push('')
+    lines.push(creativeAnalyticsText)
+  }
+
   return lines.join('\n')
+}
+
+// ── Per-creative analytics (meta_ads_daily, service-role) ─────────────────────
+
+function warsawTodayStr() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+}
+function daysAgoStr(base, n) {
+  const d = new Date(base + 'T12:00:00Z')
+  d.setUTCDate(d.getUTCDate() - n)
+  return d.toISOString().slice(0, 10)
+}
+function scopeOf(campaignName) {
+  const n = String(campaignName || '').trim()
+  if (/^pp[-\s]/i.test(n)) return 'memory'
+  if (/^3t[-\s]/i.test(n)) return 'language'
+  return 'unknown'
+}
+function num(v) { const n = Number(v); return isNaN(n) ? 0 : n }
+function f2(n) { return n != null && !isNaN(n) ? (Math.round(n * 100) / 100).toFixed(2) : 'N/A' }
+
+async function fetchAdRowsRange(supabaseUrl, serviceKey, fromDate, toDate) {
+  if (!supabaseUrl || !serviceKey) return []
+  try {
+    const url = new URL(`${supabaseUrl}/rest/v1/meta_ads_daily`)
+    url.searchParams.set('select', '*')
+    url.searchParams.append('date', `gte.${fromDate}`)
+    url.searchParams.append('date', `lte.${toDate}`)
+    url.searchParams.set('order', 'date.desc')
+    url.searchParams.set('limit', '5000')
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' },
+    })
+    if (!res.ok) return []
+    return await res.json()
+  } catch { return [] }
+}
+
+// Aggregate rows per creative (campaign_id + ad_id/ad_name).
+function aggByCreative(rows) {
+  const m = new Map()
+  for (const r of rows) {
+    const key = `${r.campaign_id || ''}||${r.ad_id || r.ad_name || ''}`
+    const g = m.get(key) || {
+      key, campaign_id: r.campaign_id, campaign_name: r.campaign_name,
+      adset_name: r.adset_name || null, ad_name: r.ad_name || r.campaign_name,
+      scope: scopeOf(r.campaign_name),
+      spend: 0, impressions: 0, clicks: 0, link_clicks: 0,
+      freqLatest: null, freqDate: '',
+    }
+    g.spend += num(r.spend); g.impressions += num(r.impressions)
+    g.clicks += num(r.clicks); g.link_clicks += num(r.link_clicks)
+    if (r.frequency != null && r.date > g.freqDate) { g.freqLatest = num(r.frequency); g.freqDate = r.date }
+    m.set(key, g)
+  }
+  for (const g of m.values()) {
+    const lc = g.link_clicks || g.clicks
+    g.ctr = g.impressions > 0 ? lc / g.impressions * 100 : null
+    g.cpc = g.clicks > 0 ? g.spend / g.clicks : null
+    g.cpm = g.impressions > 0 ? g.spend / g.impressions * 1000 : null
+    // Sample rule: below 1000 impressions OR below 50 clicks → too small (not ranked).
+    g.tooSmall = g.impressions < 1000 || g.clicks < 50
+  }
+  return m
+}
+function aggByCampaign(rows) {
+  const m = new Map()
+  for (const r of rows) {
+    const k = r.campaign_id || r.campaign_name || ''
+    const g = m.get(k) || { campaign_id: r.campaign_id, campaign_name: r.campaign_name, scope: scopeOf(r.campaign_name), spend: 0, impressions: 0, clicks: 0 }
+    g.spend += num(r.spend); g.impressions += num(r.impressions); g.clicks += num(r.clicks)
+    m.set(k, g)
+  }
+  return m
+}
+
+// Build the full per-creative analytics text block for the LLM context.
+function renderCreativeAnalytics(rows30, today) {
+  if (!rows30 || rows30.length === 0) {
+    return 'CREATIVE ANALYTICS: NOT AVAILABLE — meta_ads_daily returned 0 rows for the last 30 days. If asked to evaluate creatives, say exactly which is missing: "I have no per-creative rows in meta_ads_daily, sir."'
+  }
+  const cut7 = daysAgoStr(today, 6)
+  const rows7 = rows30.filter(r => r.date >= cut7)
+  const hasFreq = rows30.some(r => r.frequency != null && !isNaN(Number(r.frequency)))
+
+  const c7 = aggByCreative(rows7)
+  const c30 = aggByCreative(rows30)
+  const camp7 = aggByCampaign(rows7)
+  const camp30 = aggByCampaign(rows30)
+  // budget share per creative (7d) = creative spend / campaign 7d spend
+  for (const g of c7.values()) {
+    const ct = camp7.get(g.campaign_id || g.campaign_name || '')
+    g.budgetShare = ct && ct.spend > 0 ? g.spend / ct.spend * 100 : null
+  }
+
+  const L = []
+  L.push('--- CREATIVE ANALYTICS (meta_ads_daily, service-role, Warsaw dates) ---')
+  L.push('ATTRIBUTION BOUNDARY — creative level = UPPER FUNNEL ONLY.')
+  L.push('  Available per creative: spend, impressions, clicks, CTR, CPC, CPM, budget-share' + (hasFreq ? ', frequency.' : '.'))
+  if (!hasFreq) {
+    L.push('  frequency: NOT AVAILABLE — meta_ads_daily has NO frequency/reach column (verified).')
+    L.push('    If asked about audience fatigue / frequency, you MUST say the exact missing field, e.g.:')
+    L.push('    "I do not have frequency for these creatives, sir — meta_ads_daily does not sync it."')
+    L.push('    Do NOT apply the frequency>2.5 signal — that data does not exist here.')
+  }
+  L.push('  Orders/revenue have NO UTM → NEVER attribute sales, revenue or CPA to a specific creative.')
+  L.push('  Real CPA/ROAS is BLENDED (all products, Wix ÷ Meta spend) — see Recent Performance + Scaling Readiness above.')
+  L.push('')
+
+  // group 7d creatives by campaign for the "half of best CTR" signal
+  const byCampaign = new Map()
+  for (const g of c7.values()) { const arr = byCampaign.get(g.campaign_name) || []; arr.push(g); byCampaign.set(g.campaign_name, arr) }
+
+  for (const [cname, creatives] of byCampaign) {
+    const cid = creatives[0].campaign_id || cname
+    const ct7 = camp7.get(cid) || { spend: 0 }
+    const ct30 = camp30.get(cid) || { spend: 0 }
+    const scope = creatives[0].scope
+    const cpaTarget = scope === 'memory' ? '<40 (alarm >50)' : scope === 'language' ? '20-25 (alarm 30-35)' : 'n/a (unknown scope)'
+    const sufficient = creatives.filter(c => !c.tooSmall && c.ctr != null)
+    const bestCtr = sufficient.length ? Math.max(...sufficient.map(c => c.ctr)) : null
+    L.push(`CAMPAIGN "${cname}" [scope ${scope}, real-CPA target ${cpaTarget}] — 7d spend ${f2(ct7.spend)} PLN | 30d spend ${f2(ct30.spend)} PLN | best-creative CTR (sufficient sample): ${bestCtr != null ? f2(bestCtr) + '%' : 'n/a — no creative has enough sample'}`)
+    creatives.sort((a, b) => b.spend - a.spend)
+    for (const c of creatives) {
+      const c30row = c30.get(c.key) || {}
+      const sample = c.tooSmall ? `SAMPLE TOO SMALL — impr ${c.impressions}, clicks ${c.clicks} (need ≥1000 impr AND ≥50 clicks) → NOT RANKED` : 'sample OK'
+      const freqStr = hasFreq ? ` | freq ${c.freqLatest != null ? f2(c.freqLatest) : 'N/A'}` : ' | freq N/A (not synced)'
+      const weakHook = (bestCtr != null && !c.tooSmall && c.ctr != null && c.ctr < bestCtr / 2) ? ' | WEAK HOOK (CTR < half of best)' : ''
+      const throttled = (!c.tooSmall && c.budgetShare != null && c.budgetShare < 5) ? ' | LOW BUDGET SHARE <5% (Meta throttled)' : ''
+      L.push(`  • "${c.ad_name}" [adset ${c.adset_name || '?'}]`)
+      L.push(`      7d: spend ${f2(c.spend)} PLN | impr ${c.impressions} | clicks ${c.clicks} | CTR ${c.ctr != null ? f2(c.ctr) + '%' : 'N/A'} | CPC ${f2(c.cpc)} PLN | CPM ${f2(c.cpm)} PLN${freqStr} | budgetShare ${c.budgetShare != null ? f2(c.budgetShare) + '%' : 'N/A'} | ${sample}${weakHook}${throttled}`)
+      L.push(`      30d: spend ${f2(c30row.spend)} PLN | impr ${c30row.impressions ?? 0} | clicks ${c30row.clicks ?? 0} | CTR ${c30row.ctr != null ? f2(c30row.ctr) + '%' : 'N/A'}`)
+    }
+    L.push('')
+  }
+
+  // Last 7 days — ad-level daily rows (raw, capped)
+  L.push('Last 7 days — ad-level daily rows (date | campaign | scope | adset | ad | spend | impr | clicks | CTR | CPC | CPM):')
+  const daily = [...rows7].sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : num(b.spend) - num(a.spend))).slice(0, 100)
+  for (const r of daily) {
+    const imp = num(r.impressions), cl = num(r.clicks), lc = num(r.link_clicks) || cl, sp = num(r.spend)
+    L.push(`  ${r.date} | "${r.campaign_name}" | ${scopeOf(r.campaign_name)} | ${r.adset_name || '?'} | "${r.ad_name || r.campaign_name}" | ${f2(sp)} | ${imp} | ${cl} | ${imp > 0 ? f2(lc / imp * 100) + '%' : 'N/A'} | ${cl > 0 ? f2(sp / cl) : 'N/A'} | ${imp > 0 ? f2(sp / imp * 1000) : 'N/A'}${hasFreq ? ' | freq ' + (r.frequency != null ? f2(num(r.frequency)) : 'N/A') : ''}`)
+  }
+  return L.join('\n')
 }
 
 // ── LLM system prompt ─────────────────────────────────────────────────────────
@@ -1160,6 +1309,47 @@ WHEN IT IS NOT THE TIME — say so plainly and why, with the number:
   • E.g.: "CPA at 32 is most agreeable, sir, but the budget was raised three days ago. To lift it again now would reset the learning and undo the gain. I shall, with your leave, wait until [date]."
 
 CRITICAL ON BUDGET HISTORY: the system does NOT track when budgets were last changed or which campaigns are in learning phase. If that information is needed to decide and it is not in the context, you MUST ask sir when the budget was last changed before recommending a scale — never assume it is safe. Numbers only from context; if absent, ask, do not invent.
+
+━━━ CREATIVE ANALYST MODE — you are an ads analyst, not a reporter ━━━
+When asked about creatives/ads (best/worst creative, what to do with an ad, per-ad
+breakdown), you EVALUATE each creative and say what to DO with it. Use ONLY the
+CREATIVE ANALYTICS block in the context. Rules — non-negotiable:
+
+1. ATTRIBUTION BOUNDARY. Creative-level data is UPPER FUNNEL ONLY: CTR, CPC, CPM,
+   budget-share (and frequency IF present). You must NEVER attribute revenue,
+   sales or CPA to a specific creative — orders have no UTM. If asked "which
+   creative drove sales/revenue/the best CPA", answer plainly that this cannot be
+   known at the creative level (no UTM on orders), and pivot to the upper-funnel
+   metrics you DO have.
+2. SAMPLE. A creative with fewer than 1000 impressions OR fewer than 50 clicks is
+   "too small a sample" — verdict ZA MAŁA PRÓBKA, do NOT rank it, do NOT draw any
+   CTR conclusion from it. The context already flags these.
+3. SIGNALS: frequency > 2.5 → audience fatigue → ODŚWIEŻ (only if frequency is
+   present; if it says NOT AVAILABLE, do not use this signal and say so). CTR below
+   half of the best sufficiently-sampled creative in the same campaign → weak hook.
+   Budget share < 5% with a sufficient sample → Meta has throttled it.
+4. CPA THRESHOLDS follow campaign SCOPE (memory: real CPA <40; language: 20-25) and
+   are read ONLY from the blended REAL CPA (Wix ÷ Meta spend) in the context — NEVER
+   from Meta's own numbers. Per-creative real CPA does not exist (see rule 1).
+5. CAUTION. No budget-change recommendation in a campaign's first 3-4 days (learning
+   phase). Scaling max +15-20% at once, one change per week, only on a stable real
+   CPA. Budget-change history is NOT tracked — if you would recommend a scale, ask
+   sir when the budget was last changed first.
+
+VERDICTS (use exactly one of these tags per creative, verbatim):
+  SKALUJ · TRZYMAJ · ODŚWIEŻ · WYŁĄCZ · ZA MAŁA PRÓBKA
+
+CREATIVE ANSWER FORMAT — for EACH creative give exactly three things:
+  <VERDICT> — <the ONE metric that justifies it, with its value> — <ONE concrete action>
+Then end with ONE campaign-level recommendation. No vague filler like "monitor the
+results" or "keep an eye on it" — every line must name a metric and an action.
+
+━━━ NO EMPTY REFUSAL ━━━
+"those particulars are not available to me" (or any refusal) is allowed ONLY when you
+name the exact missing field, e.g. "I do not have frequency for these creatives, sir"
+or "orders carry no UTM, so per-creative revenue cannot be known, sir." A refusal
+without naming the specific missing datum is an error — if the datum IS in the
+context, use it.
 
 ━━━ RESPONSE FORMAT — EXACT ━━━
 ANSWER:
@@ -1307,6 +1497,14 @@ exports.handler = async (event) => {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     today,
   )
+  // Per-creative analytics — last 30 days of ad rows (7d derived from it) for the
+  // creative-analyst context. Runs in parallel with intent detection.
+  const adRows30Promise = fetchAdRowsRange(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    daysAgoStr(today, 29),
+    today,
+  )
 
   // 1 — Detect intent
   const { intent, confidence, matchedTerms } = detectIntent(message)
@@ -1419,11 +1617,13 @@ exports.handler = async (event) => {
 
   // Await service-role per-ad data (fetched in parallel with intent detection above)
   const serverAds = await serverAdsPromise
+  const adRows30 = await adRows30Promise
+  const creativeAnalyticsText = renderCreativeAnalytics(adRows30, today)
 
   // Build LLM user message with context. When we have a deterministic answer for
   // this intent, hand the LLM those EXACT numbers as a verified anchor and ask it
   // to rephrase them freshly — varied persona wording, identical figures.
-  const contextText = buildContextText(ctx, serverAds)
+  const contextText = buildContextText(ctx, serverAds, creativeAnalyticsText)
   const grounding = det
     ? `\n\n=== VERIFIED ANSWER (these numbers are correct — rephrase FRESHLY in your persona; vary the wording every time, keep EVERY figure exactly, and introduce no number that is not here or in the context above) ===\n${det.text}`
     : ''
