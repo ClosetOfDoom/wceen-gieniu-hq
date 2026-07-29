@@ -31,7 +31,7 @@ const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy', 'zadziwiajace technik
 // WSZTP (Wakacyjna Szkoła Treningu Pamięci) — high-ticket, deposit 1250 / full 3450.
 // Its contribution margin is NOT known, so it must NOT silently take the PP margin
 // (the broad 'pamiec' pattern would grab it). Route to UNMAPPED (visible) instead.
-const WSZTP_PATTERNS     = ['wsztp', 'wakacyjna szkola', 'szkola treningu pami']
+const WSZTP_PATTERNS     = ['wsztp', 'wakacyjna', 'treningu pamieci', 'szko a treningu']
 const MEMORY_PATTERNS    = ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']
 
 const PRODUCTS = {

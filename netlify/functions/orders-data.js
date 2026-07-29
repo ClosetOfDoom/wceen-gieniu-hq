@@ -110,7 +110,7 @@ const JZK_MAIN_PATTERNS  = ['jezykozak', 'jzk', 'nauka jezykow', 'nauka jezyk']
 // Techniki Nauki Języków"), which sells at 114 AND 115 PLN under varied names.
 const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy', 'zadziwiajace techniki', 'techniki nauki jezyk', '3 zadziwiajace']
 // WSZTP high-ticket (deposit 1250 / full 3450) — not one of the four mapped products.
-const WSZTP_PATTERNS     = ['wsztp', 'wakacyjna szkola', 'szkola treningu pami']
+const WSZTP_PATTERNS     = ['wsztp', 'wakacyjna', 'treningu pamieci', 'szko a treningu']
 const MEMORY_PATTERNS    = ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']
 // Intentionally narrow: 'memory' alone is too broad; 'jezyk' alone is too broad
 
