@@ -28,6 +28,10 @@ const JZK_MAIN_PATTERNS  = ['jezykozak', 'jzk', 'nauka jezykow', 'nauka jezyk']
 // Pakiet Językowy incl. the 3T-TRIPWIRE language product ("3 Zadziwiające
 // Techniki Nauki Języków"), which sells at 114 AND 115 PLN under varied names.
 const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy', 'zadziwiajace techniki', 'techniki nauki jezyk', '3 zadziwiajace']
+// WSZTP (Wakacyjna Szkoła Treningu Pamięci) — high-ticket, deposit 1250 / full 3450.
+// Its contribution margin is NOT known, so it must NOT silently take the PP margin
+// (the broad 'pamiec' pattern would grab it). Route to UNMAPPED (visible) instead.
+const WSZTP_PATTERNS     = ['wsztp', 'wakacyjna szkola', 'szkola treningu pami']
 const MEMORY_PATTERNS    = ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']
 
 const PRODUCTS = {
@@ -52,21 +56,33 @@ function anyMatch(norm, patterns) {
 }
 
 // Returns { productKey, displayName, margin, matchedBy } or null (unmapped).
+// ORDER MATTERS. NAME first: the product name is authoritative even when the price
+// coincides with another product's list price (e.g. a discounted PP sold at 114 or
+// 347 must stay Memory, not become Językowy/Językozak). JSU requires "kurs", so a PP
+// bundle that merely lists "Jak się uczyć" as a bonus stays Memory. Price is only a
+// fallback for rows whose name doesn't identify the product. Anything unmatched → null
+// (UNMAPPED, visible in the UI) — never a silent margin 0.
 function classifyForMargin(amount, rawName) {
-  // 1 — absolute price rule (fast, unambiguous)
-  if (amount === 549) return { productKey: 'jsu_course',    ...PRODUCTS.jsu_course,    matchedBy: 'price 549' }
-  if (amount === 347) return { productKey: 'jzk_ai',        ...PRODUCTS.jzk_ai,        matchedBy: 'price 347' }
-  if (amount === 119) return { productKey: 'memory_pack',   ...PRODUCTS.memory_pack,   matchedBy: 'price 119' }
-  if (amount === 114) return { productKey: 'language_pack', ...PRODUCTS.language_pack, matchedBy: 'price 114' }
-
-  // 2 — name fallback (handles discounts / variant prices that are not the list price)
   const norm = normalizeText(rawName)
+  const P = (key, by) => ({ productKey: key, ...PRODUCTS[key], matchedBy: by })
+
+  // 0 — WSZTP high-ticket: recognized product, margin unknown → UNMAPPED (before the
+  //     broad 'pamiec' pattern could mis-map it to the PP margin).
+  if (norm && anyMatch(norm, WSZTP_PATTERNS)) return null
+
+  // 1 — NAME first
   if (norm) {
-    if (anyMatch(norm, JSU_NAME_PATTERNS))  return { productKey: 'jsu_course',    ...PRODUCTS.jsu_course,    matchedBy: `name "${norm.slice(0, 30)}"` }
-    if (anyMatch(norm, JZK_MAIN_PATTERNS))  return { productKey: 'jzk_ai',        ...PRODUCTS.jzk_ai,        matchedBy: `name "${norm.slice(0, 30)}"` }
-    if (anyMatch(norm, MEMORY_PATTERNS))    return { productKey: 'memory_pack',   ...PRODUCTS.memory_pack,   matchedBy: `name "${norm.slice(0, 30)}"` }
-    if (anyMatch(norm, LANG_PACK_PATTERNS)) return { productKey: 'language_pack', ...PRODUCTS.language_pack, matchedBy: `name "${norm.slice(0, 30)}"` }
+    if (anyMatch(norm, JSU_NAME_PATTERNS))  return P('jsu_course',    `name "${norm.slice(0, 30)}"`)
+    if (anyMatch(norm, JZK_MAIN_PATTERNS))  return P('jzk_ai',        `name "${norm.slice(0, 30)}"`)
+    if (anyMatch(norm, LANG_PACK_PATTERNS)) return P('language_pack', `name "${norm.slice(0, 30)}"`)
+    if (anyMatch(norm, MEMORY_PATTERNS))    return P('memory_pack',   `name "${norm.slice(0, 30)}"`)
   }
+
+  // 2 — price fallback (unnamed / unrecognized name at a known list price)
+  if (amount === 549) return P('jsu_course',    'price 549')
+  if (amount === 347) return P('jzk_ai',        'price 347')
+  if (amount === 119) return P('memory_pack',   'price 119')
+  if (amount === 114) return P('language_pack', 'price 114')
   return null
 }
 

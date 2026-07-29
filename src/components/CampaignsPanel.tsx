@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
-  fetchCampaignRows, buildCampaignDiagnosis,
+  fetchCampaignRows, buildCampaignDiagnosis, SCOPE_THRESHOLDS,
   type CampaignDiagnosis, type CampaignScope, type CampaignEntry,
-  type CampaignFetchResult,
+  type CampaignFetchResult, type FunnelScope,
 } from '../lib/campaignDiagnosis'
 import type { MetaAdDaily } from '../services/data'
 import { RangeSwitcher } from './RangeSwitcher'
@@ -27,6 +27,31 @@ const STATUS_COLORS: Record<string, string> = {
   'zero-attribution':'var(--amber)',
   'needs-watch':     'var(--red)',
   'unclassified':    'var(--muted2)',
+}
+
+const SCOPE_META: Record<FunnelScope, { label: string; color: string }> = {
+  memory:   { label: 'memory',   color: 'var(--gold)' },
+  language: { label: 'language', color: 'var(--teal)' },
+  unknown:  { label: 'unknown',  color: 'var(--muted2)' },
+}
+
+function scopeThresholdText(scope: FunnelScope): string {
+  const t = SCOPE_THRESHOLDS[scope]
+  if (!t) return 'brak progu'
+  return `cel <${t.target} · alarm >${t.alarm}${t.noScale ? ` · nie skaluj >${t.noScale}` : ''}`
+}
+
+function ScopeTag({ scope }: { scope: FunnelScope }) {
+  const m = SCOPE_META[scope]
+  return (
+    <span title={scopeThresholdText(scope)} style={{
+      fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: m.color,
+      border: `1px solid ${m.color}`, borderRadius: '3px', padding: '1px 5px',
+      whiteSpace: 'nowrap', opacity: 0.9,
+    }}>
+      {m.label}
+    </span>
+  )
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -171,6 +196,7 @@ function CampaignTable({ campaigns }: { campaigns: CampaignEntry[] }) {
         <thead>
           <tr>
             <th style={{ textAlign: 'left' }}>Ad / Creative</th>
+            <th style={{ textAlign: 'left' }}>Scope</th>
             <th style={{ textAlign: 'right' }}>Spend PLN</th>
             <th style={{ textAlign: 'right' }}>Purch.</th>
             <th style={{ textAlign: 'right' }}>CPA</th>
@@ -186,6 +212,7 @@ function CampaignTable({ campaigns }: { campaigns: CampaignEntry[] }) {
               <td style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)' }}>
                 {c.ad_name}
               </td>
+              <td><ScopeTag scope={c.funnelScope} /></td>
               <td style={{ textAlign: 'right', color: c.spendShare > 0.5 ? 'var(--orange)' : 'var(--text2)' }}>
                 {c.spend.toFixed(2)}
               </td>
@@ -399,6 +426,18 @@ export function CampaignsPanel() {
           <SummaryCards d={diagnosis} />
           <SpendBarChart campaigns={diagnosis.campaigns} />
           <CampaignTable campaigns={diagnosis.campaigns} />
+          {/* Scope legend + unknown-scope flag (thresholds follow scope, not global) */}
+          <div style={{ marginBottom: '18px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted2)', lineHeight: 1.7 }}>
+            Scope wg prefiksu campaign_name: <b style={{ color: 'var(--gold)' }}>memory</b> (PP-*, {scopeThresholdText('memory')}) ·{' '}
+            <b style={{ color: 'var(--teal)' }}>language</b> (3T-*, {scopeThresholdText('language')}) ·{' '}
+            <b>unknown</b> (inny prefiks — bez progu, bez diagnozy efficient/expensive).
+            Progi CPA i kolorowanie idą za scope.
+            {(() => {
+              const unk = diagnosis.campaigns.filter(c => c.funnelScope === 'unknown')
+              if (unk.length === 0) return null
+              return <><br />⚠ {unk.length} kampani{unk.length === 1 ? 'a' : 'e'} bez mapowania scope (prefiks ≠ PP-/3T-): {unk.map(c => `"${c.ad_name}"`).slice(0, 5).join(', ')} — oznaczone jako unknown, bez diagnozy.</>
+            })()}
+          </div>
           <DiagnosisCard text={diagnosis.diagnosisText} scope={scope} />
           {/* Honest provenance — audited: the sync undercounts Meta conversions */}
           <div style={{

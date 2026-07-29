@@ -109,6 +109,8 @@ const JZK_MAIN_PATTERNS  = ['jezykozak', 'jzk', 'nauka jezykow', 'nauka jezyk']
 // Pakiet Językowy incl. the 3T-TRIPWIRE language product ("3 Zadziwiające
 // Techniki Nauki Języków"), which sells at 114 AND 115 PLN under varied names.
 const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy', 'zadziwiajace techniki', 'techniki nauki jezyk', '3 zadziwiajace']
+// WSZTP high-ticket (deposit 1250 / full 3450) — not one of the four mapped products.
+const WSZTP_PATTERNS     = ['wsztp', 'wakacyjna szkola', 'szkola treningu pami']
 const MEMORY_PATTERNS    = ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']
 // Intentionally narrow: 'memory' alone is too broad; 'jezyk' alone is too broad
 
@@ -116,66 +118,38 @@ function anyMatch(norm, patterns) {
   return patterns.some(p => norm.includes(p))
 }
 
+// NAME-FIRST classification. The product name is authoritative even when the price
+// coincides with another product's list price. Price is a fallback for unnamed rows.
+// (JSU requires "kurs", so a PP bundle listing "Jak się uczyć" as a bonus stays PP.)
 function classifyOrder(row) {
   const amount  = extractAmount(row)
   const rawName = extractProductNameRaw(row) ?? ''
   const norm    = normalizeText(rawName)
 
-  if (amount === 549) {
-    const nameContradicts = rawName.length > 0 && !anyMatch(norm, JSU_NAME_PATTERNS)
-    return {
-      classification: 'JSU_COURSE',
-      productLabel:   'Kurs Jak się uczyć',
-      reason:         'absolute price rule: 549 PLN = JSU',
-      warning:        nameContradicts ? `product_name_raw "${rawName.slice(0, 50)}" doesn't match JSU patterns. Price rule used.` : null,
-    }
-  }
-  if (amount === 347) {
-    const nameContradicts = rawName.length > 0 && !anyMatch(norm, [...JZK_MAIN_PATTERNS, ...LANG_PACK_PATTERNS])
-    return {
-      classification: 'JZK_LANGUAGE',
-      productLabel:   'Językozak AI',
-      reason:         'absolute price rule: 347 PLN = Językozak AI',
-      warning:        nameContradicts ? `product_name_raw "${rawName.slice(0, 50)}" doesn't match JZK patterns. Price rule used.` : null,
-    }
-  }
-  if (amount === 119) {
-    const nameContradicts = rawName.length > 0 && !anyMatch(norm, MEMORY_PATTERNS)
-    return {
-      classification: 'MEMORY_PACK',
-      productLabel:   'Pakiet pamięciowy',
-      reason:         'absolute price rule: 119 PLN = Pakiet Pamięciowy',
-      warning:        nameContradicts ? `product_name_raw "${rawName.slice(0, 50)}" doesn't match memory patterns. Price rule used.` : null,
-    }
-  }
-  if (amount === 114) {
-    const nameContradicts = rawName.length > 0 && !anyMatch(norm, [...JZK_MAIN_PATTERNS, ...LANG_PACK_PATTERNS])
-    return {
-      classification: 'JZK_LANGUAGE',
-      productLabel:   'Pakiet Językowy',
-      reason:         'absolute price rule: 114 PLN = Pakiet Językowy',
-      warning:        nameContradicts ? `product_name_raw "${rawName.slice(0, 50)}" doesn't match language pack patterns. Price rule used.` : null,
-    }
+  // 0 — WSZTP high-ticket: not one of the four mapped products → UNKNOWN (visible).
+  if (norm && anyMatch(norm, WSZTP_PATTERNS)) {
+    return { classification: 'UNKNOWN', productLabel: 'WSZTP (wysoki bilet)', reason: `WSZTP high-ticket, price ${amount} PLN — not a mapped product`, warning: null }
   }
 
-  // Name-only fallback: price unknown, but name clearly identifies the product
-  if (rawName.length > 0) {
+  // 1 — NAME first
+  if (norm.length > 0) {
     if (anyMatch(norm, JSU_NAME_PATTERNS))
-      return { classification: 'JSU_COURSE',   productLabel: 'Kurs Jak się uczyć', reason: `name-only: "${rawName.slice(0, 40)}"`, warning: `price ${amount} PLN not in rules; classified by name` }
+      return { classification: 'JSU_COURSE',   productLabel: 'Kurs Jak się uczyć', reason: `name: "${rawName.slice(0, 40)}"`, warning: null }
     if (anyMatch(norm, JZK_MAIN_PATTERNS))
-      return { classification: 'JZK_LANGUAGE', productLabel: 'Językozak AI',        reason: `name-only: "${rawName.slice(0, 40)}"`, warning: `price ${amount} PLN not in rules; classified by name` }
+      return { classification: 'JZK_LANGUAGE', productLabel: 'Językozak AI',        reason: `name: "${rawName.slice(0, 40)}"`, warning: null }
     if (anyMatch(norm, LANG_PACK_PATTERNS))
-      return { classification: 'JZK_LANGUAGE', productLabel: 'Pakiet Językowy',     reason: `name-only: "${rawName.slice(0, 40)}"`, warning: `price ${amount} PLN not in rules; classified by name` }
+      return { classification: 'JZK_LANGUAGE', productLabel: 'Pakiet Językowy',     reason: `name: "${rawName.slice(0, 40)}"`, warning: null }
     if (anyMatch(norm, MEMORY_PATTERNS))
-      return { classification: 'MEMORY_PACK',  productLabel: 'Pakiet pamięciowy',   reason: `name-only: "${rawName.slice(0, 40)}"`, warning: `price ${amount} PLN not in rules; classified by name` }
+      return { classification: 'MEMORY_PACK',  productLabel: 'Pakiet pamięciowy',   reason: `name: "${rawName.slice(0, 40)}"`, warning: null }
   }
 
-  return {
-    classification: 'UNKNOWN',
-    productLabel:   'Nieznany',
-    reason:         `no price rule or name match (amount: ${amount} PLN)`,
-    warning:        null,
-  }
+  // 2 — price fallback (unnamed / unrecognized name at a known list price)
+  if (amount === 549) return { classification: 'JSU_COURSE',   productLabel: 'Kurs Jak się uczyć', reason: 'price 549 PLN', warning: rawName ? `name "${rawName.slice(0, 40)}" unrecognized; price rule used` : null }
+  if (amount === 347) return { classification: 'JZK_LANGUAGE', productLabel: 'Językozak AI',        reason: 'price 347 PLN', warning: rawName ? `name "${rawName.slice(0, 40)}" unrecognized; price rule used` : null }
+  if (amount === 119) return { classification: 'MEMORY_PACK',  productLabel: 'Pakiet pamięciowy',   reason: 'price 119 PLN', warning: rawName ? `name "${rawName.slice(0, 40)}" unrecognized; price rule used` : null }
+  if (amount === 114) return { classification: 'JZK_LANGUAGE', productLabel: 'Pakiet Językowy',     reason: 'price 114 PLN', warning: rawName ? `name "${rawName.slice(0, 40)}" unrecognized; price rule used` : null }
+
+  return { classification: 'UNKNOWN', productLabel: 'Nieznany', reason: `no name or price match (amount: ${amount} PLN)`, warning: null }
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────

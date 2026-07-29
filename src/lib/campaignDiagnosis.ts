@@ -6,6 +6,25 @@ import { bustUrl } from '../utils/cacheBust'
 export type CampaignScope = 'JSU' | 'JZK' | 'ALL'
 export type CampaignStatus = 'efficient' | 'expensive' | 'zero-attribution' | 'needs-watch' | 'unclassified'
 
+// Funnel scope by campaign_name PREFIX (auto-catches new creatives; no hardcoded
+// name list). PP-* → memory, 3T-* → language, anything else → unknown (marked in
+// the UI, no diagnosis — we do not guess).
+export type FunnelScope = 'memory' | 'language' | 'unknown'
+
+export interface ScopeThresholds { target: number; alarm: number; noScale: number | null }
+export const SCOPE_THRESHOLDS: Record<FunnelScope, ScopeThresholds | null> = {
+  memory:   { target: 40, alarm: 50, noScale: 60 },   // Pakiet Pamięciowy
+  language: { target: 25, alarm: 35, noScale: null }, // Pakiet Językowy / 3T
+  unknown:  null,
+}
+
+export function funnelScope(campaignName: string | null | undefined): FunnelScope {
+  const n = String(campaignName ?? '').trim()
+  if (/^pp[-\s]/i.test(n)) return 'memory'
+  if (/^3t[-\s]/i.test(n)) return 'language'
+  return 'unknown'
+}
+
 export interface CampaignEntry {
   campaign_id: string
   campaign_name: string
@@ -22,6 +41,7 @@ export interface CampaignEntry {
   cpm: number | null
   metaCpa: number | null
   scope: CampaignScope
+  funnelScope: FunnelScope
   status: CampaignStatus
   spendShare: number
   purchaseShare: number
@@ -84,15 +104,15 @@ function classifyStatus(
   purchases: number,
   metaCpa: number | null,
   spendShare: number,
-  scope: CampaignScope = 'ALL',
+  scope: FunnelScope = 'unknown',
 ): CampaignStatus {
   if (spend > 10 && purchases === 0) return 'zero-attribution'
   if (purchases > 0 && metaCpa !== null) {
-    // Efficient/expensive boundary = the scope's CPA alarm, not PP's 50 for all.
-    // Language (PL/JZK) alarms at ~35; Memory (PP) alarms at ~50.
-    const alarmCpa = scope === 'JZK' ? 35 : 50
-    if (metaCpa < alarmCpa) return 'efficient'
-    return 'expensive'
+    const t = SCOPE_THRESHOLDS[scope]
+    // Unknown scope → no CPA threshold, so no efficient/expensive verdict (no guessing).
+    if (!t) return 'unclassified'
+    // Efficient/expensive boundary = THIS scope's alarm (memory 50, language 35).
+    return metaCpa < t.alarm ? 'efficient' : 'expensive'
   }
   if (spendShare > 0.60) return 'needs-watch'
   return 'unclassified'
@@ -127,6 +147,9 @@ export function buildCampaignDiagnosis(
     const adName = r.ad_name && r.ad_name !== r.campaign_name ? r.ad_name : campaignName
     // Scope from ad AND campaign name (a 3T ad may sit under a language campaign).
     const scope = classifyCampaignScope(`${r.ad_name ?? ''} ${r.campaign_name ?? ''}`)
+    // Funnel scope by PREFIX — drives CPA thresholds, the efficient/expensive verdict
+    // and card colour. Prefer the campaign name (PP-/3T-), fall back to the ad name.
+    const fScope = funnelScope(r.campaign_name || r.ad_name)
     return {
       campaign_id:        r.campaign_id    ?? '',
       campaign_name:      campaignName,
@@ -143,7 +166,8 @@ export function buildCampaignDiagnosis(
       cpm:               r.cpm            ?? null,
       metaCpa,
       scope,
-      status:            classifyStatus(spend, purchases, metaCpa, spendShare, scope),
+      funnelScope:       fScope,
+      status:            classifyStatus(spend, purchases, metaCpa, spendShare, fScope),
       spendShare,
       purchaseShare,
     }
