@@ -34,48 +34,6 @@ const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy', 'zadziwiajace technik
 const WSZTP_PATTERNS     = ['wsztp', 'wakacyjna', 'treningu pamieci', 'szko a treningu']
 const MEMORY_PATTERNS    = ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']
 
-// Cost-based margin model. unit_cost = catalog price − briefing margin.
-//   PP  119 − 70  = 49    PL  114 − 40  = 74
-//   JSU 549 − 500 = 49    JZK 347 − 320 = 27
-// The orders table has NO quantity column (verified), so quantity is INFERRED from
-// the order value (see bucketize). Order margin = value − unit_cost × quantity.
-const PRODUCTS = {
-  jsu_course:    { displayName: 'Kurs Jak się uczyć', price: 549, unitCost: 49 },
-  jzk_ai:        { displayName: 'Językozak AI',        price: 347, unitCost: 27 },
-  memory_pack:   { displayName: 'Pakiet Pamięciowy',   price: 119, unitCost: 49 },
-  language_pack: { displayName: 'Pakiet Językowy',     price: 114, unitCost: 74 },
-}
-const QTY_TOLERANCE = 0.15  // value must be within 15% of a whole multiple of price
-
-// Decide the bucket for an order already matched (by name/price) to a product.
-//   MAPPED    — either a single discounted unit (value < catalog price → qty 1,
-//               never ambiguous "down"), OR value ≈ qty × catalog price within 15%
-//               (qty = round(value/price)). margin = value − unit_cost × qty.
-//   AMBIGUOUS — ONLY for values ABOVE the catalog price that no whole multiple
-//               explains within 15%, OR a cross-product price collision (value
-//               equals a DIFFERENT product's catalog price — e.g. a "Pamięć…" order
-//               at 347 = Językozak's price). AMBIGUOUS is revenue, NOT margin; but
-//               we still report a LOWER-BOUND margin = value − unit_cost × ceil(
-//               value/price) (max plausible units → min margin) — surfaced in the
-//               UI as "minimum", never added to Est. Profit.
-function ambiguousResult(p, value, reason) {
-  const minMargin = value - p.unitCost * Math.ceil(value / p.price)
-  return { bucket: 'AMBIGUOUS', reason, minMargin }
-}
-function bucketize(productKey, value) {
-  const p = PRODUCTS[productKey]
-  // Below catalog price → one discounted unit. MAPPED qty 1. Never AMBIGUOUS down.
-  if (value < p.price) return { bucket: 'MAPPED', qty: 1, margin: value - p.unitCost }
-  // At/above catalog price — cross-product exact price collision → ambiguous.
-  const collides = Object.entries(PRODUCTS).some(([k, q]) => k !== productKey && Math.abs(value - q.price) < 1)
-  if (collides) return ambiguousResult(p, value, `value ${value} equals another product's catalog price`)
-  const qty = Math.round(value / p.price)
-  if (Math.abs(value - qty * p.price) < QTY_TOLERANCE * (qty * p.price)) {
-    return { bucket: 'MAPPED', qty, margin: value - p.unitCost * qty }
-  }
-  return ambiguousResult(p, value, `value ${value} above ${p.price} not within 15% of a whole multiple`)
-}
-
 function normalizeText(s) {
   return String(s ?? '')
     .toLowerCase()
@@ -90,34 +48,75 @@ function anyMatch(norm, patterns) {
   return patterns.some(p => norm.includes(p))
 }
 
-// Returns { productKey, displayName, margin, matchedBy } or null (unmapped).
-// ORDER MATTERS. NAME first: the product name is authoritative even when the price
-// coincides with another product's list price (e.g. a discounted PP sold at 114 or
-// 347 must stay Memory, not become Językowy/Językozak). JSU requires "kurs", so a PP
-// bundle that merely lists "Jak się uczyć" as a bonus stays Memory. Price is only a
-// fallback for rows whose name doesn't identify the product. Anything unmatched → null
-// (UNMAPPED, visible in the UI) — never a silent margin 0.
-function classifyForMargin(amount, rawName) {
+// Products: catalogPrice (used only for whole-multiple inference on non-canonical
+// amounts) + unitCost (authoritative, per the canonical table). WSZTP has an unknown
+// unit cost → margin is never computed for it.
+const PRODUCTS = {
+  memory_pack:   { displayName: 'Pakiet Pamięciowy',   catalogPrice: 119,  unitCost: 49 },
+  language_pack: { displayName: 'Pakiet Językowy 3T',  catalogPrice: 114,  unitCost: 64 },
+  jzk_ai:        { displayName: 'Językozak AI',         catalogPrice: 347,  unitCost: 27 },
+  jsu_course:    { displayName: 'Kurs Jak się uczyć',   catalogPrice: 549,  unitCost: 49 },
+  wsztp:         { displayName: 'WSZTP',                catalogPrice: 1250, unitCost: null },
+}
+// Canonical exact prices → product. PRICE WINS OVER NAME. 99 = Pakiet Pamięciowy
+// sold without the shipping fee (form error). 1250 = WSZTP (unknown margin).
+const CANONICAL = { 99: 'memory_pack', 119: 'memory_pack', 114: 'language_pack', 347: 'jzk_ai', 549: 'jsu_course', 1250: 'wsztp' }
+const QTY_TOLERANCE = 0.15  // value must be within 15% of a whole multiple of price
+
+// Name → product key (one of the four margin products) or null. WSZTP by name is
+// handled separately by the caller (WSZTP_PATTERNS).
+function nameMatchKey(norm) {
+  if (!norm) return null
+  if (anyMatch(norm, JSU_NAME_PATTERNS))  return 'jsu_course'
+  if (anyMatch(norm, JZK_MAIN_PATTERNS))  return 'jzk_ai'
+  if (anyMatch(norm, LANG_PACK_PATTERNS)) return 'language_pack'
+  if (anyMatch(norm, MEMORY_PATTERNS))    return 'memory_pack'
+  return null
+}
+
+// PRICE-PRIMARY classification. Returns a decision object or null (UNMAPPED):
+//   { productKey, bucket, qty?, margin?, minMargin?, conflict?, matchedBy }
+//   bucket ∈ MAPPED | AMBIGUOUS | UNKNOWN_MARGIN
+//   conflict = { priceProduct, priceAmount, nameProduct } when the name points to a
+//   different product than the canonical price (we map by PRICE, flag the conflict).
+function classifyOrder(amount, rawName) {
   const norm = normalizeText(rawName)
-  const P = (key, by) => ({ productKey: key, ...PRODUCTS[key], matchedBy: by })
+  const nameIsWsztp = !!norm && anyMatch(norm, WSZTP_PATTERNS)
+  const nameKey = nameMatchKey(norm)
 
-  // 0 — WSZTP high-ticket: recognized product, margin unknown → UNMAPPED (before the
-  //     broad 'pamiec' pattern could mis-map it to the PP margin).
-  if (norm && anyMatch(norm, WSZTP_PATTERNS)) return null
-
-  // 1 — NAME first
-  if (norm) {
-    if (anyMatch(norm, JSU_NAME_PATTERNS))  return P('jsu_course',    `name "${norm.slice(0, 30)}"`)
-    if (anyMatch(norm, JZK_MAIN_PATTERNS))  return P('jzk_ai',        `name "${norm.slice(0, 30)}"`)
-    if (anyMatch(norm, LANG_PACK_PATTERNS)) return P('language_pack', `name "${norm.slice(0, 30)}"`)
-    if (anyMatch(norm, MEMORY_PATTERNS))    return P('memory_pack',   `name "${norm.slice(0, 30)}"`)
+  // 1 — EXACT canonical price wins over the name.
+  const canonKey = Object.prototype.hasOwnProperty.call(CANONICAL, amount) ? CANONICAL[amount] : null
+  if (canonKey) {
+    if (canonKey === 'wsztp') return { productKey: 'wsztp', bucket: 'UNKNOWN_MARGIN', matchedBy: `price ${amount}` }
+    const p = PRODUCTS[canonKey]
+    const namePoints = nameIsWsztp ? 'wsztp' : nameKey
+    const conflict = (namePoints && namePoints !== canonKey)
+      ? { priceProduct: canonKey, priceAmount: amount, nameProduct: namePoints }
+      : null
+    // A canonical price is a single unit at that price.
+    return { productKey: canonKey, bucket: 'MAPPED', qty: 1, margin: amount - p.unitCost, matchedBy: `price ${amount}`, conflict }
   }
 
-  // 2 — price fallback (unnamed / unrecognized name at a known list price)
-  if (amount === 549) return P('jsu_course',    'price 549')
-  if (amount === 347) return P('jzk_ai',        'price 347')
-  if (amount === 119) return P('memory_pack',   'price 119')
-  if (amount === 114) return P('language_pack', 'price 114')
+  // 2 — WSZTP by name (non-canonical amount) → unknown margin.
+  if (nameIsWsztp) return { productKey: 'wsztp', bucket: 'UNKNOWN_MARGIN', matchedBy: 'name' }
+
+  // 3 — name-matched product at a NON-canonical amount.
+  if (nameKey) {
+    const p = PRODUCTS[nameKey]
+    // Below catalog price → one discounted unit. MAPPED qty 1. Never AMBIGUOUS down.
+    if (amount < p.catalogPrice) {
+      return { productKey: nameKey, bucket: 'MAPPED', qty: 1, margin: amount - p.unitCost, matchedBy: 'name (below catalog)' }
+    }
+    // At/above catalog price → whole-multiple within 15%, else AMBIGUOUS.
+    const qty = Math.round(amount / p.catalogPrice)
+    if (Math.abs(amount - qty * p.catalogPrice) < QTY_TOLERANCE * (qty * p.catalogPrice)) {
+      return { productKey: nameKey, bucket: 'MAPPED', qty, margin: amount - p.unitCost * qty, matchedBy: `name ×${qty}` }
+    }
+    const minMargin = amount - p.unitCost * Math.ceil(amount / p.catalogPrice)
+    return { productKey: nameKey, bucket: 'AMBIGUOUS', minMargin, matchedBy: 'name', reason: `${amount} above ${p.catalogPrice}, no whole multiple within 15%` }
+  }
+
+  // 4 — nothing matched → UNMAPPED.
   return null
 }
 
@@ -244,21 +243,24 @@ export const handler = async (event) => {
   // ── Classify → bucket (MAPPED / AMBIGUOUS / UNMAPPED) and compute margins ──
   const productAccum = {}
   let knownMargin = 0, totalRevenue = 0
-  let unknownRevenue = 0, unknownOrdersCount = 0       // UNMAPPED
-  let ambiguousRevenue = 0, ambiguousOrdersCount = 0   // AMBIGUOUS (revenue, no margin)
-  let ambiguousMinMargin = 0                            // lower-bound margin of AMBIGUOUS
+  let unknownRevenue = 0, unknownOrdersCount = 0             // UNMAPPED (unrecognized)
+  let unknownMarginRevenue = 0, unknownMarginOrdersCount = 0 // WSZTP — known product, unknown margin
+  let ambiguousRevenue = 0, ambiguousOrdersCount = 0         // AMBIGUOUS (revenue, no margin)
+  let ambiguousMinMargin = 0                                  // lower-bound margin of AMBIGUOUS
   const unmappedOrders = []
+  const unknownMarginOrders = []
   const ambiguousOrders = []
+  const conflicts = []                                        // PRICE/NAME CONFLICT rows
   const debugOrders = []
 
   for (const row of rangeOrders) {
     const amount = extractAmount(row)
     const name   = extractProductNameRaw(row)
     totalRevenue += amount
-    const rule = classifyForMargin(amount, name)
+    const d = classifyOrder(amount, name)
     const dbgBase = { amount, product_name_raw: name ?? '—', order_date: extractOrderDate(row) }
 
-    if (!rule) {
+    if (!d) {   // UNMAPPED — no price or name match
       unknownRevenue += amount
       unknownOrdersCount++
       unmappedOrders.push({ ...dbgBase, note: 'no price or name match' })
@@ -266,26 +268,43 @@ export const handler = async (event) => {
       continue
     }
 
-    const b = bucketize(rule.productKey, amount)
-    if (b.bucket === 'AMBIGUOUS') {
+    // Record a PRICE/NAME CONFLICT (mapped by price, name pointed elsewhere)
+    if (d.conflict) {
+      conflicts.push({
+        ...dbgBase,
+        price_product: PRODUCTS[d.conflict.priceProduct].displayName,
+        price_amount: d.conflict.priceAmount,
+        name_product: PRODUCTS[d.conflict.nameProduct]?.displayName ?? d.conflict.nameProduct,
+      })
+    }
+
+    if (d.bucket === 'UNKNOWN_MARGIN') {   // WSZTP — known product, unknown margin
+      unknownMarginRevenue += amount
+      unknownMarginOrdersCount++
+      unknownMarginOrders.push({ ...dbgBase, matched: d.productKey, note: 'known product, unknown margin (WSZTP)' })
+      if (debug) debugOrders.push({ ...dbgBase, matched: `${d.productKey} (${d.matchedBy})`, bucket: 'UNKNOWN_MARGIN', qty: null, margin: 0 })
+      continue
+    }
+
+    if (d.bucket === 'AMBIGUOUS') {
       ambiguousRevenue += amount
       ambiguousOrdersCount++
-      ambiguousMinMargin += b.minMargin
-      ambiguousOrders.push({ ...dbgBase, matched: rule.productKey, minMargin: b.minMargin, note: b.reason })
-      if (debug) debugOrders.push({ ...dbgBase, matched: `${rule.productKey} (${rule.matchedBy})`, bucket: 'AMBIGUOUS', qty: null, margin: 0, minMargin: b.minMargin, reason: b.reason })
+      ambiguousMinMargin += d.minMargin
+      ambiguousOrders.push({ ...dbgBase, matched: d.productKey, minMargin: d.minMargin, note: d.reason })
+      if (debug) debugOrders.push({ ...dbgBase, matched: `${d.productKey} (${d.matchedBy})`, bucket: 'AMBIGUOUS', qty: null, margin: 0, minMargin: d.minMargin, reason: d.reason })
       continue
     }
 
     // MAPPED
-    knownMargin += b.margin
-    if (!productAccum[rule.productKey]) {
-      productAccum[rule.productKey] = { productKey: rule.productKey, displayName: PRODUCTS[rule.productKey].displayName, orders: 0, units: 0, revenue: 0, unitCost: PRODUCTS[rule.productKey].unitCost, contributionMargin: null, marginTotal: 0 }
+    knownMargin += d.margin
+    if (!productAccum[d.productKey]) {
+      productAccum[d.productKey] = { productKey: d.productKey, displayName: PRODUCTS[d.productKey].displayName, orders: 0, units: 0, revenue: 0, unitCost: PRODUCTS[d.productKey].unitCost, contributionMargin: null, marginTotal: 0 }
     }
-    productAccum[rule.productKey].orders++
-    productAccum[rule.productKey].units += b.qty
-    productAccum[rule.productKey].revenue += amount
-    productAccum[rule.productKey].marginTotal += b.margin
-    if (debug) debugOrders.push({ ...dbgBase, matched: `${rule.productKey} (${rule.matchedBy})`, bucket: 'MAPPED', qty: b.qty, margin: b.margin })
+    productAccum[d.productKey].orders++
+    productAccum[d.productKey].units += d.qty
+    productAccum[d.productKey].revenue += amount
+    productAccum[d.productKey].marginTotal += d.margin
+    if (debug) debugOrders.push({ ...dbgBase, matched: `${d.productKey} (${d.matchedBy})`, bucket: 'MAPPED', qty: d.qty, margin: d.margin, conflict: d.conflict ? `${d.conflict.nameProduct}→${d.conflict.priceProduct}` : undefined })
   }
 
   // NOTE: the previous "email → webinar" heuristic (reclassifying an unmapped order
@@ -345,14 +364,19 @@ export const handler = async (event) => {
       knownMargin,
       unknownRevenue,
       unknownOrdersCount,
+      unknownMarginRevenue,
+      unknownMarginOrdersCount,
       ambiguousRevenue,
       ambiguousOrdersCount,
       ambiguousMinMargin,
+      conflictsCount: conflicts.length,
+      conflicts,
       marginBeforeAds,
       estimatedProfitAfterAds,
       estimatedProfitPerOrder,
       productBreakdown: productBreakdownFinal,
       unmappedOrders,
+      unknownMarginOrders,
       ambiguousOrders,
       emailNormReclassified: 0,
       sourceTable: usedOrdersTable,

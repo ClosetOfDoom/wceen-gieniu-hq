@@ -1398,6 +1398,9 @@ export default function App() {
   const ambiguousRev      = profitData?.ambiguousRevenue ?? 0
   const ambiguousMinMar   = profitData?.ambiguousMinMargin ?? 0
   const hasAmbiguous      = ambiguousRev > 0
+  const unknownMarginRev  = profitData?.unknownMarginRevenue ?? 0
+  const hasUnknownMargin  = unknownMarginRev > 0
+  const conflicts         = profitData?.conflicts ?? []
   const profitMismatch    = profitData?.ok && profitData.ordersCount === 0 && (ordersData?.totals.today_orders ?? 0) > 0
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -1546,6 +1549,12 @@ export default function App() {
                       warning={hasAmbiguous}
                       sublabel={hasAmbiguous ? `${profitData?.ambiguousOrdersCount ?? 0} orders · min. margin ${fmtPln(ambiguousMinMar)}` : 'No ambiguous orders'}
                     />
+                    <KPICard
+                      label="Unknown-margin Rev."
+                      value={profitData?.ok ? fmtPln(unknownMarginRev) : '—'}
+                      warning={hasUnknownMargin}
+                      sublabel={hasUnknownMargin ? `WSZTP — marża nieznana (${profitData?.unknownMarginOrdersCount ?? 0} orders)` : 'None'}
+                    />
                   </div>
 
                   {/* Row 3: Meta ad efficiency — range-aware, derived from the daily
@@ -1583,7 +1592,23 @@ export default function App() {
                   )}
                   {hasAmbiguous && (
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--amber)', padding: '6px 12px', background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '3px' }}>
-                      ⚠ {fmtPln(ambiguousRev)} z {profitData?.ambiguousOrdersCount ?? 0} zamówień AMBIGUOUS — kwota powyżej ceny katalogowej, której nie tłumaczy całkowita wielokrotność (±15%), lub kolizja z ceną innego produktu. W przychodzie, NIE w EST. PROFIT. Dolne oszacowanie marży: <b>≥ {fmtPln(ambiguousMinMar)}</b> (minimum, poza EST. PROFIT).
+                      ⚠ {fmtPln(ambiguousRev)} z {profitData?.ambiguousOrdersCount ?? 0} zamówień AMBIGUOUS — kwota powyżej ceny katalogowej, której nie tłumaczy całkowita wielokrotność (±15%). W przychodzie, NIE w EST. PROFIT. Dolne oszacowanie marży: <b>≥ {fmtPln(ambiguousMinMar)}</b> (minimum, poza EST. PROFIT).
+                    </div>
+                  )}
+                  {hasUnknownMargin && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', padding: '6px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '3px' }}>
+                      ℹ {fmtPln(unknownMarginRev)} z {profitData?.unknownMarginOrdersCount ?? 0} zamówień WSZTP — znany produkt o <b>nieznanej marży</b> (nie „nierozpoznany"). W przychodzie, poza EST. PROFIT.
+                    </div>
+                  )}
+                  {conflicts.length > 0 && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)', padding: '6px 12px', background: 'rgba(251,146,60,0.06)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: '3px', lineHeight: 1.7 }}>
+                      ⚠ PRICE/NAME CONFLICT — {conflicts.length} zamówień zmapowano po CENIE (cena nadrzędna), choć nazwa wskazywała inny produkt:
+                      {conflicts.slice(0, 6).map((c, i) => (
+                        <div key={i} style={{ marginLeft: 8 }}>
+                          • {c.price_amount} PLN → <b>{c.price_product}</b> (po cenie); nazwa: „{(c.product_name_raw || '').slice(0, 34)}" → {c.name_product}
+                        </div>
+                      ))}
+                      {conflicts.length > 6 && <div style={{ marginLeft: 8 }}>…+{conflicts.length - 6} więcej</div>}
                     </div>
                   )}
                   {(profitData?.emailNormReclassified ?? 0) > 0 && (

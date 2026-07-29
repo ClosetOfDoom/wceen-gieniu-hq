@@ -23,9 +23,13 @@ export interface ProfitData {
   knownMargin: number
   unknownRevenue: number
   unknownOrdersCount: number
+  unknownMarginRevenue?: number       // WSZTP — known product, unknown margin
+  unknownMarginOrdersCount?: number
   ambiguousRevenue?: number
   ambiguousOrdersCount?: number
   ambiguousMinMargin?: number
+  conflictsCount?: number             // PRICE/NAME CONFLICT rows
+  conflicts?: Array<{ amount: number; product_name_raw: string; order_date: string; price_product: string; price_amount: number; name_product: string }>
   marginBeforeAds: number
   estimatedProfitAfterAds: number
   estimatedProfitPerOrder: number
