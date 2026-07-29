@@ -53,7 +53,9 @@ export const PRODUCT_MARGINS: ProductMargin[] = [
     priceExpected:       114,
     contributionMargin:  40,
     needsMapping:        false,
-    namePattern:         /pakiet\s+j[eę]zyko/i,
+    // Pakiet Językowy incl. the 3T-TRIPWIRE language product
+    // ("3 Zadziwiające Techniki Nauki Języków"), sold at 114 and 115 PLN.
+    namePattern:         /pakiet\s+j[eę]zyko|zadziwiaj[aą]ce\s+techniki|techniki\s+nauki\s+j[eę]zyk/i,
   },
 ]
 

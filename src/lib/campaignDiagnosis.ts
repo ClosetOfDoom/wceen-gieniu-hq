@@ -63,13 +63,17 @@ function normalizeForMatch(s: string): string {
 
 export function classifyCampaignScope(name: string): CampaignScope {
   const n = normalizeForMatch(name)
-  // JZK patterns first (language webinar)
-  const jzkPatterns = ['jezykozak', 'jzk', 'language', 'jezyk', 'nauka jezykow', 'nauka jezyk']
-  if (jzkPatterns.some(p => n.includes(p))) return 'JZK'
-  // JSU patterns (memory course)
+  // Language funnel (JZK scope): Językozak AI + the 3T-TRIPWIRE language tripwire
+  // ("3 Zadziwiające Techniki Nauki Języków"). Prefix/pattern based so new
+  // creatives (3T-*, JZK-*) are picked up without a hardcoded name list.
+  const jzkPatterns = [
+    'jezykozak', 'jzk', 'language', 'jezyk', 'nauka jezykow', 'nauka jezyk',
+    '3t', 'tripwire', 'zadziwiajace', 'techniki nauki',
+  ]
+  if (/(?:^| )3t(?:$| |-)/.test(n) || jzkPatterns.some(p => n.includes(p))) return 'JZK'
+  // Memory funnel (JSU/Memory scope): Pakiet Pamięciowy + JSU course. PP-* prefix.
   const jsuPatterns = ['pamiec', 'memory', 'pakiet pamiec', 'jsu', 'jak sie uczyc']
-  if (jsuPatterns.some(p => n.includes(p))) return 'JSU'
-  if (/(?:^| )pp(?:$| )/.test(n)) return 'JSU'  // "pp" = Pakiet Pamięciowy
+  if (/(?:^| )pp(?:$| |-)/.test(n) || jsuPatterns.some(p => n.includes(p))) return 'JSU'
   return 'ALL'
 }
 
@@ -80,10 +84,14 @@ function classifyStatus(
   purchases: number,
   metaCpa: number | null,
   spendShare: number,
+  scope: CampaignScope = 'ALL',
 ): CampaignStatus {
   if (spend > 10 && purchases === 0) return 'zero-attribution'
   if (purchases > 0 && metaCpa !== null) {
-    if (metaCpa < 50) return 'efficient'
+    // Efficient/expensive boundary = the scope's CPA alarm, not PP's 50 for all.
+    // Language (PL/JZK) alarms at ~35; Memory (PP) alarms at ~50.
+    const alarmCpa = scope === 'JZK' ? 35 : 50
+    if (metaCpa < alarmCpa) return 'efficient'
     return 'expensive'
   }
   if (spendShare > 0.60) return 'needs-watch'
@@ -117,6 +125,8 @@ export function buildCampaignDiagnosis(
     const purchaseShare = totalPurchases > 0 ? purchases / totalPurchases : 0
     const campaignName = r.campaign_name ?? r.campaign_id ?? '?'
     const adName = r.ad_name && r.ad_name !== r.campaign_name ? r.ad_name : campaignName
+    // Scope from ad AND campaign name (a 3T ad may sit under a language campaign).
+    const scope = classifyCampaignScope(`${r.ad_name ?? ''} ${r.campaign_name ?? ''}`)
     return {
       campaign_id:        r.campaign_id    ?? '',
       campaign_name:      campaignName,
@@ -132,8 +142,8 @@ export function buildCampaignDiagnosis(
       cpc,
       cpm:               r.cpm            ?? null,
       metaCpa,
-      scope:             classifyCampaignScope(r.ad_name ?? r.campaign_name ?? ''),
-      status:            classifyStatus(spend, purchases, metaCpa, spendShare),
+      scope,
+      status:            classifyStatus(spend, purchases, metaCpa, spendShare, scope),
       spendShare,
       purchaseShare,
     }

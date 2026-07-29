@@ -25,7 +25,9 @@ const CORS = {
 // is NEVER classified as JSU.
 const JSU_NAME_PATTERNS  = ['kurs jak sie uczyc', 'kurs jak', 'jsu', 'nauka uczenia']
 const JZK_MAIN_PATTERNS  = ['jezykozak', 'jzk', 'nauka jezykow', 'nauka jezyk']
-const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy']
+// Pakiet Językowy incl. the 3T-TRIPWIRE language product ("3 Zadziwiające
+// Techniki Nauki Języków"), which sells at 114 AND 115 PLN under varied names.
+const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy', 'zadziwiajace techniki', 'techniki nauki jezyk', '3 zadziwiajace']
 const MEMORY_PATTERNS    = ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']
 
 const PRODUCTS = {

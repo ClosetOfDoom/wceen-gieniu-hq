@@ -106,7 +106,9 @@ function normalizeText(s) {
 // "Jak się uczyć" appears only as a bonus item, not the product itself.
 const JSU_NAME_PATTERNS  = ['kurs jak sie uczyc', 'kurs jak', 'jsu', 'nauka uczenia', 'jak sie uczys']
 const JZK_MAIN_PATTERNS  = ['jezykozak', 'jzk', 'nauka jezykow', 'nauka jezyk']
-const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy']
+// Pakiet Językowy incl. the 3T-TRIPWIRE language product ("3 Zadziwiające
+// Techniki Nauki Języków"), which sells at 114 AND 115 PLN under varied names.
+const LANG_PACK_PATTERNS = ['pakiet jezykowy', 'jezykowy', 'zadziwiajace techniki', 'techniki nauki jezyk', '3 zadziwiajace']
 const MEMORY_PATTERNS    = ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']
 // Intentionally narrow: 'memory' alone is too broad; 'jezyk' alone is too broad
 
