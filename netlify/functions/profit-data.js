@@ -200,6 +200,23 @@ export const handler = async (event) => {
     }
   }
 
+  // TEMP raw-schema dump: ?rawdump=1 → full raw columns for "Pamięć. Trening
+  // Interaktywny" orders at the requested amounts, so we can see whether a quantity
+  // column exists and whether `amount` is a line value or the whole-order total.
+  if (qp.rawdump === '1') {
+    const targets = new Set([347, 275.5, 265, 180.5, 115, 105.5, 99, 75])
+    const hit = allOrders.filter(r => {
+      const nm = normalizeText(extractProductNameRaw(r))
+      return nm.includes('trening interaktywny') && targets.has(extractAmount(r))
+    })
+    const columns = allOrders.length ? Object.keys(allOrders[0]) : []
+    return {
+      statusCode: 200,
+      headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      body: JSON.stringify({ ok: true, sourceTable: usedOrdersTable, columns, count: hit.length, rows: hit.slice(0, 30) }),
+    }
+  }
+
   // Filter to the requested Warsaw range [from, to]
   const rangeOrders = allOrders.filter(row => {
     const d = extractOrderDate(row)
