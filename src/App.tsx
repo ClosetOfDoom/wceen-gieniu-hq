@@ -1396,6 +1396,7 @@ export default function App() {
   const profitDanger      = profitEst != null && profitEst < 0
   const hasUnknownRevenue = (profitData?.unknownRevenue ?? 0) > 0
   const ambiguousRev      = profitData?.ambiguousRevenue ?? 0
+  const ambiguousMinMar   = profitData?.ambiguousMinMargin ?? 0
   const hasAmbiguous      = ambiguousRev > 0
   const profitMismatch    = profitData?.ok && profitData.ordersCount === 0 && (ordersData?.totals.today_orders ?? 0) > 0
 
@@ -1543,7 +1544,7 @@ export default function App() {
                       label="Ambiguous Rev."
                       value={profitData?.ok ? fmtPln(ambiguousRev) : '—'}
                       warning={hasAmbiguous}
-                      sublabel={hasAmbiguous ? `In revenue, not in margin (${profitData?.ambiguousOrdersCount ?? 0} orders)` : 'No ambiguous orders'}
+                      sublabel={hasAmbiguous ? `${profitData?.ambiguousOrdersCount ?? 0} orders · min. margin ${fmtPln(ambiguousMinMar)}` : 'No ambiguous orders'}
                     />
                   </div>
 
@@ -1582,7 +1583,7 @@ export default function App() {
                   )}
                   {hasAmbiguous && (
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--amber)', padding: '6px 12px', background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '3px' }}>
-                      ⚠ {fmtPln(ambiguousRev)} z {profitData?.ambiguousOrdersCount ?? 0} zamówień AMBIGUOUS — wartość nie pasuje do całkowitej wielokrotności ceny (±15%) lub koliduje z ceną innego produktu. Wchodzi do przychodu, NIE do marży.
+                      ⚠ {fmtPln(ambiguousRev)} z {profitData?.ambiguousOrdersCount ?? 0} zamówień AMBIGUOUS — kwota powyżej ceny katalogowej, której nie tłumaczy całkowita wielokrotność (±15%), lub kolizja z ceną innego produktu. W przychodzie, NIE w EST. PROFIT. Dolne oszacowanie marży: <b>≥ {fmtPln(ambiguousMinMar)}</b> (minimum, poza EST. PROFIT).
                     </div>
                   )}
                   {(profitData?.emailNormReclassified ?? 0) > 0 && (

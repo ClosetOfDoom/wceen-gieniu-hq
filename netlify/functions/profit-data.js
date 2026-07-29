@@ -48,23 +48,32 @@ const PRODUCTS = {
 const QTY_TOLERANCE = 0.15  // value must be within 15% of a whole multiple of price
 
 // Decide the bucket for an order already matched (by name/price) to a product.
-//   MAPPED    — value ≈ qty × catalog price (qty = round(value/price), qty≥1,
-//               within 15%). margin = value − unit_cost × qty.
-//   AMBIGUOUS — value is not explained by any whole multiple of the matched
-//               product's price within 15%, OR it exactly equals a DIFFERENT
-//               product's catalog price (cross-product price collision, e.g. a
-//               "Pamięć…" order at 347 = Językozak's price). AMBIGUOUS counts as
-//               revenue but NOT margin, and is surfaced in the UI like UNMAPPED.
+//   MAPPED    — either a single discounted unit (value < catalog price → qty 1,
+//               never ambiguous "down"), OR value ≈ qty × catalog price within 15%
+//               (qty = round(value/price)). margin = value − unit_cost × qty.
+//   AMBIGUOUS — ONLY for values ABOVE the catalog price that no whole multiple
+//               explains within 15%, OR a cross-product price collision (value
+//               equals a DIFFERENT product's catalog price — e.g. a "Pamięć…" order
+//               at 347 = Językozak's price). AMBIGUOUS is revenue, NOT margin; but
+//               we still report a LOWER-BOUND margin = value − unit_cost × ceil(
+//               value/price) (max plausible units → min margin) — surfaced in the
+//               UI as "minimum", never added to Est. Profit.
+function ambiguousResult(p, value, reason) {
+  const minMargin = value - p.unitCost * Math.ceil(value / p.price)
+  return { bucket: 'AMBIGUOUS', reason, minMargin }
+}
 function bucketize(productKey, value) {
   const p = PRODUCTS[productKey]
-  // cross-product exact price collision → ambiguous (can't tell which product)
+  // Below catalog price → one discounted unit. MAPPED qty 1. Never AMBIGUOUS down.
+  if (value < p.price) return { bucket: 'MAPPED', qty: 1, margin: value - p.unitCost }
+  // At/above catalog price — cross-product exact price collision → ambiguous.
   const collides = Object.entries(PRODUCTS).some(([k, q]) => k !== productKey && Math.abs(value - q.price) < 1)
-  if (collides) return { bucket: 'AMBIGUOUS', reason: `value ${value} equals another product's catalog price` }
+  if (collides) return ambiguousResult(p, value, `value ${value} equals another product's catalog price`)
   const qty = Math.round(value / p.price)
-  if (qty >= 1 && Math.abs(value - qty * p.price) < QTY_TOLERANCE * (qty * p.price)) {
+  if (Math.abs(value - qty * p.price) < QTY_TOLERANCE * (qty * p.price)) {
     return { bucket: 'MAPPED', qty, margin: value - p.unitCost * qty }
   }
-  return { bucket: 'AMBIGUOUS', reason: `value ${value} is not within 15% of any whole ×${p.price}` }
+  return ambiguousResult(p, value, `value ${value} above ${p.price} not within 15% of a whole multiple`)
 }
 
 function normalizeText(s) {
@@ -237,6 +246,7 @@ export const handler = async (event) => {
   let knownMargin = 0, totalRevenue = 0
   let unknownRevenue = 0, unknownOrdersCount = 0       // UNMAPPED
   let ambiguousRevenue = 0, ambiguousOrdersCount = 0   // AMBIGUOUS (revenue, no margin)
+  let ambiguousMinMargin = 0                            // lower-bound margin of AMBIGUOUS
   const unmappedOrders = []
   const ambiguousOrders = []
   const debugOrders = []
@@ -260,8 +270,9 @@ export const handler = async (event) => {
     if (b.bucket === 'AMBIGUOUS') {
       ambiguousRevenue += amount
       ambiguousOrdersCount++
-      ambiguousOrders.push({ ...dbgBase, matched: rule.productKey, note: b.reason })
-      if (debug) debugOrders.push({ ...dbgBase, matched: `${rule.productKey} (${rule.matchedBy})`, bucket: 'AMBIGUOUS', qty: null, margin: 0, reason: b.reason })
+      ambiguousMinMargin += b.minMargin
+      ambiguousOrders.push({ ...dbgBase, matched: rule.productKey, minMargin: b.minMargin, note: b.reason })
+      if (debug) debugOrders.push({ ...dbgBase, matched: `${rule.productKey} (${rule.matchedBy})`, bucket: 'AMBIGUOUS', qty: null, margin: 0, minMargin: b.minMargin, reason: b.reason })
       continue
     }
 
@@ -277,50 +288,9 @@ export const handler = async (event) => {
     if (debug) debugOrders.push({ ...dbgBase, matched: `${rule.productKey} (${rule.matchedBy})`, bucket: 'MAPPED', qty: b.qty, margin: b.margin })
   }
 
-  // ── Email-norm join: reclassify unmapped orders via webinar participants → JSU
-  let emailNormReclassified = 0
-  const emailNormWarnings = []
-  if (unmappedOrders.length > 0) {
-    try {
-      const participants = await supabaseGet(supabaseUrl, serviceKey, 'webinar_participants', { select: 'email', limit: '2000' })
-      const participantEmailSet = new Set(participants.map(p => normalizeEmail(p.email)).filter(e => e.includes('@')))
-      if (participantEmailSet.size > 0) {
-        const stillUnmapped = []
-        for (const raw of rangeOrders) {
-          const amount = extractAmount(raw)
-          const rawName = extractProductNameRaw(raw)
-          if (classifyForMargin(amount, rawName)) continue  // already classified
-          // Do NOT reclassify WSZTP (a recognized high-ticket product with unknown
-          // margin) as JSU just because the buyer attended a webinar.
-          if (anyMatch(normalizeText(rawName), WSZTP_PATTERNS)) continue
-          const email = extractOrderEmail(raw)
-          if (email && participantEmailSet.has(email)) {
-            // Webinar participant → treat as JSU, then bucketize like any order.
-            emailNormReclassified++
-            emailNormWarnings.push({ email_masked: email.replace(/(?<=.).(?=[^@]*@)/, '*'), amount, classification: 'jsu_course', reason: 'email_norm_join: email found in webinar_participants' })
-            const b = bucketize('jsu_course', amount)
-            if (b.bucket === 'MAPPED') {
-              knownMargin += b.margin
-              const k = 'jsu_course'
-              if (!productAccum[k]) productAccum[k] = { productKey: k, displayName: PRODUCTS.jsu_course.displayName, orders: 0, units: 0, revenue: 0, unitCost: PRODUCTS.jsu_course.unitCost, contributionMargin: null, marginTotal: 0 }
-              productAccum[k].orders++; productAccum[k].units += b.qty; productAccum[k].revenue += amount; productAccum[k].marginTotal += b.margin
-            } else {
-              ambiguousRevenue += amount; ambiguousOrdersCount++
-              ambiguousOrders.push({ amount, product_name_raw: extractProductNameRaw(raw) ?? '—', order_date: extractOrderDate(raw), matched: 'jsu_course', note: b.reason })
-            }
-          } else {
-            stillUnmapped.push({ amount, product_name_raw: extractProductNameRaw(raw) ?? '—', order_date: extractOrderDate(raw), note: 'no price or name match' })
-          }
-        }
-        unknownOrdersCount = stillUnmapped.length
-        unknownRevenue = stillUnmapped.reduce((s, o) => s + o.amount, 0)
-        unmappedOrders.length = 0
-        for (const o of stillUnmapped) unmappedOrders.push(o)
-      }
-    } catch (e) {
-      errors.push(`email_norm_join: ${String(e?.message ?? e)}`)
-    }
-  }
+  // NOTE: the previous "email → webinar" heuristic (reclassifying an unmapped order
+  // as JSU because the buyer's e-mail was in webinar_participants) has been REMOVED.
+  // No order's product is ever changed based on data outside the orders table.
 
   // ── Ad spend over the range ───────────────────────────────────────────────
   let adSpend = 0
@@ -377,14 +347,14 @@ export const handler = async (event) => {
       unknownOrdersCount,
       ambiguousRevenue,
       ambiguousOrdersCount,
+      ambiguousMinMargin,
       marginBeforeAds,
       estimatedProfitAfterAds,
       estimatedProfitPerOrder,
       productBreakdown: productBreakdownFinal,
       unmappedOrders,
       ambiguousOrders,
-      emailNormReclassified,
-      emailNormWarnings: emailNormWarnings.length > 0 ? emailNormWarnings : undefined,
+      emailNormReclassified: 0,
       sourceTable: usedOrdersTable,
       debugOrders: debug ? debugOrders : undefined,
       errors: errors.length > 0 ? errors : undefined,
