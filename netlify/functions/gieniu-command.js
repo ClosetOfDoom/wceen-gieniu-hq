@@ -1469,31 +1469,18 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: 'Method Not Allowed' }
   }
 
-  let message, context, debugContext
+  let message, context
   try {
-    ;({ message, context, debugContext } = JSON.parse(event.body ?? '{}'))
+    ;({ message, context } = JSON.parse(event.body ?? '{}'))
   } catch {
     return { statusCode: 400, body: 'Invalid JSON body' }
   }
 
-  if (!debugContext && (!message || typeof message !== 'string')) {
+  if (!message || typeof message !== 'string') {
     return { statusCode: 400, body: 'message field is required' }
   }
 
   const ctx = context ?? {}
-
-  // Debug: return the raw LLM context (incl. per-creative analytics) without calling
-  // the LLM, so the payload is inspectable. { debugContext: true }
-  if (debugContext) {
-    const today = ctx.dataHealth?.today ?? warsawTodayStr()
-    const [serverAds, adRows30] = await Promise.all([
-      fetchTodayAdsServerSide(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, today),
-      fetchAdRowsRange(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, daysAgoStr(today, 29), today),
-    ])
-    const creativeAnalyticsText = renderCreativeAnalytics(adRows30, today)
-    const contextText = buildContextText(ctx, serverAds, creativeAnalyticsText)
-    return success({ ok: true, today, adRows30Count: adRows30.length, creativeAnalyticsText, contextText })
-  }
 
   // LLM env vars — read early so deterministic paths can report llm.active
   const llmProviderEnv  = process.env.LLM_PROVIDER
