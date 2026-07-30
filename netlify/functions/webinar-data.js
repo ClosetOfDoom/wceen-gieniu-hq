@@ -143,19 +143,41 @@ export const handler = async (event) => {
   const buyers          = buyersData          ?? []
 
   // Per-session buyer aggregates, keyed by scheduled_at. JSU course = amount 549.
+  //
+  // TEMPORAL SPLIT: an order counts as a webinar RESULT only if it was created
+  // AT or AFTER the session start (order_created_at >= scheduled_at). Orders made
+  // BEFORE the webinar are "pre-webinar customers" — they bought an entry product
+  // (PP) earlier and were therefore invited. Those are funnel ENTRIES, not
+  // conversions, and are NEVER summed into Sales / Revenue.
   const JSU_COURSE_PRICE = 549
-  const buyerAgg    = new Map()   // scheduled_at -> { revenue, jsu_course_*, other_* }
-  const buyerEmails = new Map()   // scheduled_at -> Set(email)
+  const phaseOf = (r) => {
+    const oc = Date.parse(r.order_created_at)
+    const sc = Date.parse(r.scheduled_at)
+    return (Number.isFinite(oc) && Number.isFinite(sc) && oc >= sc) ? 'after' : 'before'
+  }
+  const buyerAgg    = new Map()   // scheduled_at -> after-only { revenue, jsu_*, other_* }
+  const buyerEmails = new Map()   // scheduled_at -> Set(email) among 'after' orders
+  const preAgg      = new Map()   // scheduled_at -> { pre_revenue, pre_rows }
+  const preEmails   = new Map()   // scheduled_at -> Set(email) among 'before' orders
   for (const r of buyers) {
-    const key = r.scheduled_at
-    const amt = Number(r.amount) || 0
-    const g = buyerAgg.get(key) || { revenue: 0, jsu_course_sales: 0, jsu_course_revenue: 0, other_sales: 0, other_revenue: 0 }
-    g.revenue += amt
-    if (amt === JSU_COURSE_PRICE) { g.jsu_course_sales++; g.jsu_course_revenue += amt }
-    else { g.other_sales++; g.other_revenue += amt }
-    buyerAgg.set(key, g)
-    if (!buyerEmails.has(key)) buyerEmails.set(key, new Set())
-    buyerEmails.get(key).add(String(r.email ?? '').trim().toLowerCase())
+    const key   = r.scheduled_at
+    const amt   = Number(r.amount) || 0
+    const email = String(r.email ?? '').trim().toLowerCase()
+    if (phaseOf(r) === 'after') {
+      const g = buyerAgg.get(key) || { revenue: 0, jsu_course_sales: 0, jsu_course_revenue: 0, other_sales: 0, other_revenue: 0 }
+      g.revenue += amt
+      if (amt === JSU_COURSE_PRICE) { g.jsu_course_sales++; g.jsu_course_revenue += amt }
+      else { g.other_sales++; g.other_revenue += amt }
+      buyerAgg.set(key, g)
+      if (!buyerEmails.has(key)) buyerEmails.set(key, new Set())
+      buyerEmails.get(key).add(email)
+    } else {
+      const p = preAgg.get(key) || { pre_revenue: 0, pre_rows: 0 }
+      p.pre_revenue += amt; p.pre_rows++
+      preAgg.set(key, p)
+      if (!preEmails.has(key)) preEmails.set(key, new Set())
+      preEmails.get(key).add(email)
+    }
   }
 
   // Compute unique emails before masking
@@ -193,13 +215,17 @@ export const handler = async (event) => {
       schedule_reason: c.reason,
       warsaw_weekday: c.warsaw_weekday,
       warsaw_time: c.warsaw_time,
-      // Sales / Revenue from v_webinar_buyers (registrants of this session with an order)
+      // Sales / Revenue = registrants of this session whose order was placed AFTER
+      // the webinar (true conversions). Pre-webinar orders are reported separately.
       buyers_count:        buyerEmails.get(s.scheduled_at)?.size ?? 0,
       buyers_revenue:      agg?.revenue ?? 0,
       jsu_course_sales:    agg?.jsu_course_sales ?? 0,
       jsu_course_revenue:  agg?.jsu_course_revenue ?? 0,
       other_sales:         agg?.other_sales ?? 0,
       other_revenue:       agg?.other_revenue ?? 0,
+      // Pre-webinar customers (order placed BEFORE the session) — funnel entries.
+      pre_webinar_count:   preEmails.get(s.scheduled_at)?.size ?? 0,
+      pre_webinar_revenue: preAgg.get(s.scheduled_at)?.pre_revenue ?? 0,
     }
   })
 
@@ -233,6 +259,8 @@ export const handler = async (event) => {
       sessions:           classifiedSessions,
       participants,
       // v_webinar_buyers rows (masked email) — the registrant⋈order join.
+      // phase = 'after' (order at/after the session = webinar result) or
+      // 'before' (order predates the session = pre-webinar customer / entry).
       webinarBuyers: buyers.map(r => ({
         session_name:     r.session_name,
         product_tag:      r.product_tag,
@@ -242,14 +270,32 @@ export const handler = async (event) => {
         amount:           Number(r.amount) || 0,
         is_jsu_course:    (Number(r.amount) || 0) === JSU_COURSE_PRICE,
         order_created_at: r.order_created_at,
+        phase:            phaseOf(r),
       })),
-      webinarBuyersTotals: {
-        rows:               buyers.length,
-        distinctBuyers:     new Set(buyers.map(r => String(r.email ?? '').trim().toLowerCase())).size,
-        revenue:            buyers.reduce((s, r) => s + (Number(r.amount) || 0), 0),
-        jsuCourseSales:     buyers.filter(r => (Number(r.amount) || 0) === JSU_COURSE_PRICE).length,
-        jsuCourseRevenue:   buyers.filter(r => (Number(r.amount) || 0) === JSU_COURSE_PRICE).reduce((s, r) => s + (Number(r.amount) || 0), 0),
-      },
+      webinarBuyersTotals: (() => {
+        const after  = buyers.filter(r => phaseOf(r) === 'after')
+        const before = buyers.filter(r => phaseOf(r) === 'before')
+        const sum = (rows) => rows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+        const distinct = (rows) => new Set(rows.map(r => String(r.email ?? '').trim().toLowerCase())).size
+        const jsu = (rows) => rows.filter(r => (Number(r.amount) || 0) === JSU_COURSE_PRICE)
+        return {
+          rows: buyers.length,
+          // Webinar RESULTS (orders at/after the session) — the real conversions.
+          after: {
+            rows:             after.length,
+            distinctBuyers:   distinct(after),
+            revenue:          sum(after),
+            jsuCourseSales:   jsu(after).length,
+            jsuCourseRevenue: sum(jsu(after)),
+          },
+          // Pre-webinar customers (orders before the session) — funnel entries, NOT conversions.
+          before: {
+            rows:           before.length,
+            distinctBuyers: distinct(before),
+            revenue:        sum(before),
+          },
+        }
+      })(),
       debug: {
         source:            'netlify-function-service-role',
         sessionsError,

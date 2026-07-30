@@ -1249,14 +1249,29 @@ function maskEmail2(e) {
   return s.slice(0, Math.min(2, i)) + '***' + s.slice(i)
 }
 
+// Temporal phase of a buyer row: 'after' = order placed at/after the session start
+// (a webinar RESULT), 'before' = order predates the session (pre-webinar customer).
+function buyerPhase(r) {
+  const oc = Date.parse(r.order_created_at)
+  const sc = Date.parse(r.scheduled_at)
+  return (Number.isFinite(oc) && Number.isFinite(sc) && oc >= sc) ? 'after' : 'before'
+}
+
 // Render the WEBINAR BUYERS block: who bought (esp. the JSU 549 course), when, from
-// which session — with the HARD LIMITS about attendance / timing being unknown.
+// which session — with the temporal split (result vs pre-webinar customer) and the
+// HARD LIMITS about attendance / timing being unknown.
 function renderWebinarBuyers(rows) {
   const L = []
   L.push('--- WEBINAR BUYERS (v_webinar_buyers) — registrants matched to Wix orders by EMAIL ---')
   L.push('WHAT THIS IS: a webinar registrant whose e-mail also has a Wix order. It reports the')
   L.push('  e-mail JOIN only. The order\'s product stays canonical-price based (549 = JSU course);')
   L.push('  this view does NOT change order→product mapping.')
+  L.push('TEMPORAL SPLIT — the single most important rule here:')
+  L.push('  • "after"  = order_created_at >= scheduled_at → a genuine webinar RESULT/CONVERSION.')
+  L.push('  • "before" = order_created_at <  scheduled_at → a PRE-WEBINAR CUSTOMER. They bought an')
+  L.push('    entry product earlier and were therefore invited. This is a funnel ENTRY, NOT a result.')
+  L.push('  When asked what a webinar generated/sold/earned, COUNT ONLY "after" rows. NEVER add')
+  L.push('  "before" orders to a webinar\'s sales/revenue, and NEVER call a pre-webinar order its result.')
   L.push('HARD LIMITS — you MUST state these plainly whenever the question touches them:')
   L.push('  • registered_at is EMPTY on EVERY row → you do NOT know when they registered, whether')
   L.push('    they ATTENDED the webinar, or how long AFTER the webinar they bought.')
@@ -1268,21 +1283,25 @@ function renderWebinarBuyers(rows) {
     return L.join('\n')
   }
   const JSU = 549
-  const jsu = rows.filter(r => Number(r.amount) === JSU)
-  const distinct = new Set(rows.map(r => String(r.email ?? '').trim().toLowerCase())).size
-  const revenue = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
-  L.push(`TOTALS: ${rows.length} buyer-order rows | ${distinct} distinct buyers | revenue ${revenue.toFixed(2)} PLN | JSU COURSE (549) sales: ${jsu.length}`)
+  const after  = rows.filter(r => buyerPhase(r) === 'after')
+  const before = rows.filter(r => buyerPhase(r) === 'before')
+  const distinct = (rs) => new Set(rs.map(r => String(r.email ?? '').trim().toLowerCase())).size
+  const sum = (rs) => rs.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  const jsuAfter = after.filter(r => Number(r.amount) === JSU)
   L.push('')
-  L.push('JSU COURSE (549 PLN) buyers — the ONLY metric that proves a webinar sold the course:')
-  if (jsu.length === 0) L.push('  (none in the data)')
-  for (const r of jsu) {
+  L.push(`WEBINAR RESULTS (after): ${after.length} orders | ${distinct(after)} distinct buyers | revenue ${sum(after).toFixed(2)} PLN | JSU COURSE (549) sales: ${jsuAfter.length} (${sum(jsuAfter).toFixed(2)} PLN)`)
+  L.push(`PRE-WEBINAR CUSTOMERS (before, NOT counted as results): ${before.length} orders | ${distinct(before)} distinct | revenue ${sum(before).toFixed(2)} PLN`)
+  L.push('')
+  L.push('JSU COURSE (549 PLN) sold AFTER a webinar — the ONLY metric that proves a webinar sold the course:')
+  if (jsuAfter.length === 0) L.push('  (none — no post-webinar JSU-course sale in the data)')
+  for (const r of jsuAfter) {
     L.push(`  • ${maskEmail2(r.email)} — bought the JSU course (549 PLN) on ${r.order_created_at}; registrant of session "${r.session_name}" (${r.scheduled_at}, tag ${r.product_tag})`)
   }
   L.push('')
-  L.push('All buyer rows (email | amount | product_name_raw | order_created_at | session):')
+  L.push('All buyer rows (phase | email | amount | product_name_raw | order_created_at | session):')
   for (const r of rows.slice(0, 60)) {
     const isJsu = Number(r.amount) === JSU
-    L.push(`  ${maskEmail2(r.email)} | ${(Number(r.amount) || 0).toFixed(2)} PLN${isJsu ? ' [JSU COURSE 549]' : ''} | "${r.product_name_raw}" | ${r.order_created_at} | "${r.session_name}" ${r.scheduled_at}`)
+    L.push(`  [${buyerPhase(r).toUpperCase()}] ${maskEmail2(r.email)} | ${(Number(r.amount) || 0).toFixed(2)} PLN${isJsu ? ' [JSU COURSE 549]' : ''} | "${r.product_name_raw}" | ${r.order_created_at} | "${r.session_name}" ${r.scheduled_at}`)
   }
   return L.join('\n')
 }
@@ -1407,14 +1426,20 @@ Then end with ONE campaign-level recommendation. No vague filler like "monitor t
 results" or "keep an eye on it" — every line must name a metric and an action.
 
 ━━━ WEBINAR BUYERS (who bought the course) ━━━
-For "who bought the JSU course / who bought after the webinar / did webinar X sell":
-use the WEBINAR BUYERS block. It is a registrant⋈order join by e-mail. You MAY state
-who bought the JSU course (549), when (order_created_at), and which session they are a
-registrant of. You MUST add, plainly, that you do NOT know whether that person attended
-the webinar or how long after it they bought — registered_at is empty on every row and
-the attendance table is empty. Never assert attendance or time-to-purchase. The JSU
-course (549) is the only sale that proves a webinar's efficacy; PP/other orders by a
-registrant are entry-product sales, not course sales.
+For "who bought the JSU course / did webinar X sell / how much did webinar X generate":
+use the WEBINAR BUYERS block. It is a registrant⋈order join by e-mail.
+TIMING IS DECISIVE: each row is "after" (order at/after the session = a genuine webinar
+RESULT) or "before" (order predates the session = a PRE-WEBINAR CUSTOMER who bought an
+entry product earlier and was therefore invited). When asked what a webinar
+generated/sold/earned, count ONLY "after" rows. NEVER add "before" orders to a webinar's
+sales or revenue, and NEVER describe a pre-webinar order as that webinar's result — call
+it a pre-webinar customer / funnel entry. If asked, report the two figures separately.
+You MAY state who bought the JSU course (549), when (order_created_at), and which session
+they registered for. You MUST add, plainly, that you do NOT know whether that person
+attended the webinar or how long after it they bought — registered_at is empty on every
+row and the attendance table is empty. Never assert attendance or time-to-purchase. The
+JSU course (549) sold AFTER a webinar is the only sale that proves its efficacy; PP/other
+orders by a registrant are entry-product sales, not course sales.
 
 ━━━ NO EMPTY REFUSAL ━━━
 "those particulars are not available to me" (or any refusal) is allowed ONLY when you

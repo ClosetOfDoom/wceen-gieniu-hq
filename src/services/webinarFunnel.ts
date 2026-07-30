@@ -18,10 +18,14 @@ export interface JsuFunnelRow {
   purchases: number
   revenue: number
   // Product breakdown from v_webinar_buyers — JSU course (549) vs the rest.
+  // Sales/Revenue/breakdown count ONLY orders placed AFTER the webinar (conversions).
   jsu_course_sales?: number
   jsu_course_revenue?: number
   other_sales?: number
   other_revenue?: number
+  // Pre-webinar customers: orders placed BEFORE the session (funnel entries, not conversions).
+  pre_webinar_count?: number
+  pre_webinar_revenue?: number
   purchase_rate_pct: number | null
   email_sent: number
   email_delivered: number
@@ -130,6 +134,8 @@ interface BackendSession {
   jsu_course_revenue?: number
   other_sales?: number
   other_revenue?: number
+  pre_webinar_count?: number
+  pre_webinar_revenue?: number
 }
 
 interface WebinarBackendResponse {
@@ -217,11 +223,14 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
       attendance_rate_pct: reg > 0 && att > 0 ? Math.round((att / reg) * 100) : null,
       // Sales = registrants of this session with an order; Revenue = sum of amounts.
       purchases: buyersCount, revenue: s.buyers_revenue ?? 0,
-      // Product breakdown: JSU course (549) separate from the rest.
+      // Product breakdown: JSU course (549) separate from the rest (after-webinar only).
       jsu_course_sales:   s.jsu_course_sales   ?? 0,
       jsu_course_revenue: s.jsu_course_revenue ?? 0,
       other_sales:        s.other_sales        ?? 0,
       other_revenue:      s.other_revenue      ?? 0,
+      // Pre-webinar customers (bought before the session) — shown separately, never in Sales.
+      pre_webinar_count:   s.pre_webinar_count   ?? 0,
+      pre_webinar_revenue: s.pre_webinar_revenue ?? 0,
       // NOTE: NOT divided by attendees — attendance is not populated (see below).
       purchase_rate_pct: null,
       email_sent: 0, email_delivered: 0, email_opens: 0, email_clicks: 0,

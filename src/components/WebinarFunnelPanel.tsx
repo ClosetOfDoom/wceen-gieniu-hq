@@ -191,21 +191,32 @@ function SessionRow({ s, attendancePopulated }: {
           ? s.attendance_rate_pct + '%'
           : <span style={{ fontSize: '0.66rem', color: 'var(--muted2)', fontStyle: 'italic' }}>n/p</span>}
       </td>
-      {/* Sales = registrants of this session with an order (v_webinar_buyers).
-          JSU course (549) shown separately — the key efficacy metric. */}
+      {/* Sales = registrants who ordered AFTER this webinar (true conversions).
+          JSU course (549) shown separately — the key efficacy metric.
+          Pre-webinar customers (ordered before) are shown muted, never counted here. */}
       <td style={{ padding: '5px 8px', textAlign: 'right', color: s.purchases > 0 ? 'var(--emerald)' : 'var(--muted2)', fontWeight: s.purchases > 0 ? 700 : 400 }}>
         {s.purchases}
         {(s.jsu_course_sales ?? 0) > 0 && (
-          <span style={{ marginLeft: 4, fontSize: '0.62rem', color: 'var(--gold)' }} title="JSU course sold (549 PLN)">
+          <span style={{ marginLeft: 4, fontSize: '0.62rem', color: 'var(--gold)' }} title="JSU course sold after the webinar (549 PLN)">
             JSU {s.jsu_course_sales}
           </span>
+        )}
+        {(s.pre_webinar_count ?? 0) > 0 && (
+          <div style={{ fontSize: '0.6rem', color: 'var(--muted2)', fontStyle: 'italic' }} title="Pre-webinar customers: ordered BEFORE the webinar — funnel entries, not conversions">
+            +{s.pre_webinar_count} pre
+          </div>
         )}
       </td>
       <td style={{ padding: '5px 8px', textAlign: 'right', color: s.revenue > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
         {s.revenue > 0 ? s.revenue.toFixed(0) + ' PLN' : '—'}
         {(s.jsu_course_revenue ?? 0) > 0 && (
-          <div style={{ fontSize: '0.62rem', color: 'var(--gold)' }} title="JSU course revenue (549 PLN)">
+          <div style={{ fontSize: '0.62rem', color: 'var(--gold)' }} title="JSU course revenue after the webinar (549 PLN)">
             JSU {s.jsu_course_revenue!.toFixed(0)} PLN
+          </div>
+        )}
+        {(s.pre_webinar_revenue ?? 0) > 0 && (
+          <div style={{ fontSize: '0.6rem', color: 'var(--muted2)', fontStyle: 'italic' }} title="Pre-webinar revenue — not attributable to this webinar">
+            {s.pre_webinar_revenue!.toFixed(0)} pre
           </div>
         )}
       </td>
@@ -340,9 +351,14 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
                   <div style={{ color: (sp?.purchases ?? 0) > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
                     Sales: {sp?.purchases ?? 0}{(sp?.revenue ?? 0) > 0 ? ` · ${sp!.revenue.toFixed(0)} PLN` : ''}
                     {(sp?.jsu_course_sales ?? 0) > 0 && (
-                      <span style={{ color: 'var(--gold)' }} title="JSU course (549 PLN)"> · JSU {sp!.jsu_course_sales} ({sp!.jsu_course_revenue!.toFixed(0)} PLN)</span>
+                      <span style={{ color: 'var(--gold)' }} title="JSU course sold after the webinar (549 PLN)"> · JSU {sp!.jsu_course_sales} ({sp!.jsu_course_revenue!.toFixed(0)} PLN)</span>
                     )}
                   </div>
+                  {(sp?.pre_webinar_count ?? 0) > 0 && (
+                    <div style={{ color: 'var(--muted2)', fontStyle: 'italic', fontSize: '0.66rem' }} title="Pre-webinar customers: ordered BEFORE the webinar — funnel entries, not conversions">
+                      Pre-webinar customers: {sp!.pre_webinar_count} · {sp!.pre_webinar_revenue!.toFixed(0)} PLN (not counted as sales)
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -370,9 +386,14 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
                   <div style={{ color: (sp?.purchases ?? 0) > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
                     Sales: {sp?.purchases ?? 0}{(sp?.revenue ?? 0) > 0 ? ` · ${sp!.revenue.toFixed(0)} PLN` : ''}
                     {(sp?.jsu_course_sales ?? 0) > 0 && (
-                      <span style={{ color: 'var(--gold)' }} title="JSU course (549 PLN)"> · JSU {sp!.jsu_course_sales} ({sp!.jsu_course_revenue!.toFixed(0)} PLN)</span>
+                      <span style={{ color: 'var(--gold)' }} title="JSU course sold after the webinar (549 PLN)"> · JSU {sp!.jsu_course_sales} ({sp!.jsu_course_revenue!.toFixed(0)} PLN)</span>
                     )}
                   </div>
+                  {(sp?.pre_webinar_count ?? 0) > 0 && (
+                    <div style={{ color: 'var(--muted2)', fontStyle: 'italic', fontSize: '0.66rem' }} title="Pre-webinar customers: ordered BEFORE the webinar — funnel entries, not conversions">
+                      Pre-webinar customers: {sp!.pre_webinar_count} · {sp!.pre_webinar_revenue!.toFixed(0)} PLN (not counted as sales)
+                    </div>
+                  )}
                 </div>
               )
             })}
