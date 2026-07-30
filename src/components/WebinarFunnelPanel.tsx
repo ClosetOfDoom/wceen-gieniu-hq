@@ -4,7 +4,11 @@ import { pct, fmtPlnFunnel } from '../services/webinarFunnel'
 import { ParticipantJourneyTable } from './ParticipantJourneyTable'
 import type { JsuCommandKey } from '../brain/responses'
 import { normalizeProduct, type ProductTag } from '../lib/webinarProduct'
-import { classifyWebinarBySchedule } from '../lib/webinarSchedule'
+
+// SINGLE SOURCE OF TRUTH: webinar_sessions.product_tag (no session_name parsing).
+function tagOf(s: { product_tag?: string | null }): ProductTag {
+  return normalizeProduct({ product_tag: s.product_tag }).canonicalTag
+}
 
 interface Props {
   summary: JsuFunnelSummary | null
@@ -206,14 +210,11 @@ function SessionRow({ s, attendancePopulated, purchasesMapped }: {
 }
 
 function detectProduct(sessions: JsuFunnelRow[]): ProductTag {
-  const counts: Record<ProductTag, number> = { JSU: 0, JZK: 0, OTHER: 0 }
-  for (const s of sessions) {
-    const p = classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name })
-    counts[p.product_tag]++
-  }
+  const counts: Record<ProductTag, number> = { JSU: 0, JZK: 0, UNKNOWN: 0 }
+  for (const s of sessions) counts[tagOf(s)]++
   if (counts.JZK > counts.JSU) return 'JZK'
   if (counts.JSU > 0) return 'JSU'
-  return 'OTHER'
+  return 'UNKNOWN'
 }
 
 export function WebinarFunnelPanel({ summary, participants, participantsLoading, loading, onCommand, gieniuResponse }: Props) {
@@ -236,21 +237,21 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
   const attendancePopulated = debug?.attendanceStatus === 'populated' || (summary?.totals.attendees ?? 0) > 0
   const purchasesMapped     = debug?.purchaseMappingStatus === 'mapped' || (summary?.totals.purchases ?? 0) > 0
 
-  // Filtered sessions for table view — schedule is primary classifier
+  // Filtered sessions for table view — product_tag is the single source of truth
   const filteredSessions = summary?.sessions.filter(s => {
     if (productFilter === 'ALL') return true
-    const p = classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name })
-    return p.product_tag === productFilter
+    return tagOf(s) === productFilter
   }) ?? []
 
-  // Detect dominant product from all sessions using schedule
+  // Detect dominant product from all sessions (by product_tag)
   const dominantProduct = summary?.sessions.length ? detectProduct(summary.sessions) : 'JSU'
   const productLabel = dominantProduct === 'JZK' ? 'Językozak AI' : 'Jak się uczyć'
   const productSubtitle = dominantProduct === 'JZK' ? 'Language webinar · Tuesday 18:00' : 'Memory webinar · Thursday 18:00'
 
-  // Count products for tab badges — using schedule classification
-  const jsuCount = summary?.sessions.filter(s => classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name }).product_tag === 'JSU').length ?? 0
-  const jzkCount = summary?.sessions.filter(s => classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name }).product_tag === 'JZK').length ?? 0
+  // Count products for tab badges — from product_tag (JSU / JZK / UNKNOWN)
+  const jsuCount     = summary?.sessions.filter(s => tagOf(s) === 'JSU').length ?? 0
+  const jzkCount     = summary?.sessions.filter(s => tagOf(s) === 'JZK').length ?? 0
+  const unknownCount = summary?.sessions.filter(s => tagOf(s) === 'UNKNOWN').length ?? 0
 
   // This-week sessions split by schedule
   const thisWeekSessions = (() => {
@@ -265,8 +266,8 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
       return sd >= weekStart && sd <= today
     }) ?? []
   })()
-  const thisWeekJsu = thisWeekSessions.filter(s => classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name }).product_tag === 'JSU')
-  const thisWeekJzk = thisWeekSessions.filter(s => classifyWebinarBySchedule({ scheduled_at: s.scheduled_at, product_tag: s.product_tag, session_name: s.session_name }).product_tag === 'JZK')
+  const thisWeekJsu = thisWeekSessions.filter(s => tagOf(s) === 'JSU')
+  const thisWeekJzk = thisWeekSessions.filter(s => tagOf(s) === 'JZK')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -371,13 +372,20 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
         </div>
       )}
 
-      {/* Product filter tabs */}
-      {(jsuCount > 0 || jzkCount > 0) && (
+      {/* Product filter tabs — from product_tag (UNKNOWN is its own category) */}
+      {(jsuCount > 0 || jzkCount > 0 || unknownCount > 0) && (
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          {(['ALL', 'JSU', 'JZK'] as const).map(tag => {
-            const count = tag === 'ALL' ? (summary?.sessions.length ?? 0) : tag === 'JSU' ? jsuCount : jzkCount
+          {(['ALL', 'JSU', 'JZK', 'UNKNOWN'] as const).map(tag => {
+            const count = tag === 'ALL' ? (summary?.sessions.length ?? 0)
+              : tag === 'JSU' ? jsuCount
+              : tag === 'JZK' ? jzkCount
+              : unknownCount
             if (tag !== 'ALL' && count === 0) return null
             const isActive = productFilter === tag
+            const label = tag === 'ALL' ? 'All'
+              : tag === 'JSU' ? 'JSU / Memory'
+              : tag === 'JZK' ? 'JZK / Językozak'
+              : 'UNKNOWN'
             return (
               <button
                 key={tag}
@@ -390,7 +398,7 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
                   color: isActive ? 'var(--gold)' : 'var(--muted)',
                 }}
               >
-                {tag === 'ALL' ? 'All' : tag === 'JSU' ? 'JSU / Memory' : 'JZK / Językozak'}
+                {label}
                 {count > 0 && <span style={{ marginLeft: '6px', opacity: 0.6 }}>{count}</span>}
               </button>
             )

@@ -1851,14 +1851,14 @@ export function buildTodayOrdersSpoken(d: OrdersData | null): string {
 
 /** Detect the dominant product tag from the loaded sessions. */
 function detectProductFromSessions(s: JsuFunnelSummary): ProductTag {
-  const counts: Record<ProductTag, number> = { JSU: 0, JZK: 0, OTHER: 0 }
+  const counts: Record<ProductTag, number> = { JSU: 0, JZK: 0, UNKNOWN: 0 }
   for (const sess of s.sessions) {
-    const p = normalizeProduct({ product_tag: sess.product_tag, session_name: sess.session_name })
+    const p = normalizeProduct({ product_tag: sess.product_tag })
     counts[p.canonicalTag]++
   }
   if (counts.JZK > counts.JSU) return 'JZK'
   if (counts.JSU > 0) return 'JSU'
-  return 'OTHER'
+  return 'UNKNOWN'
 }
 
 
