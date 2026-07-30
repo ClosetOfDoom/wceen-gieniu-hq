@@ -158,19 +158,11 @@ function DataDebugBar({ debug }: { debug?: JsuFunnelDebug }) {
   )
 }
 
-function SessionRow({ s, attendancePopulated, purchasesMapped }: {
+function SessionRow({ s, attendancePopulated }: {
   s: JsuFunnelRow
   attendancePopulated: boolean
-  purchasesMapped: boolean
 }) {
-  const bottleneckColor = (() => {
-    if (attendancePopulated && s.attendance_rate_pct !== null && s.attendance_rate_pct < 60) return 'var(--orange)'
-    if (purchasesMapped && s.purchase_rate_pct !== null && s.purchase_rate_pct < 3) return 'var(--amber)'
-    if (s.purchases > 0) return 'var(--emerald)'
-    return 'var(--muted2)'
-  })()
-
-  const product = normalizeProduct({ product_tag: s.product_tag, session_name: s.session_name, scheduled_at: s.scheduled_at })
+  const product = normalizeProduct({ product_tag: s.product_tag })
   const productColor = product.canonicalTag === 'JZK' ? 'var(--teal)' : product.canonicalTag === 'JSU' ? 'var(--gold)' : 'var(--muted2)'
 
   return (
@@ -199,11 +191,23 @@ function SessionRow({ s, attendancePopulated, purchasesMapped }: {
           ? s.attendance_rate_pct + '%'
           : <span style={{ fontSize: '0.66rem', color: 'var(--muted2)', fontStyle: 'italic' }}>n/p</span>}
       </td>
-      <td style={{ padding: '5px 8px', textAlign: 'right', color: bottleneckColor, fontWeight: s.purchases > 0 ? 700 : 400 }}>
-        {purchasesMapped ? s.purchases : <span style={{ fontSize: '0.66rem', color: 'var(--muted2)', fontStyle: 'italic' }}>n/m</span>}
+      {/* Sales = registrants of this session with an order (v_webinar_buyers).
+          JSU course (549) shown separately — the key efficacy metric. */}
+      <td style={{ padding: '5px 8px', textAlign: 'right', color: s.purchases > 0 ? 'var(--emerald)' : 'var(--muted2)', fontWeight: s.purchases > 0 ? 700 : 400 }}>
+        {s.purchases}
+        {(s.jsu_course_sales ?? 0) > 0 && (
+          <span style={{ marginLeft: 4, fontSize: '0.62rem', color: 'var(--gold)' }} title="JSU course sold (549 PLN)">
+            JSU {s.jsu_course_sales}
+          </span>
+        )}
       </td>
       <td style={{ padding: '5px 8px', textAlign: 'right', color: s.revenue > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
         {s.revenue > 0 ? s.revenue.toFixed(0) + ' PLN' : '—'}
+        {(s.jsu_course_revenue ?? 0) > 0 && (
+          <div style={{ fontSize: '0.62rem', color: 'var(--gold)' }} title="JSU course revenue (549 PLN)">
+            JSU {s.jsu_course_revenue!.toFixed(0)} PLN
+          </div>
+        )}
       </td>
     </tr>
   )
@@ -333,9 +337,11 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
                   <div style={{ color: 'var(--muted)' }}>
                     Attendance: {attendancePopulated && sp?.attendee_count > 0 ? sp.attendee_count : <span style={{ fontStyle: 'italic' }}>not populated</span>}
                   </div>
-                  <div style={{ color: purchasesMapped && sp?.purchases > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
-                    Sales: {purchasesMapped ? sp?.purchases : <span style={{ fontStyle: 'italic' }}>not mapped</span>}
-                    {purchasesMapped && sp?.revenue > 0 ? ` · ${sp.revenue.toFixed(0)} PLN` : ''}
+                  <div style={{ color: (sp?.purchases ?? 0) > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
+                    Sales: {sp?.purchases ?? 0}{(sp?.revenue ?? 0) > 0 ? ` · ${sp!.revenue.toFixed(0)} PLN` : ''}
+                    {(sp?.jsu_course_sales ?? 0) > 0 && (
+                      <span style={{ color: 'var(--gold)' }} title="JSU course (549 PLN)"> · JSU {sp!.jsu_course_sales} ({sp!.jsu_course_revenue!.toFixed(0)} PLN)</span>
+                    )}
                   </div>
                 </div>
               )
@@ -361,9 +367,11 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
                   <div style={{ color: 'var(--muted)' }}>
                     Attendance: {attendancePopulated && sp?.attendee_count > 0 ? sp.attendee_count : <span style={{ fontStyle: 'italic' }}>not populated</span>}
                   </div>
-                  <div style={{ color: purchasesMapped && sp?.purchases > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
-                    Sales: {purchasesMapped ? sp?.purchases : <span style={{ fontStyle: 'italic' }}>not mapped</span>}
-                    {purchasesMapped && sp?.revenue > 0 ? ` · ${sp.revenue.toFixed(0)} PLN` : ''}
+                  <div style={{ color: (sp?.purchases ?? 0) > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
+                    Sales: {sp?.purchases ?? 0}{(sp?.revenue ?? 0) > 0 ? ` · ${sp!.revenue.toFixed(0)} PLN` : ''}
+                    {(sp?.jsu_course_sales ?? 0) > 0 && (
+                      <span style={{ color: 'var(--gold)' }} title="JSU course (549 PLN)"> · JSU {sp!.jsu_course_sales} ({sp!.jsu_course_revenue!.toFixed(0)} PLN)</span>
+                    )}
                   </div>
                 </div>
               )
@@ -490,7 +498,6 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
                     key={s.session_id}
                     s={s}
                     attendancePopulated={attendancePopulated}
-                    purchasesMapped={purchasesMapped}
                   />
                 ))}
               </tbody>

@@ -17,6 +17,11 @@ export interface JsuFunnelRow {
   attendance_rate_pct: number | null
   purchases: number
   revenue: number
+  // Product breakdown from v_webinar_buyers — JSU course (549) vs the rest.
+  jsu_course_sales?: number
+  jsu_course_revenue?: number
+  other_sales?: number
+  other_revenue?: number
   purchase_rate_pct: number | null
   email_sent: number
   email_delivered: number
@@ -118,6 +123,13 @@ interface BackendSession {
   scheduled_at?: string
   registered_count?: number
   attendee_count?: number
+  // Buyer aggregates from v_webinar_buyers (attached by webinar-data function)
+  buyers_count?: number
+  buyers_revenue?: number
+  jsu_course_sales?: number
+  jsu_course_revenue?: number
+  other_sales?: number
+  other_revenue?: number
 }
 
 interface WebinarBackendResponse {
@@ -182,8 +194,10 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
   const attendeesFromParticipants = participants.filter(p => p.attended).length
   const attendees = attendeesFromSessions > 0 ? attendeesFromSessions : attendeesFromParticipants
 
-  const purchases = participants.filter(p => p.purchased_at || p.wix_order_id).length
-  const revenue   = participants.reduce((s, p) => s + (p.purchase_value ?? 0), 0)
+  // Sales / Revenue come from v_webinar_buyers (per-session aggregates attached by
+  // the backend), NOT from participants (which carry no purchase data).
+  const purchases = sessions.reduce((s, r) => s + (r.buyers_count ?? 0), 0)
+  const revenue   = sessions.reduce((s, r) => s + (r.buyers_revenue ?? 0), 0)
 
   const hasClickMeetingData = registered > 0 || attendees > 0 || sessions.length > 0
   const attendanceRate = registered > 0 && attendees > 0 ? attendees / registered : null
@@ -191,19 +205,25 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
 
   const syntheticRows: JsuFunnelRow[] = sessions.map(s => {
     const sp  = participants.filter(p => p.session_id === s.id)
-    const spu = sp.filter(p => p.purchased_at || p.wix_order_id)
-    const spr = sp.reduce((acc, p) => acc + (p.purchase_value ?? 0), 0)
     const spa = sp.filter(p => p.attended).length
     const reg = (s.registered_count ?? 0) > 0 ? s.registered_count! : sp.length
     const att = (s.attendee_count   ?? 0) > 0 ? s.attendee_count!   : spa
+    const buyersCount = s.buyers_count ?? 0
     return {
       session_id: s.id, session_name: s.session_name ?? s.id,
       session_date: s.scheduled_at?.slice(0, 10) ?? '', scheduled_at: s.scheduled_at ?? '',
       product_tag: s.product_tag ?? null,
       registered_count: reg, attendee_count: att,
       attendance_rate_pct: reg > 0 && att > 0 ? Math.round((att / reg) * 100) : null,
-      purchases: spu.length, revenue: spr,
-      purchase_rate_pct: att > 0 && spu.length > 0 ? Math.round((spu.length / att) * 100) : null,
+      // Sales = registrants of this session with an order; Revenue = sum of amounts.
+      purchases: buyersCount, revenue: s.buyers_revenue ?? 0,
+      // Product breakdown: JSU course (549) separate from the rest.
+      jsu_course_sales:   s.jsu_course_sales   ?? 0,
+      jsu_course_revenue: s.jsu_course_revenue ?? 0,
+      other_sales:        s.other_sales        ?? 0,
+      other_revenue:      s.other_revenue      ?? 0,
+      // NOTE: NOT divided by attendees — attendance is not populated (see below).
+      purchase_rate_pct: null,
       email_sent: 0, email_delivered: 0, email_opens: 0, email_clicks: 0,
     }
   })

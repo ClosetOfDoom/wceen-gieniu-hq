@@ -121,8 +121,42 @@ export const handler = async (event) => {
     console.error('webinar-data: participants query failed:', participantsError)
   }
 
+  // v_webinar_buyers — session registrants matched to their Wix orders by email.
+  // SINGLE source for Sales / Revenue. The ORDER's product stays canonical-price
+  // based (549 = JSU course) — this view only reports the email join, it does NOT
+  // change order→product mapping.
+  let buyersData  = null
+  let buyersError = null
+  try {
+    buyersData = await queryTable(supabaseUrl, serviceKey, 'v_webinar_buyers', {
+      select: '*',
+      order:  'order_created_at.desc',
+      limit:  5000,
+    })
+  } catch (e) {
+    buyersError = String(e?.message ?? e)
+    console.error('webinar-data: v_webinar_buyers query failed:', buyersError)
+  }
+
   const sessions        = sessionsData        ?? []
   const rawParticipants = participantsData     ?? []
+  const buyers          = buyersData          ?? []
+
+  // Per-session buyer aggregates, keyed by scheduled_at. JSU course = amount 549.
+  const JSU_COURSE_PRICE = 549
+  const buyerAgg    = new Map()   // scheduled_at -> { revenue, jsu_course_*, other_* }
+  const buyerEmails = new Map()   // scheduled_at -> Set(email)
+  for (const r of buyers) {
+    const key = r.scheduled_at
+    const amt = Number(r.amount) || 0
+    const g = buyerAgg.get(key) || { revenue: 0, jsu_course_sales: 0, jsu_course_revenue: 0, other_sales: 0, other_revenue: 0 }
+    g.revenue += amt
+    if (amt === JSU_COURSE_PRICE) { g.jsu_course_sales++; g.jsu_course_revenue += amt }
+    else { g.other_sales++; g.other_revenue += amt }
+    buyerAgg.set(key, g)
+    if (!buyerEmails.has(key)) buyerEmails.set(key, new Set())
+    buyerEmails.get(key).add(String(r.email ?? '').trim().toLowerCase())
+  }
 
   // Compute unique emails before masking
   const uniqueEmails = new Set(
@@ -151,6 +185,7 @@ export const handler = async (event) => {
   // Classify each session by the fixed weekly schedule
   const classifiedSessions = sessions.map(s => {
     const c = classifyBySchedule({ scheduled_at: s.scheduled_at, session_name: s.session_name, product_tag: s.product_tag })
+    const agg = buyerAgg.get(s.scheduled_at)
     return {
       ...s,
       product_tag_schedule: c.product_tag,
@@ -158,6 +193,13 @@ export const handler = async (event) => {
       schedule_reason: c.reason,
       warsaw_weekday: c.warsaw_weekday,
       warsaw_time: c.warsaw_time,
+      // Sales / Revenue from v_webinar_buyers (registrants of this session with an order)
+      buyers_count:        buyerEmails.get(s.scheduled_at)?.size ?? 0,
+      buyers_revenue:      agg?.revenue ?? 0,
+      jsu_course_sales:    agg?.jsu_course_sales ?? 0,
+      jsu_course_revenue:  agg?.jsu_course_revenue ?? 0,
+      other_sales:         agg?.other_sales ?? 0,
+      other_revenue:       agg?.other_revenue ?? 0,
     }
   })
 
@@ -190,10 +232,29 @@ export const handler = async (event) => {
       unknownSessionsCount: unknownSessions.length,
       sessions:           classifiedSessions,
       participants,
+      // v_webinar_buyers rows (masked email) — the registrant⋈order join.
+      webinarBuyers: buyers.map(r => ({
+        session_name:     r.session_name,
+        product_tag:      r.product_tag,
+        scheduled_at:     r.scheduled_at,
+        email_masked:     maskEmail(String(r.email ?? '')),
+        product_name_raw: r.product_name_raw,
+        amount:           Number(r.amount) || 0,
+        is_jsu_course:    (Number(r.amount) || 0) === JSU_COURSE_PRICE,
+        order_created_at: r.order_created_at,
+      })),
+      webinarBuyersTotals: {
+        rows:               buyers.length,
+        distinctBuyers:     new Set(buyers.map(r => String(r.email ?? '').trim().toLowerCase())).size,
+        revenue:            buyers.reduce((s, r) => s + (Number(r.amount) || 0), 0),
+        jsuCourseSales:     buyers.filter(r => (Number(r.amount) || 0) === JSU_COURSE_PRICE).length,
+        jsuCourseRevenue:   buyers.filter(r => (Number(r.amount) || 0) === JSU_COURSE_PRICE).reduce((s, r) => s + (Number(r.amount) || 0), 0),
+      },
       debug: {
         source:            'netlify-function-service-role',
         sessionsError,
         participantsError,
+        buyersError,
         scheduleRule:      'Thu 18:00 Warsaw=JSU, Tue 18:00 Warsaw=JZK',
       },
     }),

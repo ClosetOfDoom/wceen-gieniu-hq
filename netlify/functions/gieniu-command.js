@@ -1225,6 +1225,68 @@ function renderCreativeAnalytics(rows30, today) {
   return L.join('\n')
 }
 
+// ── Webinar buyers (v_webinar_buyers, service-role) ───────────────────────────
+
+async function fetchWebinarBuyers(supabaseUrl, serviceKey) {
+  if (!supabaseUrl || !serviceKey) return []
+  try {
+    const url = new URL(`${supabaseUrl}/rest/v1/v_webinar_buyers`)
+    url.searchParams.set('select', '*')
+    url.searchParams.set('order', 'order_created_at.desc')
+    url.searchParams.set('limit', '2000')
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' },
+    })
+    if (!res.ok) return []
+    return await res.json()
+  } catch { return [] }
+}
+
+function maskEmail2(e) {
+  const s = String(e ?? '')
+  const i = s.indexOf('@')
+  if (i < 1) return '***'
+  return s.slice(0, Math.min(2, i)) + '***' + s.slice(i)
+}
+
+// Render the WEBINAR BUYERS block: who bought (esp. the JSU 549 course), when, from
+// which session — with the HARD LIMITS about attendance / timing being unknown.
+function renderWebinarBuyers(rows) {
+  const L = []
+  L.push('--- WEBINAR BUYERS (v_webinar_buyers) — registrants matched to Wix orders by EMAIL ---')
+  L.push('WHAT THIS IS: a webinar registrant whose e-mail also has a Wix order. It reports the')
+  L.push('  e-mail JOIN only. The order\'s product stays canonical-price based (549 = JSU course);')
+  L.push('  this view does NOT change order→product mapping.')
+  L.push('HARD LIMITS — you MUST state these plainly whenever the question touches them:')
+  L.push('  • registered_at is EMPTY on EVERY row → you do NOT know when they registered, whether')
+  L.push('    they ATTENDED the webinar, or how long AFTER the webinar they bought.')
+  L.push('  • the attendance/frequency table is EMPTY → show-up / attendance is NOT populated.')
+  L.push('  You MAY say: this e-mail is a registrant of session X and placed order Y on date Z.')
+  L.push('  You must NOT claim they attended, nor infer time-to-purchase.')
+  if (!rows || rows.length === 0) {
+    L.push('DATA: 0 rows — no registrant⋈order matches at present.')
+    return L.join('\n')
+  }
+  const JSU = 549
+  const jsu = rows.filter(r => Number(r.amount) === JSU)
+  const distinct = new Set(rows.map(r => String(r.email ?? '').trim().toLowerCase())).size
+  const revenue = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  L.push(`TOTALS: ${rows.length} buyer-order rows | ${distinct} distinct buyers | revenue ${revenue.toFixed(2)} PLN | JSU COURSE (549) sales: ${jsu.length}`)
+  L.push('')
+  L.push('JSU COURSE (549 PLN) buyers — the ONLY metric that proves a webinar sold the course:')
+  if (jsu.length === 0) L.push('  (none in the data)')
+  for (const r of jsu) {
+    L.push(`  • ${maskEmail2(r.email)} — bought the JSU course (549 PLN) on ${r.order_created_at}; registrant of session "${r.session_name}" (${r.scheduled_at}, tag ${r.product_tag})`)
+  }
+  L.push('')
+  L.push('All buyer rows (email | amount | product_name_raw | order_created_at | session):')
+  for (const r of rows.slice(0, 60)) {
+    const isJsu = Number(r.amount) === JSU
+    L.push(`  ${maskEmail2(r.email)} | ${(Number(r.amount) || 0).toFixed(2)} PLN${isJsu ? ' [JSU COURSE 549]' : ''} | "${r.product_name_raw}" | ${r.order_created_at} | "${r.session_name}" ${r.scheduled_at}`)
+  }
+  return L.join('\n')
+}
+
 // ── LLM system prompt ─────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are STANLEY — the personal operations AI of WCEEN, reporting directly to Lifidi, sir.
@@ -1343,6 +1405,16 @@ CREATIVE ANSWER FORMAT — for EACH creative give exactly three things:
   <VERDICT> — <the ONE metric that justifies it, with its value> — <ONE concrete action>
 Then end with ONE campaign-level recommendation. No vague filler like "monitor the
 results" or "keep an eye on it" — every line must name a metric and an action.
+
+━━━ WEBINAR BUYERS (who bought the course) ━━━
+For "who bought the JSU course / who bought after the webinar / did webinar X sell":
+use the WEBINAR BUYERS block. It is a registrant⋈order join by e-mail. You MAY state
+who bought the JSU course (549), when (order_created_at), and which session they are a
+registrant of. You MUST add, plainly, that you do NOT know whether that person attended
+the webinar or how long after it they bought — registered_at is empty on every row and
+the attendance table is empty. Never assert attendance or time-to-purchase. The JSU
+course (549) is the only sale that proves a webinar's efficacy; PP/other orders by a
+registrant are entry-product sales, not course sales.
 
 ━━━ NO EMPTY REFUSAL ━━━
 "those particulars are not available to me" (or any refusal) is allowed ONLY when you
@@ -1505,6 +1577,11 @@ exports.handler = async (event) => {
     daysAgoStr(today, 29),
     today,
   )
+  // Webinar buyers (v_webinar_buyers) — for "who bought the JSU course and when".
+  const webinarBuyersPromise = fetchWebinarBuyers(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+  )
 
   // 1 — Detect intent
   const { intent, confidence, matchedTerms } = detectIntent(message)
@@ -1618,7 +1695,8 @@ exports.handler = async (event) => {
   // Await service-role per-ad data (fetched in parallel with intent detection above)
   const serverAds = await serverAdsPromise
   const adRows30 = await adRows30Promise
-  const creativeAnalyticsText = renderCreativeAnalytics(adRows30, today)
+  const webinarBuyers = await webinarBuyersPromise
+  const creativeAnalyticsText = `${renderCreativeAnalytics(adRows30, today)}\n\n${renderWebinarBuyers(webinarBuyers)}`
 
   // Build LLM user message with context. When we have a deterministic answer for
   // this intent, hand the LLM those EXACT numbers as a verified anchor and ask it
