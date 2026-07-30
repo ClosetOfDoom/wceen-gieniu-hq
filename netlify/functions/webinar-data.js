@@ -102,7 +102,8 @@ export const handler = async (event) => {
     sessionsData = await queryTable(supabaseUrl, serviceKey, 'webinar_sessions', {
       select: '*',
       order:  'scheduled_at.desc',
-      limit:  50,
+      limit:  1000,   // fetch ALL sessions — limit:50 dropped the 12 oldest, so the
+                      // panel's product_tag counts were short (35/13/2 vs 38/16/8).
     })
   } catch (e) {
     sessionsError = String(e?.message ?? e)
@@ -160,8 +161,11 @@ export const handler = async (event) => {
     }
   })
 
-  const jsuSessions = classifiedSessions.filter(s => s.product_tag_schedule === 'JSU')
-  const jzkSessions = classifiedSessions.filter(s => s.product_tag_schedule === 'JZK')
+  // Counts follow the DB product_tag (single source of truth), NOT name/schedule.
+  const canonTag = (s) => { const t = String(s.product_tag ?? '').trim().toUpperCase(); return t === 'JSU' || t === 'JZK' ? t : 'UNKNOWN' }
+  const jsuSessions     = classifiedSessions.filter(s => canonTag(s) === 'JSU')
+  const jzkSessions     = classifiedSessions.filter(s => canonTag(s) === 'JZK')
+  const unknownSessions = classifiedSessions.filter(s => canonTag(s) === 'UNKNOWN')
 
   console.log('webinar-data:', {
     sessions: sessions.length,
@@ -183,6 +187,7 @@ export const handler = async (event) => {
       uniqueEmailsCount:  uniqueEmails.size,
       jsuSessionsCount:   jsuSessions.length,
       jzkSessionsCount:   jzkSessions.length,
+      unknownSessionsCount: unknownSessions.length,
       sessions:           classifiedSessions,
       participants,
       debug: {
