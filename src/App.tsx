@@ -62,6 +62,8 @@ import {
 import { isSpeaking as sttIsStanleySpeaking, onSpeechChange } from './lib/speechGate'
 
 import { RangeSwitcher } from './components/RangeSwitcher'
+import { KpiDetailChart } from './components/KpiDetailChart'
+import { KPI_METRICS } from './lib/kpiMetrics'
 import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from './lib/timeRange'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -711,6 +713,8 @@ export default function App() {
   const { theme, toggleTheme } = useTheme()
   const [section, setSection] = useState<NavSection>('command-center')
   const [range, setRange] = useState<TimeRange>('today')   // panel-wide time range
+  // Which KPI card is expanded into a time-series / breakdown chart below the grid.
+  const [expandedMetric, setExpandedMetric] = useState<string | null>(null)
 
   // Subtle, SILENT mood accent for result queries — information always comes first;
   // this is a quiet visual background signal, never audio, never a full-screen event.
@@ -1371,6 +1375,16 @@ export default function App() {
   const rangeRows    = monthTrend.length > 0 ? monthTrend : trend
   const displayPerf  = resolveRangePerf(range, perf, rangeRows)
   const rangeSub     = rangeSubLabel(range)
+
+  // Interactive KPI cards — per-day series for the selected range. For 'today' the
+  // live view row isn't in rangeRows, so fold it in; the detail chart filters to
+  // [from,to] itself. Toggling a card open/closed drives expandedMetric.
+  const { from: rangeFrom, to: rangeTo } = rangeDates(range)
+  const seriesRows: DailyPerformance[] = perf && !rangeRows.some(r => r.date === perf.date)
+    ? [perf, ...rangeRows]
+    : rangeRows
+  const activeMetric = expandedMetric ? (KPI_METRICS[expandedMetric] ?? null) : null
+  const toggleMetric = (id: string) => setExpandedMetric(m => (m === id ? null : id))
   const isToday      = range === 'today'
   const perfIsStale  = isToday && !perf && trend.length > 0
   const cpaHigh      = displayPerf?.real_cpa != null && displayPerf.real_cpa > 50
@@ -1458,9 +1472,9 @@ export default function App() {
                   )}
                   {/* Row 1: core metrics + profit */}
                   <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                    <KPICard label="Wix Orders" value={fmtNum(displayPerf?.wix_orders)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
-                    <KPICard label="Wix Revenue" value={fmtPln(displayPerf?.wix_revenue)} accent sublabel={perfIsStale ? trend[0]?.date : undefined} />
-                    <KPICard label="Ad Spend" value={fmtPln(displayPerf?.meta_spend)} sublabel={perfIsStale ? trend[0]?.date : undefined} />
+                    <KPICard label="Wix Orders" value={fmtNum(displayPerf?.wix_orders)} sublabel={perfIsStale ? trend[0]?.date : undefined} onClick={() => toggleMetric('wix_orders')} active={expandedMetric === 'wix_orders'} />
+                    <KPICard label="Wix Revenue" value={fmtPln(displayPerf?.wix_revenue)} accent sublabel={perfIsStale ? trend[0]?.date : undefined} onClick={() => toggleMetric('wix_revenue')} active={expandedMetric === 'wix_revenue'} />
+                    <KPICard label="Ad Spend" value={fmtPln(displayPerf?.meta_spend)} sublabel={perfIsStale ? trend[0]?.date : undefined} onClick={() => toggleMetric('meta_spend')} active={expandedMetric === 'meta_spend'} />
                     <KPICard
                       label="Est. Profit"
                       value={profitEst != null ? fmtPln(profitEst) : '—'}
@@ -1468,9 +1482,11 @@ export default function App() {
                       warning={profitWarning}
                       danger={profitDanger}
                       sublabel="Margin − ad spend"
+                      onClick={() => toggleMetric('est_profit')}
+                      active={expandedMetric === 'est_profit'}
                     />
-                    <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Meta spend / Wix orders" />
-                    <KPICard label="Real ROAS" value={fmtRoas(displayPerf?.real_roas)} sublabel="Wix revenue / Meta spend" />
+                    <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Meta spend / Wix orders" onClick={() => toggleMetric('real_cpa')} active={expandedMetric === 'real_cpa'} />
+                    <KPICard label="Real ROAS" value={fmtRoas(displayPerf?.real_roas)} sublabel="Wix revenue / Meta spend" onClick={() => toggleMetric('real_roas')} active={expandedMetric === 'real_roas'} />
                   </div>
 
                   {/* Goal progress bars — KPI realization vs business targets */}
@@ -1518,6 +1534,8 @@ export default function App() {
                       label="Margin Before Ads"
                       value={profitSummary ? fmtPln(profitSummary.marginBeforeAds) : '—'}
                       sublabel="Known contribution margin"
+                      onClick={() => toggleMetric('margin_before_ads')}
+                      active={expandedMetric === 'margin_before_ads'}
                     />
                     <KPICard
                       label="Profit / Order"
@@ -1525,35 +1543,47 @@ export default function App() {
                       positive={profitPositive}
                       danger={profitDanger}
                       sublabel="After ad spend"
+                      onClick={() => toggleMetric('profit_per_order')}
+                      active={expandedMetric === 'profit_per_order'}
                     />
                     <KPICard
                       label="True CPA"
                       value={profitSummary?.realCpa != null ? fmtPln(profitSummary.realCpa) : '—'}
                       warning={profitSummary?.realCpa != null && profitSummary.realCpa > 50}
                       sublabel="Ad spend ÷ paid orders"
+                      onClick={() => toggleMetric('true_cpa')}
+                      active={expandedMetric === 'true_cpa'}
                     />
                     <KPICard
                       label="Margin ROAS"
                       value={profitSummary?.realRoas != null ? `${profitSummary.realRoas.toFixed(2)}×` : '—'}
                       sublabel="Revenue ÷ ad spend"
+                      onClick={() => toggleMetric('margin_roas')}
+                      active={expandedMetric === 'margin_roas'}
                     />
                     <KPICard
                       label="Unmapped Revenue"
                       value={profitData?.ok ? fmtPln(profitData.unknownRevenue) : '—'}
                       warning={hasUnknownRevenue}
                       sublabel={hasUnknownRevenue ? 'Needs margin mapping' : 'All products mapped'}
+                      onClick={() => toggleMetric('unmapped_rev')}
+                      active={expandedMetric === 'unmapped_rev'}
                     />
                     <KPICard
                       label="Ambiguous Rev."
                       value={profitData?.ok ? fmtPln(ambiguousRev) : '—'}
                       warning={hasAmbiguous}
                       sublabel={hasAmbiguous ? `${profitData?.ambiguousOrdersCount ?? 0} orders · min. margin ${fmtPln(ambiguousMinMar)}` : 'No ambiguous orders'}
+                      onClick={() => toggleMetric('ambiguous_rev')}
+                      active={expandedMetric === 'ambiguous_rev'}
                     />
                     <KPICard
                       label="Unknown-margin Rev."
                       value={profitData?.ok ? fmtPln(unknownMarginRev) : '—'}
                       warning={hasUnknownMargin}
                       sublabel={hasUnknownMargin ? `WSZTP — marża nieznana (${profitData?.unknownMarginOrdersCount ?? 0} orders)` : 'None'}
+                      onClick={() => toggleMetric('unknown_margin_rev')}
+                      active={expandedMetric === 'unknown_margin_rev'}
                     />
                   </div>
 
@@ -1569,15 +1599,29 @@ export default function App() {
                     const cpm  = totalImpressions > 0 ? totalSpend / totalImpressions * 1000 : null
                     return (
                       <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
-                        <KPICard label="CTR" value={fmtPct(ctr)} sublabel="Link clicks / impressions" />
-                        <KPICard label="CPC" value={fmtPln(cpc)} sublabel="Spend / clicks" />
-                        <KPICard label="CPM" value={fmtPln(cpm)} sublabel="Spend / 1 000 impr." />
-                        <KPICard label="Total Clicks" value={fmtNum(totalClicks)} dim sublabel="All Meta campaigns" />
-                        <KPICard label="Impressions" value={fmtNum(totalImpressions)} dim sublabel="All Meta campaigns" />
-                        <KPICard label="Meta Attr." value={fmtNum(displayPerf.meta_purchases ?? 0)} dim sublabel="Meta-reported purchases" />
+                        <KPICard label="CTR" value={fmtPct(ctr)} sublabel="Link clicks / impressions" onClick={() => toggleMetric('ctr')} active={expandedMetric === 'ctr'} />
+                        <KPICard label="CPC" value={fmtPln(cpc)} sublabel="Spend / clicks" onClick={() => toggleMetric('cpc')} active={expandedMetric === 'cpc'} />
+                        <KPICard label="CPM" value={fmtPln(cpm)} sublabel="Spend / 1 000 impr." onClick={() => toggleMetric('cpm')} active={expandedMetric === 'cpm'} />
+                        <KPICard label="Total Clicks" value={fmtNum(totalClicks)} dim sublabel="All Meta campaigns" onClick={() => toggleMetric('clicks')} active={expandedMetric === 'clicks'} />
+                        <KPICard label="Impressions" value={fmtNum(totalImpressions)} dim sublabel="All Meta campaigns" onClick={() => toggleMetric('impressions')} active={expandedMetric === 'impressions'} />
+                        <KPICard label="Meta Attr." value={fmtNum(displayPerf.meta_purchases ?? 0)} dim sublabel="Meta-reported purchases" onClick={() => toggleMetric('meta_attr')} active={expandedMetric === 'meta_attr'} />
                       </div>
                     )
                   })()}
+
+                  {/* Interactive KPI detail — expands below the card grids for the clicked
+                      metric, in the current range. ≥2-day ranges → per-day time series
+                      (each day from its own components); <2 days → per-campaign breakdown. */}
+                  {activeMetric && (
+                    <KpiDetailChart
+                      metric={activeMetric}
+                      from={rangeFrom}
+                      to={rangeTo}
+                      dailyRows={seriesRows}
+                      campaignRows={campaignRows}
+                      onClose={() => setExpandedMetric(null)}
+                    />
+                  )}
 
                   {/* Profit data warnings — today-scoped like the profit endpoint */}
                   {isToday && profitMismatch && (

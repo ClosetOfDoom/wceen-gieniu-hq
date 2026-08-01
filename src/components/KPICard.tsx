@@ -9,6 +9,19 @@ interface Props {
   danger?: boolean
   dim?: boolean
   sublabel?: string
+  onClick?: () => void
+  active?: boolean
+}
+
+// Shrink long values so they never overflow the fixed-width card. Length-based and
+// deterministic — a big PLN value like "123,456.78 PLN" gets a smaller font than "12".
+function valueFontSize(value: string): string {
+  const len = value.length
+  if (len <= 6)  return 'clamp(1.9rem, 2.7vw, 2.7rem)'
+  if (len <= 9)  return 'clamp(1.55rem, 2.2vw, 2.15rem)'
+  if (len <= 12) return 'clamp(1.3rem, 1.8vw, 1.75rem)'
+  if (len <= 15) return 'clamp(1.1rem, 1.5vw, 1.45rem)'
+  return 'clamp(0.95rem, 1.3vw, 1.25rem)'
 }
 
 // ── AnimatedNumber ────────────────────────────────────────────────────────────
@@ -107,7 +120,7 @@ function CornerOrnament({ pos }: { pos: 'tl' | 'tr' | 'bl' | 'br' }) {
 
 // ── KPICard ────────────────────────────────────────────────────────────────────
 
-export function KPICard({ label, value, accent, warning, positive, danger, dim, sublabel }: Props) {
+export function KPICard({ label, value, accent, warning, positive, danger, dim, sublabel, onClick, active }: Props) {
   const valueColor = danger
     ? '#ef4444'
     : warning
@@ -139,19 +152,28 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
         : 'linear-gradient(90deg, var(--gold), transparent)'
 
   const isAccentVariant = accent || warning || positive || danger
+  const clickable = !!onClick
 
   return (
     <div
       className="kpi-card panel-illuminate"
+      onClick={onClick}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick!() } } : undefined}
+      aria-pressed={clickable ? !!active : undefined}
       style={{
-        background: 'var(--surface)',
-        border: `1px solid ${borderColor}`,
+        background: active ? 'var(--surface2)' : 'var(--surface)',
+        border: `1px solid ${active ? 'var(--border-gold)' : borderColor}`,
         borderRadius: '4px',
-        padding: '20px 24px',
+        padding: '20px 22px',
         minWidth: '140px',
         flex: '1 1 140px',
         position: 'relative',
         overflow: 'hidden',
+        cursor: clickable ? 'pointer' : undefined,
+        boxShadow: active ? '0 0 0 1px var(--border-gold), 0 0 14px var(--glow-gold)' : undefined,
+        transition: 'box-shadow 0.15s, border-color 0.15s, background 0.15s',
       }}
     >
       {/* Corner ornaments */}
@@ -181,17 +203,27 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
         textTransform: 'uppercase',
         letterSpacing: '0.09em',
         marginBottom: '10px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
       }}>
         {label}
+        {clickable && (
+          <span aria-hidden="true" style={{ color: active ? 'var(--gold)' : 'var(--muted2)', fontSize: '0.7rem', transition: 'color 0.15s' }}>
+            {active ? '▾' : '▸'}
+          </span>
+        )}
       </div>
       <div className="kpi-value" style={{
-        fontSize: 'clamp(2.1rem, 3vw, 2.9rem)',
+        fontSize: valueFontSize(value),
         fontWeight: 700,
         color: valueColor,
         fontVariantNumeric: 'tabular-nums',
         lineHeight: 1.1,
         fontFamily: 'var(--font-mono)',
         letterSpacing: '-0.01em',
+        whiteSpace: 'nowrap',
+        maxWidth: '100%',
       }}>
         <AnimatedNumber value={value} />
       </div>

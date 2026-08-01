@@ -265,14 +265,13 @@ button:disabled {
     gap: 8px !important;
   }
 
-  /* KPI cards: tighter padding + larger value font on mobile */
+  /* KPI cards: tighter padding on mobile. Value font-size is set inline per value
+     length (see KPICard.valueFontSize) so long numbers shrink to fit — no override
+     here, otherwise a fixed size would clip long values inside the 2-col grid. */
   .kpi-card {
-    padding: 14px 14px !important;
+    padding: 14px 12px !important;
     min-width: 0 !important;
     flex: unset !important;
-  }
-  .kpi-card .kpi-value {
-    font-size: clamp(1.4rem, 5vw, 2.0rem) !important;
   }
 
   /* GIENIU panel header section tight on mobile */

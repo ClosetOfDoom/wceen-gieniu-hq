@@ -28,11 +28,23 @@ export function rangeDates(range: TimeRange): { from: string; to: string } {
 }
 
 // Human sublabel of the resolved period; today/month flagged as still in progress.
+// MONTH is calendar-to-date, so on the 1st it legitimately spans a single day — we
+// surface "miesiąc do dziś: dzień D/N" so that isn't mistaken for a bug.
 export function rangeSubLabel(range: TimeRange): string {
   const { from, to } = rangeDates(range)
   if (range === 'today')     return `${to} · w toku`
   if (range === 'yesterday') return to
   if (range === 'week')      return `${from} → ${to} · 7 pełnych dni`
-  if (range === 'month')     return `${from} → ${to} · w toku`
+  if (range === 'month') {
+    const day  = parseInt(warsawToday().slice(8, 10), 10)
+    const days = daysInWarsawMonth()
+    return `${from} → ${to} · miesiąc do dziś: dzień ${day}/${days}`
+  }
   return `${from} → ${to}`
+}
+
+// Number of days in the current Warsaw calendar month (28/29/30/31).
+function daysInWarsawMonth(): number {
+  const [y, m] = warsawToday().split('-').map(Number)
+  return new Date(Date.UTC(y, m, 0)).getUTCDate()   // day 0 of next month = last day of this
 }
