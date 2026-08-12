@@ -4,6 +4,9 @@
 // Body: { message, context }
 // Returns: { answerText, speechText, intent, confidence, dataSourcesUsed, warnings, llmUsed, llmProvider }
 
+// Funding radar snapshot (same data as src/data/funding.ts, copied from dashboard.html).
+const FUNDING_RADAR = require('./_funding.json')
+
 // ── Intent detection (mirrors src/brain/intentRouter.ts) ─────────────────────
 
 function normalizeQuery(s) {
@@ -1380,6 +1383,39 @@ function renderWebinarRegistrants(sessions, participants, buyers) {
   return L.join('\n')
 }
 
+// Render the FUNDING RADAR block for the LLM. The whole table goes in, so Stanley can
+// answer "what to apply for now" / "what needs own contribution" — always with verdict,
+// amount and verified status, and NEVER inventing programmes outside this list.
+function renderFundingRadar(todayISO) {
+  const { DATA, PATHS } = FUNDING_RADAR
+  const L = []
+  L.push('--- FUNDING RADAR (13 opportunities — the ONLY funding source of truth) ---')
+  L.push('RULES: Every funding claim MUST come from THIS list. NEVER invent a programme,')
+  L.push('  amount, deadline or funder that is not here. If asked about a programme not in')
+  L.push('  this list, say plainly it is NOT in the radar. Always state the verdict')
+  L.push('  (GO/MAYBE/SKIP), the amount, and whether the item is verified.')
+  L.push('  verify=true => UNVERIFIED (say so). "own" = required own contribution.')
+  L.push('  A hard "deadline" (YYYY-MM-DD) is the ONLY date to reason about; "timing" is')
+  L.push('  descriptive text — quote it literally, never compute days from it. today=' + todayISO)
+  const amt = (o) => {
+    if (o.amtNote && o.amtMin == null && o.amtMax == null) return o.amtNote
+    if (o.amtMin != null && o.amtMax != null) return `${o.amtMin}–${o.amtMax} zł`
+    if (o.amtMax != null) return `do ${o.amtMax} zł`
+    return o.amtNote || 'kwota n/d'
+  }
+  for (const o of DATA) {
+    const past = o.deadline ? (Date.parse(o.deadline + 'T00:00:00Z') < Date.parse(todayISO + 'T00:00:00Z')) : false
+    L.push('')
+    L.push(`[${o.verdict}]${o.verify ? ' [UNVERIFIED]' : ''}${past ? ' [PAST DEADLINE]' : ''} ${o.ttl} — ${o.funder}`)
+    L.push(`  paths: ${o.paths.map(p => PATHS[p] || p).join(', ')} | region: ${o.region} | type: ${o.type}`)
+    L.push(`  amount: ${amt(o)} | own contribution: ${o.own}`)
+    L.push(`  deadline: ${o.deadline ? o.deadline + (past ? ' (PAST)' : '') : 'none (hard)'} | timing (literal, do not parse): "${o.timing}"`)
+    L.push(`  why: ${o.why}`)
+    L.push(`  entry: ${o.entry}`)
+  }
+  return L.join('\n')
+}
+
 // ── LLM system prompt ─────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are STANLEY — the personal operations AI of WCEEN, reporting directly to Lifidi, sir.
@@ -1531,6 +1567,16 @@ You MUST state plainly that ATTENDANCE IS UNKNOWN — webinar_attendance is empt
 do not know who actually attended; never claim someone attended or was absent. Also note
 that registration time is not recorded (registered_at is null). Thursday 18:00 = JSU,
 Tuesday 18:00 = JZK. If a session isn't in the data, say so — do not invent registrants.
+
+━━━ FUNDING RADAR (grants / financing) ━━━
+For "what should we apply for first / now", "what needs own contribution", "which grants
+fit", etc.: use ONLY the FUNDING RADAR block. For every item you mention, give its VERDICT
+(GO/MAYBE/SKIP), its AMOUNT, and whether it is VERIFIED (say "unverified" for verify=true).
+Lead with GO items for "apply now". For "own contribution", read the "own contribution"
+field literally. A hard "deadline" is the only date to reason about; "timing" is
+descriptive — quote it verbatim, never compute days-left from it, and flag PAST-DEADLINE
+items as such. ABSOLUTE: never invent a programme, amount, deadline or funder outside this
+list. If asked about a programme that is not in the radar, say plainly it is not in the radar.
 
 ━━━ NO EMPTY REFUSAL ━━━
 "those particulars are not available to me" (or any refusal) is allowed ONLY when you
@@ -1832,7 +1878,7 @@ exports.handler = async (event) => {
   const adRows30 = await adRows30Promise
   const webinarBuyers = await webinarBuyersPromise
   const webinarReg = await webinarRegistrantsPromise
-  const creativeAnalyticsText = `${renderCreativeAnalytics(adRows30, today)}\n\n${renderWebinarBuyers(webinarBuyers)}\n\n${renderWebinarRegistrants(webinarReg.sessions, webinarReg.participants, webinarBuyers)}`
+  const creativeAnalyticsText = `${renderCreativeAnalytics(adRows30, today)}\n\n${renderWebinarBuyers(webinarBuyers)}\n\n${renderWebinarRegistrants(webinarReg.sessions, webinarReg.participants, webinarBuyers)}\n\n${renderFundingRadar(today)}`
 
   // Build LLM user message with context. When we have a deterministic answer for
   // this intent, hand the LLM those EXACT numbers as a verified anchor and ask it

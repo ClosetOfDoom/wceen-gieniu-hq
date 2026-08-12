@@ -63,6 +63,7 @@ import { isSpeaking as sttIsStanleySpeaking, onSpeechChange } from './lib/speech
 
 import { RangeSwitcher } from './components/RangeSwitcher'
 import { KpiDetailChart } from './components/KpiDetailChart'
+import { FundingPanel } from './components/FundingPanel'
 import { KPI_METRICS } from './lib/kpiMetrics'
 import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from './lib/timeRange'
 
@@ -131,6 +132,7 @@ type NavSection =
   | 'command-center'
   | 'campaigns'
   | 'webinars'
+  | 'funding'
   | 'automation'
   | 'diagnostics'
 
@@ -159,6 +161,7 @@ const NAV_ITEMS: { key: NavSection; icon: string; label: string }[] = [
   { key: 'command-center', icon: '⚔',  label: 'Command Center' },
   { key: 'campaigns',      icon: '📜', label: 'Campaigns'       },
   { key: 'webinars',       icon: '🎙', label: 'Webinars'        },
+  { key: 'funding',        icon: '🪙', label: 'Funding'         },
   { key: 'automation',     icon: '⚙',  label: 'Sync / Automation' },
   { key: 'diagnostics',    icon: '🔬', label: 'Diagnostics'     },
 ]
@@ -232,6 +235,7 @@ const MOBILE_NAV_ITEMS: { key: NavSection; icon: string; label: string }[] = [
   { key: 'command-center', icon: '⚔',  label: 'Home'       },
   { key: 'campaigns',      icon: '📜', label: 'Campaigns'  },
   { key: 'webinars',       icon: '🎙', label: 'Webinars'   },
+  { key: 'funding',        icon: '🪙', label: 'Funding'    },
   { key: 'automation',     icon: '⚙',  label: 'Sync'       },
   { key: 'diagnostics',    icon: '🔬', label: 'Status'     },
 ]
@@ -1717,6 +1721,13 @@ export default function App() {
                 onCommand={handleJsuCommand}
                 gieniuResponse=""
               />
+            </div>
+          )}
+
+          {/* ── FUNDING ───────────────────────────────────────────── */}
+          {section === 'funding' && (
+            <div className="panel-illuminate card">
+              <FundingPanel />
             </div>
           )}
 
