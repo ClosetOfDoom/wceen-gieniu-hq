@@ -1306,6 +1306,76 @@ function renderWebinarBuyers(rows) {
   return L.join('\n')
 }
 
+// Fetch webinar_sessions + webinar_participants (service role) for the per-session
+// registrant list — so Stanley can say WHO registered for a given webinar.
+async function fetchWebinarRegistrantsData(supabaseUrl, serviceKey) {
+  if (!supabaseUrl || !serviceKey) return { sessions: [], participants: [] }
+  const q = async (table, params) => {
+    const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v))
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' } })
+    if (!res.ok) return []
+    return await res.json()
+  }
+  try {
+    const [sessions, participants] = await Promise.all([
+      q('webinar_sessions', { select: 'id,session_name,scheduled_at,product_tag', order: 'scheduled_at.desc', limit: 1000 }),
+      q('webinar_participants', { select: 'id,session_id,email,registered_at', limit: 5000 }),
+    ])
+    return { sessions: sessions ?? [], participants: participants ?? [] }
+  } catch { return { sessions: [], participants: [] } }
+}
+
+// Render the per-session REGISTRANT list. Joins participants→session and marks who
+// bought (from v_webinar_buyers, before/after phase). States plainly that attendance
+// is unknown while webinar_attendance is empty and registered_at is null everywhere.
+function renderWebinarRegistrants(sessions, participants, buyers) {
+  const L = []
+  L.push('--- WEBINAR REGISTRANTS PER SESSION (webinar_participants ⋈ webinar_sessions) ---')
+  L.push('Use this to answer "who registered for the <day> webinar and who of them bought".')
+  L.push('HARD LIMITS you MUST state when relevant:')
+  L.push('  • ATTENDANCE IS UNKNOWN: webinar_attendance is empty, so you do NOT know who')
+  L.push('    actually attended any webinar. Never say someone attended or was absent.')
+  L.push('  • registered_at is NULL on every webinar_participants row → you do NOT know the')
+  L.push('    exact registration time. Say "registration time not recorded" if asked.')
+  L.push('  • "bought" = an order joined by e-mail (v_webinar_buyers). phase after = bought')
+  L.push('    AT/AFTER the webinar (conversion); phase before = pre-webinar customer, NOT a result.')
+  if (!sessions.length || !participants.length) {
+    L.push('DATA: no sessions/participants available.')
+    return L.join('\n')
+  }
+  // Buyer lookup by email+scheduled_at.
+  const buyersByKey = new Map()
+  for (const r of (buyers || [])) {
+    const k = `${String(r.email ?? '').trim().toLowerCase()}|${r.scheduled_at}`
+    if (!buyersByKey.has(k)) buyersByKey.set(k, [])
+    buyersByKey.get(k).push(r)
+  }
+  const bySession = new Map()
+  for (const p of participants) {
+    if (!bySession.has(p.session_id)) bySession.set(p.session_id, [])
+    bySession.get(p.session_id).push(p)
+  }
+  // Only sessions that actually have registrants, most recent first, capped for size.
+  const withRegs = sessions.filter(s => (bySession.get(s.id) || []).length > 0).slice(0, 12)
+  for (const s of withRegs) {
+    const regs = bySession.get(s.id) || []
+    L.push('')
+    L.push(`SESSION "${s.session_name}" (${s.scheduled_at}, tag ${s.product_tag}) — ${regs.length} registrants:`)
+    for (const p of regs.slice(0, 40)) {
+      const em = String(p.email ?? '').trim().toLowerCase()
+      const matched = buyersByKey.get(`${em}|${s.scheduled_at}`) || []
+      let buyNote = 'no order'
+      if (matched.length) {
+        buyNote = matched.map(r => `${(Number(r.amount) || 0).toFixed(0)} PLN ${buyerPhase(r) === 'after' ? 'AFTER (conversion)' : 'BEFORE (pre-webinar)'}`).join(', ')
+      }
+      L.push(`  • ${maskEmail2(p.email)} | registered_at: ${p.registered_at ?? 'NULL (not recorded)'} | attendance: UNKNOWN (table empty) | ${buyNote}`)
+    }
+    if (regs.length > 40) L.push(`  …+${regs.length - 40} more registrants`)
+  }
+  return L.join('\n')
+}
+
 // ── LLM system prompt ─────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are STANLEY — the personal operations AI of WCEEN, reporting directly to Lifidi, sir.
@@ -1440,6 +1510,15 @@ attended the webinar or how long after it they bought — registered_at is empty
 row and the attendance table is empty. Never assert attendance or time-to-purchase. The
 JSU course (549) sold AFTER a webinar is the only sale that proves its efficacy; PP/other
 orders by a registrant are entry-product sales, not course sales.
+
+━━━ WEBINAR REGISTRANTS (who signed up) ━━━
+For "who registered for the <day/Thursday> webinar and who of them bought": use the
+WEBINAR REGISTRANTS PER SESSION block. Give the registrants (masked e-mail) of the
+matching session and, for each, whether they have an order (with before/after phase).
+You MUST state plainly that ATTENDANCE IS UNKNOWN — webinar_attendance is empty, so you
+do not know who actually attended; never claim someone attended or was absent. Also note
+that registration time is not recorded (registered_at is null). Thursday 18:00 = JSU,
+Tuesday 18:00 = JZK. If a session isn't in the data, say so — do not invent registrants.
 
 ━━━ NO EMPTY REFUSAL ━━━
 "those particulars are not available to me" (or any refusal) is allowed ONLY when you
@@ -1607,6 +1686,11 @@ exports.handler = async (event) => {
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   )
+  // Webinar registrants per session — for "who registered for the Thursday webinar".
+  const webinarRegistrantsPromise = fetchWebinarRegistrantsData(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+  )
 
   // 1 — Detect intent
   const { intent, confidence, matchedTerms } = detectIntent(message)
@@ -1721,7 +1805,8 @@ exports.handler = async (event) => {
   const serverAds = await serverAdsPromise
   const adRows30 = await adRows30Promise
   const webinarBuyers = await webinarBuyersPromise
-  const creativeAnalyticsText = `${renderCreativeAnalytics(adRows30, today)}\n\n${renderWebinarBuyers(webinarBuyers)}`
+  const webinarReg = await webinarRegistrantsPromise
+  const creativeAnalyticsText = `${renderCreativeAnalytics(adRows30, today)}\n\n${renderWebinarBuyers(webinarBuyers)}\n\n${renderWebinarRegistrants(webinarReg.sessions, webinarReg.participants, webinarBuyers)}`
 
   // Build LLM user message with context. When we have a deterministic answer for
   // this intent, hand the LLM those EXACT numbers as a verified anchor and ask it

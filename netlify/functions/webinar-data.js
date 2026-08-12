@@ -138,9 +138,25 @@ export const handler = async (event) => {
     console.error('webinar-data: v_webinar_buyers query failed:', buyersError)
   }
 
+  // webinar_attendance — the ONLY source of truth for attendance. If a participant
+  // has NO row here, attendance is "brak danych" (unknown), NOT "absent". An empty
+  // table therefore means we know nothing about attendance — never that nobody came.
+  let attendanceData  = null
+  let attendanceError = null
+  try {
+    attendanceData = await queryTable(supabaseUrl, serviceKey, 'webinar_attendance', {
+      select: '*',
+      limit:  5000,
+    })
+  } catch (e) {
+    attendanceError = String(e?.message ?? e)
+    console.error('webinar-data: webinar_attendance query failed:', attendanceError)
+  }
+
   const sessions        = sessionsData        ?? []
   const rawParticipants = participantsData     ?? []
   const buyers          = buyersData          ?? []
+  const attendanceRows  = attendanceData      ?? []
 
   // Per-session buyer aggregates, keyed by scheduled_at. JSU course = amount 549.
   //
@@ -187,20 +203,83 @@ export const handler = async (event) => {
       .filter(e => e.includes('@'))
   )
 
-  // Sanitize: mask emails, extract registered_at from JSON blobs
+  // Lookups for the per-participant join.
+  const sessionById = new Map(sessions.map(s => [String(s.id), s]))
+  // v_webinar_buyers rows keyed by email + session start, so each participant can be
+  // matched to their order(s) with the before/after phase preserved.
+  const buyersByKey = new Map()   // `${emailLower}|${scheduled_at}` -> [buyer rows]
+  for (const r of buyers) {
+    const k = `${String(r.email ?? '').trim().toLowerCase()}|${r.scheduled_at}`
+    if (!buyersByKey.has(k)) buyersByKey.set(k, [])
+    buyersByKey.get(k).push(r)
+  }
+  // Attendance rows keyed both by participant id and by session+email (schema-agnostic).
+  const attByParticipant  = new Map()
+  const attByEmailSession = new Map()
+  for (const a of attendanceRows) {
+    if (a.participant_id != null) attByParticipant.set(String(a.participant_id), a)
+    const em  = String(a.email ?? '').trim().toLowerCase()
+    const sid = a.session_id ?? a.webinar_session_id
+    if (em && sid != null) attByEmailSession.set(`${sid}|${em}`, a)
+  }
+
+  let registeredAtMissingCount = 0
+
+  // Sanitize + enrich each participant: registration status (registered_at is null on
+  // every row → shown as a missing field), attendance status from webinar_attendance
+  // ("brak danych" when no row), and any Wix order joined via v_webinar_buyers.
   const participants = rawParticipants.map(p => {
-    const rawEmail = String(p.email ?? '')
-    const email    = extractEmail(rawEmail) || rawEmail
+    const rawEmail    = String(p.email ?? '')
+    const email       = extractEmail(rawEmail) || rawEmail
+    const emailLower  = email.toLowerCase()
+    const sess        = sessionById.get(String(p.session_id))
+    const scheduledAt = sess?.scheduled_at ?? null
+
+    // Registration: the DB column is the source of truth. It is null on every row.
+    const registeredAtMissing = p.registered_at == null
+    if (registeredAtMissing) registeredAtMissingCount++
+
+    // Attendance: ONLY from webinar_attendance. No row => unknown, not absent.
+    const attRow = attByParticipant.get(String(p.id))
+      ?? (scheduledAt != null ? attByEmailSession.get(`${p.session_id}|${emailLower}`) : undefined)
+    let attendanceStatus = 'no_data'
+    let attendDurationMin = null
+    if (attRow) {
+      const att = attRow.attended
+      attendanceStatus = att === true ? 'present' : att === false ? 'absent' : 'no_data'
+      attendDurationMin = attRow.attend_duration_min ?? attRow.duration_min ?? null
+    }
+
+    // Purchases: registrant⋈order rows for this session, before/after phase preserved.
+    const matched = (scheduledAt != null ? buyersByKey.get(`${emailLower}|${scheduledAt}`) : null) ?? []
+    const purchases = matched.map(r => ({
+      amount:           Number(r.amount) || 0,
+      product_name_raw: r.product_name_raw,
+      order_created_at: r.order_created_at,
+      phase:            phaseOf(r),   // 'after' = conversion · 'before' = pre-webinar customer
+      is_jsu_course:    (Number(r.amount) || 0) === JSU_COURSE_PRICE,
+    }))
+
     return {
-      id:                  p.id,
-      session_id:          p.session_id,
-      email_masked:        maskEmail(email),
-      registered_at:       extractRegistrationDate(rawEmail, p.registered_at, p.created_at),
-      attended:            p.attended   ?? null,
-      attend_duration_min: p.attend_duration_min ?? null,
-      purchased_at:        p.purchased_at  ?? null,
-      purchase_value:      p.purchase_value ?? null,
-      wix_order_id:        p.wix_order_id  ?? null,
+      id:                    p.id,
+      session_id:            p.session_id,
+      email_masked:          maskEmail(email),
+      // Registration
+      registered_at:         p.registered_at ?? null,
+      registered_at_missing: registeredAtMissing,
+      // Attendance (from webinar_attendance only)
+      attendance_status:     attendanceStatus,        // 'present' | 'absent' | 'no_data'
+      attend_duration_min:   attendDurationMin,
+      // Purchase (from v_webinar_buyers, phase-aware)
+      bought:                purchases.length > 0,
+      bought_after:          purchases.some(x => x.phase === 'after'),
+      bought_before:         purchases.some(x => x.phase === 'before'),
+      purchases,
+      // Back-compat fields (unused by the new list, kept for existing consumers)
+      attended:              p.attended   ?? null,
+      purchased_at:          p.purchased_at  ?? null,
+      purchase_value:        p.purchase_value ?? null,
+      wix_order_id:          p.wix_order_id  ?? null,
     }
   })
 
@@ -258,6 +337,11 @@ export const handler = async (event) => {
       unknownSessionsCount: unknownSessions.length,
       sessions:           classifiedSessions,
       participants,
+      // Attendance is only "populated" when webinar_attendance actually has rows.
+      // Empty table => attendance unknown for everyone (shown as "brak danych").
+      attendancePopulated:        attendanceRows.length > 0,
+      attendanceRowsCount:        attendanceRows.length,
+      registeredAtMissingCount,   // how many participants have a null registered_at
       // v_webinar_buyers rows (masked email) — the registrant⋈order join.
       // phase = 'after' (order at/after the session = webinar result) or
       // 'before' (order predates the session = pre-webinar customer / entry).
@@ -301,6 +385,10 @@ export const handler = async (event) => {
         sessionsError,
         participantsError,
         buyersError,
+        attendanceError,
+        attendanceStatus:  attendanceRows.length > 0 ? 'populated' : 'not_populated',
+        attendanceRows:    attendanceRows.length,
+        registeredAtMissingCount,
         scheduleRule:      'Thu 18:00 Warsaw=JSU, Tue 18:00 Warsaw=JZK',
       },
     }),

@@ -33,6 +33,16 @@ export interface JsuFunnelRow {
   email_clicks: number
 }
 
+export interface ParticipantPurchase {
+  amount: number
+  product_name_raw: string | null
+  order_created_at: string | null
+  phase: 'before' | 'after'
+  is_jsu_course: boolean
+}
+
+export type AttendanceStatus = 'present' | 'absent' | 'no_data'
+
 export interface JsuParticipantRow {
   participant_id: string
   session_id: string
@@ -40,8 +50,14 @@ export interface JsuParticipantRow {
   session_date: string
   session_name: string
   registered_at: string | null
+  registered_at_missing: boolean
+  attendance_status: AttendanceStatus
   attended: boolean
   attend_duration_min: number | null
+  bought: boolean
+  bought_before: boolean
+  bought_after: boolean
+  purchases: ParticipantPurchase[]
   purchased_at: string | null
   purchase_value: number | null
   wix_order_id: string | null
@@ -113,8 +129,14 @@ interface BackendParticipant {
   session_id: string
   email_masked: string
   registered_at: string | null
+  registered_at_missing?: boolean
+  attendance_status?: AttendanceStatus
   attended: boolean | null
   attend_duration_min: number | null
+  bought?: boolean
+  bought_before?: boolean
+  bought_after?: boolean
+  purchases?: ParticipantPurchase[]
   purchased_at: string | null
   purchase_value: number | null
   wix_order_id: string | null
@@ -145,10 +167,14 @@ interface WebinarBackendResponse {
   uniqueEmailsCount: number
   sessions: BackendSession[]
   participants: BackendParticipant[]
+  attendancePopulated?: boolean
+  registeredAtMissingCount?: number
   debug: {
     source: string
     sessionsError: string | null
     participantsError: string | null
+    attendanceStatus?: 'populated' | 'not_populated'
+    attendanceError?: string | null
   }
   error?: string
 }
@@ -265,7 +291,9 @@ export async function loadJsuWebinarFunnel(): Promise<JsuFunnelSummary> {
       source: 'backend-function', rawParticipants: participants.length,
       latestSessionDate: sessions[0]?.scheduled_at?.slice(0, 10),
       latestSessionName: sessions[0]?.session_name,
-      attendanceStatus:      attendees > 0 ? 'populated' : 'not_populated',
+      // Attendance status comes from the webinar_attendance table (backend), NOT from
+      // a derived attendee count — an empty table means "unknown", never "nobody came".
+      attendanceStatus:      backendDebug.attendanceStatus ?? (backendData.attendancePopulated ? 'populated' : 'not_populated'),
       purchaseMappingStatus: purchases > 0 ? 'mapped'    : 'not_mapped_yet',
       lastError: partErr ? `participant: ${partErr}` : sessErr ? `sessions: ${sessErr}` : undefined,
     },
@@ -287,17 +315,23 @@ export async function loadJsuParticipantJourney(sessionId?: string): Promise<Jsu
     : backendData.participants
 
   return rows.map(p => ({
-    participant_id:      String(p.id ?? ''),
-    session_id:          p.session_id,
-    email:               p.email_masked, // masked — only used for display
-    session_date:        p.registered_at?.slice(0, 10) ?? '',
-    session_name:        '',
-    registered_at:       p.registered_at,
-    attended:            p.attended ?? false,
-    attend_duration_min: p.attend_duration_min ?? null,
-    purchased_at:        p.purchased_at  ?? null,
-    purchase_value:      p.purchase_value ?? null,
-    wix_order_id:        p.wix_order_id  ?? null,
+    participant_id:        String(p.id ?? ''),
+    session_id:            p.session_id,
+    email:                 p.email_masked, // masked — only used for display
+    session_date:          p.registered_at?.slice(0, 10) ?? '',
+    session_name:          '',
+    registered_at:         p.registered_at,
+    registered_at_missing: p.registered_at_missing ?? (p.registered_at == null),
+    attendance_status:     p.attendance_status ?? 'no_data',
+    attended:              p.attended ?? false,
+    attend_duration_min:   p.attend_duration_min ?? null,
+    bought:                p.bought ?? false,
+    bought_before:         p.bought_before ?? false,
+    bought_after:          p.bought_after ?? false,
+    purchases:             p.purchases ?? [],
+    purchased_at:          p.purchased_at  ?? null,
+    purchase_value:        p.purchase_value ?? null,
+    wix_order_id:          p.wix_order_id  ?? null,
   }))
 }
 

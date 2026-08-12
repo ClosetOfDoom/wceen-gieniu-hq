@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useState, Fragment, type CSSProperties } from 'react'
 import type { JsuFunnelSummary, JsuFunnelRow, JsuParticipantRow, FunnelBottleneck, JsuFunnelDebug } from '../services/webinarFunnel'
 import { pct, fmtPlnFunnel } from '../services/webinarFunnel'
 import { ParticipantJourneyTable } from './ParticipantJourneyTable'
@@ -158,16 +158,23 @@ function DataDebugBar({ debug }: { debug?: JsuFunnelDebug }) {
   )
 }
 
-function SessionRow({ s, attendancePopulated }: {
+function SessionRow({ s, attendancePopulated, expanded, onToggle }: {
   s: JsuFunnelRow
   attendancePopulated: boolean
+  expanded: boolean
+  onToggle: () => void
 }) {
   const product = normalizeProduct({ product_tag: s.product_tag })
   const productColor = product.canonicalTag === 'JZK' ? 'var(--teal)' : product.canonicalTag === 'JSU' ? 'var(--gold)' : 'var(--muted2)'
 
   return (
-    <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.73rem', fontFamily: 'var(--font-mono)' }}>
+    <tr
+      onClick={onToggle}
+      style={{ borderBottom: '1px solid var(--border)', fontSize: '0.73rem', fontFamily: 'var(--font-mono)', cursor: 'pointer', background: expanded ? 'var(--surface2)' : undefined }}
+      title="Kliknij, aby rozwinąć listę uczestników"
+    >
       <td style={{ padding: '5px 8px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+        <span aria-hidden="true" style={{ color: expanded ? 'var(--gold)' : 'var(--muted2)', marginRight: 5 }}>{expanded ? '▾' : '▸'}</span>
         {s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : s.session_date}
       </td>
       <td style={{ padding: '5px 8px', whiteSpace: 'nowrap' }}>
@@ -224,6 +231,62 @@ function SessionRow({ s, attendancePopulated }: {
   )
 }
 
+// Expanded participant list for one session: email, registration status, attendance
+// status (brak danych vs present/absent), and any purchase (before/after phase).
+function SessionParticipants({ rows }: { rows: JsuParticipantRow[] }) {
+  if (rows.length === 0) {
+    return <div style={{ padding: '10px 12px', fontSize: '0.7rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>Brak zarejestrowanych uczestników dla tej sesji.</div>
+  }
+  const attCell = (st: JsuParticipantRow['attendance_status']) => {
+    if (st === 'present') return <span style={{ color: 'var(--emerald)' }}>obecny</span>
+    if (st === 'absent')  return <span style={{ color: 'var(--muted)' }}>nieobecny</span>
+    // No row in webinar_attendance → we simply do not know. NOT "nie był".
+    return <span style={{ color: 'var(--muted2)', fontStyle: 'italic' }} title="webinar_attendance nie ma wiersza — brak informacji, nie nieobecność">brak danych</span>
+  }
+  return (
+    <div style={{ padding: '4px 8px 12px', overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.68rem', fontFamily: 'var(--font-mono)', minWidth: '620px' }}>
+        <thead>
+          <tr style={{ color: 'var(--muted2)', textAlign: 'left' }}>
+            <th style={{ padding: '3px 8px' }}>E-mail</th>
+            <th style={{ padding: '3px 8px' }}>Rejestracja</th>
+            <th style={{ padding: '3px 8px' }}>Obecność</th>
+            <th style={{ padding: '3px 8px' }}>Kupił?</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(p => (
+            <tr key={p.participant_id} style={{ borderTop: '1px solid var(--border)', color: 'var(--text2)' }}>
+              <td style={{ padding: '3px 8px', whiteSpace: 'nowrap' }}>{p.email}</td>
+              <td style={{ padding: '3px 8px', whiteSpace: 'nowrap' }}>
+                {p.registered_at_missing || !p.registered_at
+                  ? <span style={{ color: 'var(--amber)', fontStyle: 'italic' }} title="Kolumna registered_at jest null na wszystkich wierszach">brak pola: registered_at</span>
+                  : new Date(p.registered_at).toLocaleString('pl-PL')}
+              </td>
+              <td style={{ padding: '3px 8px', whiteSpace: 'nowrap' }}>{attCell(p.attendance_status)}</td>
+              <td style={{ padding: '3px 8px' }}>
+                {p.purchases.length === 0
+                  ? <span style={{ color: 'var(--muted2)' }}>—</span>
+                  : p.purchases.map((q, i) => (
+                      <div key={i} style={{ whiteSpace: 'nowrap' }}>
+                        <span style={{ color: q.is_jsu_course ? 'var(--gold)' : 'var(--text)' }}>{q.amount.toFixed(0)} PLN</span>
+                        {q.is_jsu_course && <span style={{ color: 'var(--gold)', fontSize: '0.6rem' }}> JSU</span>}
+                        <span style={{ color: 'var(--muted)' }}> · {q.order_created_at ? new Date(q.order_created_at).toLocaleDateString('pl-PL') : '—'} · </span>
+                        {q.phase === 'after'
+                          ? <span style={{ color: 'var(--emerald)' }}>konwersja</span>
+                          : <span style={{ color: 'var(--muted2)', fontStyle: 'italic' }} title="Zamówienie sprzed webinaru — wejście do lejka, nie konwersja">pre-webinar</span>}
+                        <span style={{ color: 'var(--muted2)' }} title={q.product_name_raw ?? ''}> · {(q.product_name_raw ?? '').slice(0, 26)}</span>
+                      </div>
+                    ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function detectProduct(sessions: JsuFunnelRow[]): ProductTag {
   const counts: Record<ProductTag, number> = { JSU: 0, JZK: 0, UNKNOWN: 0 }
   for (const s of sessions) counts[tagOf(s)]++
@@ -235,6 +298,7 @@ function detectProduct(sessions: JsuFunnelRow[]): ProductTag {
 export function WebinarFunnelPanel({ summary, participants, participantsLoading, loading, onCommand, gieniuResponse }: Props) {
   const [showParticipants, setShowParticipants] = useState(false)
   const [productFilter, setProductFilter] = useState<ProductTag | 'ALL'>('ALL')
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null)
 
   if (loading) {
     return (
@@ -514,18 +578,31 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
                 </tr>
               </thead>
               <tbody>
-                {filteredSessions.map(s => (
-                  <SessionRow
-                    key={s.session_id}
-                    s={s}
-                    attendancePopulated={attendancePopulated}
-                  />
-                ))}
+                {filteredSessions.map(s => {
+                  const expanded = expandedSessionId === s.session_id
+                  return (
+                    <Fragment key={s.session_id}>
+                      <SessionRow
+                        s={s}
+                        attendancePopulated={attendancePopulated}
+                        expanded={expanded}
+                        onToggle={() => setExpandedSessionId(prev => prev === s.session_id ? null : s.session_id)}
+                      />
+                      {expanded && (
+                        <tr style={{ background: 'var(--surface2)' }}>
+                          <td colSpan={7} style={{ padding: 0 }}>
+                            <SessionParticipants rows={participants.filter(p => p.session_id === s.session_id)} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>
           <div style={{ marginTop: '4px', fontSize: '0.62rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)' }}>
-            n/p = attendance not populated · n/m = purchases not mapped yet
+            Kliknij wiersz sesji, aby rozwinąć listę uczestników. n/p = attendance not populated · „brak danych" = brak wiersza w webinar_attendance (nie „nieobecny").
           </div>
         </div>
       )}
