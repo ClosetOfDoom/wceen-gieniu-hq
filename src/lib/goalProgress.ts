@@ -13,18 +13,29 @@ export interface GoalResult {
 
 const clamp = (n: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n))
 
-// ── Daily PP (Pakiet Pamięciowy) orders — target ≥18/day ──────────────────────
-// ≥18 green "on target" · 14–17 amber "watch" · 10–13 red "attention" ·
-// <10 red "check technicals" (likely a sync/landing problem, not just a slow day).
+// ── PP (Pakiet Pamięciowy) orders — target 18 per FULL day, paced ─────────────
+// 18/day is a 24-hour target, so for the in-progress day it must be prorated by
+// hours elapsed (like the monthly-revenue bar is prorated by days) — otherwise a
+// perfectly normal mid-day count reads as "abnormally low". `expected` carries the
+// paced target: for TODAY = 18 × hoursElapsed/24; for a full day/week/month it is
+// 18 × (full days in range). Colour compares actual vs that paced expectation.
+//   pace ≥ 1 green · ≥ 14/18 amber · ≥ 10/18 red attention · below red check-technicals
+// (the same 18/14/10 bands as before, now relative to the paced target). `expected`
+// defaults to 18 so a single completed day behaves exactly as it used to.
 export const PP_ORDERS_TARGET = 18
+const PP_AMBER_PACE = 14 / PP_ORDERS_TARGET
+const PP_ATTN_PACE  = 10 / PP_ORDERS_TARGET
 
-export function ppOrdersGoal(count: number | null): GoalResult {
+export function ppOrdersGoal(count: number | null, expected: number = PP_ORDERS_TARGET): GoalResult {
   if (count == null) return { pct: 0, status: 'red', note: 'no orders data' }
-  const pct = clamp((count / PP_ORDERS_TARGET) * 100)
-  if (count >= PP_ORDERS_TARGET) return { pct, status: 'green', note: `on target — ${count}/${PP_ORDERS_TARGET} ✓` }
-  if (count >= 14)               return { pct, status: 'amber', note: `watch — ${count}/${PP_ORDERS_TARGET}` }
-  if (count >= 10)               return { pct, status: 'red',   note: `attention — below ${PP_ORDERS_TARGET}` }
-  return { pct, status: 'red', note: 'check technicals — abnormally low' }
+  const exp  = Math.max(expected, 0)
+  const tgt  = Math.max(1, Math.round(exp))
+  const pace = exp > 0 ? count / exp : (count > 0 ? 1 : 0)
+  const pct  = clamp(exp > 0 ? (count / exp) * 100 : 0)
+  if (pace >= 1)             return { pct, status: 'green', note: `on pace — ${count}/${tgt} ✓` }
+  if (pace >= PP_AMBER_PACE) return { pct, status: 'amber', note: `watch — ${count}/${tgt}` }
+  if (pace >= PP_ATTN_PACE)  return { pct, status: 'red',   note: `attention — below pace (${count}/${tgt})` }
+  return { pct, status: 'red', note: `check technicals — abnormally low (${count}/${tgt})` }
 }
 
 // ── Monthly revenue — target 30 000 PLN, paced by days elapsed ────────────────
@@ -41,6 +52,20 @@ export function monthlyRevenueGoal(mtd: number, daysElapsed: number, daysInMonth
   if (pace >= 0.95) return { pct, status: 'green', note: `${pctOfTarget}% of target · ${dayStr} · on pace` }
   if (pace >= 0.80) return { pct, status: 'amber', note: `${pctOfTarget}% of target · ${dayStr} · slightly behind` }
   return { pct, status: 'red', note: `${pctOfTarget}% of target · ${dayStr} · behind pace` }
+}
+
+// Range-aware revenue goal — the selected range's revenue vs the 30 000 PLN monthly
+// target, prorated to the range's day-equivalent (`paceDays`: TODAY = hours/24,
+// YESTERDAY = 1, WEEK = 7, MONTH = days elapsed). Same pace colouring as the monthly
+// bar, so the whole Goal Progress block can follow ONE range coherently.
+export function revenueGoal(revenue: number, paceDays: number, daysInMonth: number): GoalResult {
+  const expected = daysInMonth > 0 ? MONTHLY_REVENUE_TARGET * (paceDays / daysInMonth) : 0
+  const pace = expected > 0 ? revenue / expected : (revenue > 0 ? 1 : 0)
+  const pct  = clamp(expected > 0 ? (revenue / expected) * 100 : 0)
+  const expStr = `${Math.round(expected).toLocaleString('en-US')} PLN oczek.`
+  if (pace >= 0.95) return { pct, status: 'green', note: `${expStr} · on pace` }
+  if (pace >= 0.80) return { pct, status: 'amber', note: `${expStr} · slightly behind` }
+  return { pct, status: 'red', note: `${expStr} · behind pace` }
 }
 
 // ── Real CPA (inverted: lower = better) ───────────────────────────────────────

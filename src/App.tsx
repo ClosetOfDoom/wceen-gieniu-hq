@@ -21,10 +21,10 @@ import { StanleyOwl } from './components/StanleyOwl'
 import { CampaignInspector } from './components/CampaignInspector'
 import { GoalBar } from './components/GoalBar'
 import {
-  ppOrdersGoal, monthlyRevenueGoal, cpaGoal, roasGoal,
-  daysInMonthOf, sumMonthToDate,
-  MONTHLY_REVENUE_TARGET,
+  ppOrdersGoal, revenueGoal, cpaGoal, roasGoal,
+  daysInMonthOf, PP_ORDERS_TARGET,
 } from './lib/goalProgress'
+import { warsawHoursSinceMidnight } from './utils/warsawDate'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday,
@@ -1390,15 +1390,28 @@ export default function App() {
   const cpaHigh      = displayPerf?.real_cpa != null && displayPerf.real_cpa > 50
   const jsuAlert     = !!jsuSummary && jsuSummary.bottleneck !== 'OK' && jsuSummary.bottleneck !== 'NO_DATA' && jsuSummary.bottleneck !== 'NO_SOURCES'
 
-  // ── Goal progress (Command Center bars) ──────────────────────────────────────
+  // ── Goal progress (Command Center bars) — whole block follows the ONE range ───
   const goalToday   = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' }) // YYYY-MM-DD
   const goalYyyymm  = goalToday.slice(0, 7)
   const goalDayNum  = parseInt(goalToday.slice(8, 10), 10)
   const goalDaysIn  = daysInMonthOf(goalYyyymm)
-  const mtdRevenue  = sumMonthToDate(monthTrend, goalYyyymm)
-  const ppOrdersToday = ordersData?.today_classified?.memory_pack?.count ?? null
-  const ppGoal      = ppOrdersGoal(ppOrdersToday)
-  const revGoal     = monthlyRevenueGoal(mtdRevenue, goalDayNum, goalDaysIn)
+  // Range word for dynamic headers + the range's day-equivalent used to pace targets.
+  //   TODAY = hours elapsed / 24 (a 24 h target must be prorated mid-day)
+  //   YESTERDAY = 1 full day · WEEK = 7 full days · MONTH = days elapsed (month-to-date)
+  const rangeWord   = range === 'today' ? 'TODAY' : range === 'yesterday' ? 'YESTERDAY' : range === 'week' ? 'THIS WEEK' : 'THIS MONTH'
+  const rangePaceDays = range === 'today' ? warsawHoursSinceMidnight() / 24
+                      : range === 'yesterday' ? 1
+                      : range === 'week' ? 7
+                      : goalDayNum
+  // PP orders for the selected range come from profit-data's product breakdown
+  // (memory_pack = Pakiet Pamięciowy), which is scoped to the same range as everything else.
+  const ppOrdersRange = profitData?.ok
+    ? (profitData.productBreakdown?.find(p => p.productKey === 'memory_pack')?.orders ?? 0)
+    : null
+  const rangeRevenue  = displayPerf?.wix_revenue ?? 0
+  const ppExpected  = PP_ORDERS_TARGET * rangePaceDays
+  const ppGoal      = ppOrdersGoal(ppOrdersRange, ppExpected)
+  const revGoal     = revenueGoal(rangeRevenue, rangePaceDays, goalDaysIn)
   const cpaGoalRes  = cpaGoal(displayPerf?.real_cpa ?? null)
   const roasGoalRes = roasGoal(displayPerf?.real_roas ?? null)
 
@@ -1485,24 +1498,24 @@ export default function App() {
                       onClick={() => toggleMetric('est_profit')}
                       active={expandedMetric === 'est_profit'}
                     />
-                    <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Meta spend / Wix orders" onClick={() => toggleMetric('real_cpa')} active={expandedMetric === 'real_cpa'} />
+                    <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Ad spend ÷ wszystkie zamówienia Wix (zakres)" onClick={() => toggleMetric('real_cpa')} active={expandedMetric === 'real_cpa'} />
                     <KPICard label="Real ROAS" value={fmtRoas(displayPerf?.real_roas)} sublabel="Wix revenue / Meta spend" onClick={() => toggleMetric('real_roas')} active={expandedMetric === 'real_roas'} />
                   </div>
 
                   {/* Goal progress bars — KPI realization vs business targets */}
                   <div className="panel-illuminate card">
-                    <div className="section-title section-title-gold" style={{ marginBottom: '14px' }}>Goal Progress</div>
+                    <div className="section-title section-title-gold" style={{ marginBottom: '14px' }}>Goal Progress · {rangeWord}</div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '18px 28px' }}>
                       <GoalBar
-                        label="PP orders today"
-                        valueText={`${ppOrdersToday ?? '—'} / 18`}
+                        label={`PP orders ${rangeWord}`}
+                        valueText={`${ppOrdersRange ?? '—'} / ${Math.max(1, Math.round(ppExpected))}`}
                         pct={ppGoal.pct}
                         status={ppGoal.status}
                         note={ppGoal.note}
                       />
                       <GoalBar
-                        label="Monthly revenue"
-                        valueText={`${fmtNum(Math.round(mtdRevenue))} / ${fmtNum(MONTHLY_REVENUE_TARGET)} PLN`}
+                        label={`Revenue ${rangeWord}`}
+                        valueText={`${fmtNum(Math.round(rangeRevenue))} PLN`}
                         pct={revGoal.pct}
                         status={revGoal.status}
                         note={revGoal.note}
@@ -1523,7 +1536,7 @@ export default function App() {
                       />
                     </div>
                     <div style={{ marginTop: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted2)' }}>
-                      PP = Pakiet Pamięciowy (daily orders). Monthly revenue is month-to-date vs the 30 000 PLN target, paced by days elapsed. CPA/ROAS are blended (all products).
+                      Cały blok podąża za wybranym zakresem ({rangeWord}). PP = Pakiet Pamięciowy — cel 18/pełny dzień; dla DZIŚ pacowany godzinami (18 × godziny/24), pozostałe zakresy pełne dni. Revenue vs cel 30 000 PLN/mies., prorata do długości zakresu. CPA/ROAS z zakresu, blended (wszystkie produkty).
                     </div>
                   </div>
 
@@ -1545,14 +1558,6 @@ export default function App() {
                       sublabel="After ad spend"
                       onClick={() => toggleMetric('profit_per_order')}
                       active={expandedMetric === 'profit_per_order'}
-                    />
-                    <KPICard
-                      label="True CPA"
-                      value={profitSummary?.realCpa != null ? fmtPln(profitSummary.realCpa) : '—'}
-                      warning={profitSummary?.realCpa != null && profitSummary.realCpa > 50}
-                      sublabel="Ad spend ÷ paid orders"
-                      onClick={() => toggleMetric('true_cpa')}
-                      active={expandedMetric === 'true_cpa'}
                     />
                     <KPICard
                       label="Margin ROAS"

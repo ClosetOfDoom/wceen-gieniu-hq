@@ -71,13 +71,6 @@ export const KPI_METRICS: Record<string, KpiMetric> = {
     daily: r => num(r.meta_spend) > 0 ? num(r.wix_revenue) / num(r.meta_spend) : null,
     missingField: 'ROAS per kampania wymaga przychodu Wix per kampania (nieprzypisany)',
   },
-  // True CPA per day = that day's ad spend / that day's Wix orders (same components,
-  // taken straight from the daily view — the honest per-day denominator).
-  true_cpa: {
-    id: 'true_cpa', label: 'True CPA', unit: 'pln',
-    daily: r => num(r.wix_orders) > 0 ? num(r.meta_spend) / num(r.wix_orders) : null,
-    missingField: 'CPA per kampania wymaga zamówień Wix per kampania (nieprzypisane)',
-  },
   ctr: {
     id: 'ctr', label: 'CTR', unit: 'pct',
     daily: r => num(r.impressions) > 0 ? num(r.link_clicks) / num(r.impressions) * 100 : null,

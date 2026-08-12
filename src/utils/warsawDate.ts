@@ -22,6 +22,17 @@ export function warsawMonthStart(): string {
   return warsawToday().slice(0, 7) + '-01'
 }
 
+// Fractional hours elapsed since Warsaw midnight (0–24). Used to pace daily targets
+// for the in-progress day (e.g. expected PP orders by now = 18 × hours/24).
+export function warsawHoursSinceMidnight(): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Warsaw', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(new Date())
+  const get = (t: string) => Number(parts.find(p => p.type === t)?.value ?? 0)
+  const h = get('hour') % 24   // some engines emit 24 at midnight
+  return h + get('minute') / 60 + get('second') / 3600
+}
+
 // Convert any ISO timestamp to a Warsaw calendar date string (YYYY-MM-DD).
 // DST-safe: uses the Intl API which applies the correct offset for each instant.
 export function toWarsawDate(isoOrUnix: string | number | null | undefined): string {
