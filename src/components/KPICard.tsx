@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 
 interface Props {
   label: string
@@ -154,6 +154,27 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
   const isAccentVariant = accent || warning || positive || danger
   const clickable = !!onClick
 
+  // Guaranteed fit: measure the full value against the card's content width and
+  // scale it down if it would overflow. Independent of font metrics, so the longest
+  // real value always fits — even at 360 px. Recomputes on resize (orientation change).
+  const boxRef = useRef<HTMLDivElement>(null)
+  const measureRef = useRef<HTMLSpanElement>(null)
+  const [fitScale, setFitScale] = useState(1)
+  useLayoutEffect(() => {
+    const box = boxRef.current, m = measureRef.current
+    if (!box || !m) return
+    const fit = () => {
+      const avail = box.clientWidth
+      const need = m.scrollWidth
+      setFitScale(need > avail && need > 0 ? avail / need : 1)
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(box)
+    return () => ro.disconnect()
+  }, [value])
+  const baseFont = valueFontSize(value)
+
   return (
     <div
       className="kpi-card panel-illuminate"
@@ -214,18 +235,30 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
           </span>
         )}
       </div>
-      <div className="kpi-value" style={{
-        fontSize: valueFontSize(value),
-        fontWeight: 700,
-        color: valueColor,
-        fontVariantNumeric: 'tabular-nums',
-        lineHeight: 1.1,
-        fontFamily: 'var(--font-mono)',
-        letterSpacing: '-0.01em',
-        whiteSpace: 'nowrap',
-        maxWidth: '100%',
-      }}>
-        <AnimatedNumber value={value} />
+      <div ref={boxRef} style={{ maxWidth: '100%', overflow: 'hidden' }}>
+        <div className="kpi-value" style={{
+          fontSize: baseFont,
+          fontWeight: 700,
+          color: valueColor,
+          fontVariantNumeric: 'tabular-nums',
+          lineHeight: 1.1,
+          fontFamily: 'var(--font-mono)',
+          letterSpacing: '-0.01em',
+          whiteSpace: 'nowrap',
+          transform: fitScale < 1 ? `scale(${fitScale})` : undefined,
+          transformOrigin: 'left center',
+          width: 'max-content',
+        }}>
+          <AnimatedNumber value={value} />
+        </div>
+        {/* Hidden measurer — the full (final) value at the same font, for fit scaling */}
+        <span ref={measureRef} aria-hidden="true" style={{
+          position: 'absolute', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap',
+          fontSize: baseFont, fontWeight: 700, fontFamily: 'var(--font-mono)',
+          fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em',
+        }}>
+          {value}
+        </span>
       </div>
       {sublabel && (
         <div style={{ fontSize: '0.7rem', color: 'var(--muted2)', marginTop: '5px', fontFamily: 'var(--font-mono)' }}>

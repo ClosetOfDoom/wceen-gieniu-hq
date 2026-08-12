@@ -148,12 +148,12 @@ function CampaignBreakdown({ metric, from, campaignRows, onClose }: { metric: Kp
     <Shell metric={metric} subtitle={`rozbicie per kampania · ${from} (zakres < 2 dni → brak szeregu czasowego)`} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {aggs.map((a, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '220px 1fr 96px', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={a.name}>{a.name}</span>
-            <div style={{ background: 'var(--surface2)', borderRadius: '3px', height: '16px', position: 'relative', overflow: 'hidden' }}>
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(24px, 1.6fr) max-content', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} title={a.name}>{a.name}</span>
+            <div style={{ background: 'var(--surface2)', borderRadius: '3px', height: '16px', position: 'relative', overflow: 'hidden', minWidth: 0 }}>
               <div style={{ width: `${(Math.abs(a.value) / maxV) * 100}%`, height: '100%', background: `linear-gradient(90deg, ${GOLD}, var(--gold-bright))`, borderRadius: '3px' }} />
             </div>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text)', textAlign: 'right' }}>{fmtMetric(metric.unit, a.value)}</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text)', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtMetric(metric.unit, a.value)}</span>
           </div>
         ))}
       </div>
