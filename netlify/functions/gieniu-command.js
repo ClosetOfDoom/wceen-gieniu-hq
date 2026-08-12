@@ -1356,12 +1356,16 @@ function renderWebinarRegistrants(sessions, participants, buyers) {
     if (!bySession.has(p.session_id)) bySession.set(p.session_id, [])
     bySession.get(p.session_id).push(p)
   }
+  L.push('DISAMBIGUATION: sessions can share a name (e.g. "pamiec-czwartek" recurs weekly).')
+  L.push('  When asked about a webinar on a specific DATE, use ONLY the block whose DATE equals')
+  L.push('  that date, and report ITS "N registrants" count exactly — never another date\'s.')
   // Only sessions that actually have registrants, most recent first, capped for size.
   const withRegs = sessions.filter(s => (bySession.get(s.id) || []).length > 0).slice(0, 12)
   for (const s of withRegs) {
     const regs = bySession.get(s.id) || []
+    const dateOnly = String(s.scheduled_at ?? '').slice(0, 10)
     L.push('')
-    L.push(`SESSION "${s.session_name}" (${s.scheduled_at}, tag ${s.product_tag}) — ${regs.length} registrants:`)
+    L.push(`### DATE ${dateOnly} | "${s.session_name}" | tag ${s.product_tag} | ${regs.length} registrants (scheduled_at ${s.scheduled_at}):`)
     for (const p of regs.slice(0, 40)) {
       const em = String(p.email ?? '').trim().toLowerCase()
       const matched = buyersByKey.get(`${em}|${s.scheduled_at}`) || []
