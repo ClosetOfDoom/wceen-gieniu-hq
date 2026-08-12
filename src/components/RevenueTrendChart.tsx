@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import type { DailyPerformance, MetaAdDaily } from '../services/data'
-import { KPI_METRICS, fmtMetric, aggregateByCampaign } from '../lib/kpiMetrics'
+import { KPI_METRICS, fmtMetric, aggregateByCampaign, daySpan } from '../lib/kpiMetrics'
 
 interface Props {
   rows: DailyPerformance[]        // current period (any order)
@@ -46,6 +46,19 @@ export function RevenueTrendChart({ rows, prevRows, campaignRows, from, to, load
   const days = eachDay(from, to)
   if (days.length === 0) {
     return <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>No trend data yet</div>
+  }
+
+  // A range shorter than 2 days is not a time series — a single point is misleading
+  // and its axis would inherit the wrong scale. Show a per-campaign bar breakdown
+  // (Meta-side metrics) or a single day number (Wix-side metrics have no UTM).
+  // (No hourly fallback: meta_ads_daily is daily-grain and orders carry no campaign.)
+  if (daySpan(from, to) < 2) {
+    return (
+      <div>
+        <SeriesSwitcher seriesId={seriesId} onPick={setSeriesId} />
+        <SingleDayBreakdown day={to} metric={metric} dayRow={byDate.get(to)} campaignRows={campaignRows} />
+      </div>
+    )
   }
 
   // Current-period series: value per day (null → gap, i.e. missing day or n/a metric).
@@ -95,6 +108,8 @@ export function RevenueTrendChart({ rows, prevRows, campaignRows, from, to, load
   }
   const curSegs = segments(cur.map(p => p.value))
   const prevSegs = segments(prev)
+  // Only claim a comparison line in the legend if one is actually drawn (≥2 points).
+  const hasPrevLine = prevSegs.some(s => s.length >= 2)
   const gridValues = [0, 0.25, 0.5, 0.75, 1]
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -174,11 +189,13 @@ export function RevenueTrendChart({ rows, prevRows, campaignRows, from, to, load
             return <text key={d + '-lbl'} x={x(i)} y={H - 10} textAnchor="middle" fill="var(--muted)" fontSize="11" fontFamily="monospace">{d.slice(5)}</text>
           })}
 
-          {/* Legend */}
+          {/* Legend — the comparison entry appears ONLY when a previous-period line is drawn */}
           <line x1={W - 150} y1={pad.top + 8} x2={W - 132} y2={pad.top + 8} stroke="var(--gold)" strokeWidth="2.5" />
           <text x={W - 128} y={pad.top + 12} fill="var(--gold)" fontSize="10.5" fontFamily="monospace">{metric.label}</text>
-          <line x1={W - 150} y1={pad.top + 24} x2={W - 132} y2={pad.top + 24} stroke="var(--muted2)" strokeWidth="1.5" strokeDasharray="4 3" />
-          <text x={W - 128} y={pad.top + 28} fill="var(--muted2)" fontSize="10.5" fontFamily="monospace">poprz. okres</text>
+          {hasPrevLine && <>
+            <line x1={W - 150} y1={pad.top + 24} x2={W - 132} y2={pad.top + 24} stroke="var(--muted2)" strokeWidth="1.5" strokeDasharray="4 3" />
+            <text x={W - 128} y={pad.top + 28} fill="var(--muted2)" fontSize="10.5" fontFamily="monospace">poprz. okres</text>
+          </>}
         </svg>
 
         {/* Tooltip — all series for the hovered day, each computed from that day's components */}
@@ -244,6 +261,59 @@ function SeriesSwitcher({ seriesId, onPick }: { seriesId: string; onPick: (id: s
           >{m.label}</button>
         )
       })}
+    </div>
+  )
+}
+
+// Single-day (span < 2) view for the SELECTED series:
+//  • Meta-side metric (has per-campaign attribution) → one bar per campaign, axis
+//    topped at the day's own max × 1.15.
+//  • Wix-side metric (revenue/orders/CPA/ROAS — no UTM on orders) → a single day
+//    number with a "brak atrybucji per kampania" caption, never fake bars.
+function SingleDayBreakdown({ day, metric, dayRow, campaignRows }: { day: string; metric: typeof KPI_METRICS[string]; dayRow: DailyPerformance | undefined; campaignRows: MetaAdDaily[] }) {
+  // Wix-side metric — no campaign split possible.
+  if (!metric.campaign) {
+    const v = dayRow ? metric.daily?.(dayRow) ?? null : null
+    return (
+      <div style={{ padding: '18px 8px' }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{metric.label} · {day}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '2.3rem', fontWeight: 700, color: 'var(--gold)', marginTop: 6, lineHeight: 1.1 }}>{v == null ? '—' : fmtMetric(metric.unit, v)}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted)', marginTop: 6 }}>brak atrybucji per kampania — zamówienia Wix nie mają UTM</div>
+      </div>
+    )
+  }
+
+  const computeC = metric.campaign
+  const aggs = aggregateByCampaign(campaignRows.filter(r => r.date === day))
+    .map(c => ({ name: c.campaign, value: computeC(c) }))
+    .filter(c => c.value != null) as { name: string; value: number }[]
+  aggs.sort((a, b) => b.value - a.value)
+
+  return (
+    <div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+        ROZBICIE PER KAMPANIA · {day}
+      </div>
+      {aggs.length === 0 ? (
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--muted)', padding: '14px 4px' }}>brak wierszy kampanii dla {day}</div>
+      ) : (() => {
+        const maxV = Math.max(...aggs.map(a => Math.abs(a.value)), 0)
+        const axisMax = maxV > 0 ? maxV * 1.15 : 1   // point 4: axis top = day max × 1.15
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: 'var(--muted2)' }}>oś: 0 → {fmtMetric(metric.unit, axisMax)} (max dnia × 1.15)</div>
+            {aggs.map((a, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(24px, 1.6fr) max-content', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} title={a.name}>{a.name}</span>
+                <div style={{ background: 'var(--surface2)', borderRadius: '3px', height: '16px', position: 'relative', overflow: 'hidden', minWidth: 0 }}>
+                  <div style={{ width: `${(Math.abs(a.value) / axisMax) * 100}%`, height: '100%', background: 'linear-gradient(90deg, var(--gold), var(--gold-bright))', borderRadius: '3px' }} />
+                </div>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text)', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtMetric(metric.unit, a.value)}</span>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
     </div>
   )
 }
