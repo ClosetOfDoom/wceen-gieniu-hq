@@ -1,6 +1,7 @@
 export function GieniuAvatar({ size = 68 }: { size?: number }) {
   return (
     <div
+      className="gieniu-duck"
       aria-label="Stanley — duck advisor"
       role="img"
       style={{

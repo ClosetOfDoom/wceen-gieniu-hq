@@ -1333,3 +1333,60 @@ button:disabled {
     animation: none !important;
   }
 }
+
+/* ── Mobile tap / touch polish ─────────────────────────────────────────────────
+   Removes the Android/iOS blue tap-highlight box, the ~300 ms tap delay, and the
+   long-press text-selection / callout on purely-interactive elements — while
+   keeping KPI numbers and Stanley's answers selectable, and keyboard focus visible. */
+
+/* 1. Kill the tap-highlight box EVERYWHERE. The intro overlay and the duck are divs
+      with onClick, so a button-only rule would miss them — hence html, body and *. */
+html, body { -webkit-tap-highlight-color: transparent; }
+* { -webkit-tap-highlight-color: transparent; }
+
+/* 2. Faster, highlight-free taps on interactive elements (also drops the tap delay). */
+button, a, [role="button"],
+.kpi-card, .scope-chip, .mobile-nav-item, .nav-item, .prompt-chip, .btn-mic,
+.intro-splash, .intro-duck, .gieniu-duck {
+  touch-action: manipulation;
+}
+
+/* 3. Purely-interactive elements — no long-press selection / iOS image callout.
+      Deliberately NOT on .kpi-card (KPI numbers) or Stanley's answer — those stay
+      selectable so they can be copied. */
+.intro-splash, .intro-duck, .gieniu-duck,
+.nav-icon, .nav-item, .mobile-nav-icon, .mobile-nav-item,
+.scope-chip, .btn-mic {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* 4. Own focus-visible ring in theme gold (≈ #EE9D00) — replaces the default blue
+      ring but KEEPS focus for keyboard nav (outline:none alone would kill it). */
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible,
+.kpi-card:focus-visible, .scope-chip:focus-visible, .mobile-nav-item:focus-visible,
+.nav-item:focus-visible, .prompt-chip:focus-visible, .btn-mic:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* Pointer (mouse/touch) clicks shouldn't show the ring — only keyboard focus. */
+button:focus:not(:focus-visible),
+[role="button"]:focus:not(:focus-visible),
+.kpi-card:focus:not(:focus-visible),
+.scope-chip:focus:not(:focus-visible),
+.mobile-nav-item:focus:not(:focus-visible),
+.nav-item:focus:not(:focus-visible),
+.prompt-chip:focus:not(:focus-visible),
+.btn-mic:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* 5. Subtle own press feedback (highlight is gone, so touch must still be felt). */
+button:active, [role="button"]:active,
+.kpi-card:active, .scope-chip:active, .mobile-nav-item:active, .nav-item:active,
+.prompt-chip:active, .btn-mic:active, .gieniu-duck:active {
+  transform: scale(0.98);
+  filter: brightness(0.94);
+}
