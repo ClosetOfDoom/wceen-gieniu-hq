@@ -1598,18 +1598,32 @@ async function callAnthropic(userMessage, apiKey, { temperature = 0.3, max_token
   }
 }
 
+// Hard privacy guarantee: never let a FULL e-mail address leave the function, even if
+// the model de-masks or invents one. Any address with a local part longer than 2 chars
+// is re-masked to the "ab***@domain" form. Already-masked "ab***@domain" tokens don't
+// match (the char before @ is '*', outside the local-part class) so they pass through.
+function scrubEmails(text) {
+  if (!text) return text
+  return String(text).replace(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g, (m) => {
+    const i = m.indexOf('@')
+    const local = m.slice(0, i)
+    if (local.length <= 2) return m
+    return local.slice(0, 2) + '***' + m.slice(i)
+  })
+}
+
 function parseLLMResponse(raw) {
   const answerMatch = raw.match(/ANSWER:\s*([\s\S]*?)(?=\nSPEECH:|$)/i)
   const speechMatch = raw.match(/SPEECH:\s*([\s\S]*)$/i)
 
-  const answerText = answerMatch?.[1]?.trim() ?? raw.trim()
+  const answerText = scrubEmails(answerMatch?.[1]?.trim() ?? raw.trim())
   const rawSpeech = speechMatch?.[1]?.trim()
 
-  const speechText = rawSpeech
+  const speechText = scrubEmails(rawSpeech
     ? rawSpeech
     : answerText.length > 200
       ? answerText.slice(0, 197) + '...'
-      : answerText
+      : answerText)
 
   return { answerText, speechText }
 }
