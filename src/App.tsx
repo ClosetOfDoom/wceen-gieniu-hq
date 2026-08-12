@@ -27,7 +27,7 @@ import {
 import { warsawHoursSinceMidnight } from './utils/warsawDate'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
-  fetchRecentPerformance, fetchMetaStatsToday,
+  fetchRecentPerformance, fetchMetaStatsToday, fetchPerformanceBetween,
   computeStatus,
   type DailyPerformance, type MetaAdDaily, type AutomationRun,
   type DataStatus, type MetaStatsToday,
@@ -743,6 +743,20 @@ export default function App() {
       .then(r => setCampaignRows(r.rows))
       .catch(() => setCampaignRows([]))
       .finally(() => setCampaignRowsLoading(false))
+  }, [range])
+
+  // Revenue Trend chart data: the range's daily rows + the previous period of the
+  // SAME length (comparison line), both from the daily-performance view.
+  const [trendRows, setTrendRows] = useState<DailyPerformance[]>([])
+  const [prevTrendRows, setPrevTrendRows] = useState<DailyPerformance[]>([])
+  useEffect(() => {
+    const { from, to } = rangeDates(range)
+    const span = Math.max(1, Math.round((Date.parse(to + 'T12:00:00Z') - Date.parse(from + 'T12:00:00Z')) / 86400000) + 1)
+    const prevTo = new Date(Date.parse(from + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10)
+    const prevFrom = new Date(Date.parse(prevTo + 'T12:00:00Z') - (span - 1) * 86400000).toISOString().slice(0, 10)
+    Promise.all([fetchPerformanceBetween(from, to), fetchPerformanceBetween(prevFrom, prevTo)])
+      .then(([cur, prev]) => { setTrendRows(cur); setPrevTrendRows(prev) })
+      .catch(() => { setTrendRows([]); setPrevTrendRows([]) })
   }, [range])
 
   // Ambient nature bed — default ON, session-memory toggle (not localStorage).
@@ -1676,11 +1690,10 @@ export default function App() {
               />
 
               <div className="panel-illuminate card">
-                <div className="section-title section-title-gold" style={{ marginBottom: '10px' }}>Revenue Trend — 7 Days</div>
-                <RevenueTrendChart rows={trend} loading={loading} />
+                <div className="section-title section-title-gold" style={{ marginBottom: '10px' }}>Revenue Trend · {RANGE_LABELS[range]} ({rangeFrom} → {rangeTo})</div>
+                <RevenueTrendChart rows={trendRows} prevRows={prevTrendRows} campaignRows={campaignRows} from={rangeFrom} to={rangeTo} loading={loading} />
                 <div style={{ marginTop: '8px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)' }}>Real ROAS = Wix Revenue ÷ Meta Spend</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)' }}>Real CPA = Meta Spend ÷ Wix Orders</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)' }}>Hover: wszystkie serie dnia · Klik punkt: rozbicie per kampania · Przełącznik serii + linia poprzedniego okresu (przerywana)</span>
                 </div>
               </div>
             </>

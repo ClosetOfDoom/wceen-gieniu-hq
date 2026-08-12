@@ -93,6 +93,24 @@ export async function fetchRecentPerformance(days = 7): Promise<DailyPerformance
   return (data ?? []) as DailyPerformance[]
 }
 
+// Daily performance rows across a Warsaw date range [from, to] inclusive, oldest→newest.
+// Used by the interactive Revenue Trend chart (current period + previous period).
+export async function fetchPerformanceBetween(from: string, to: string): Promise<DailyPerformance[]> {
+  const { data, error } = await supabase
+    .from('v_daily_wix_meta_performance')
+    .select('*')
+    .gte('date', from)
+    .lte('date', to)
+    .order('date', { ascending: true })
+    .limit(400)
+
+  if (error) {
+    console.error('fetchPerformanceBetween error', error)
+    return []
+  }
+  return (data ?? []) as DailyPerformance[]
+}
+
 export async function fetchTopAds(date?: string): Promise<MetaAdDaily[]> {
   const targetDate = date ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
   const { data, error } = await supabase
