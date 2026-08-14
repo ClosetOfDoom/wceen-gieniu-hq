@@ -91,3 +91,26 @@ describe('month helpers', () => {
     expect(sumMonthToDate(rows, '2026-06')).toBe(3000)
   })
 })
+
+describe('ppOrdersGoal — paced target (mid-day)', () => {
+  it('exactly on the printed paced target is green, not amber', () => {
+    // 12:00 → expected 18 × 12/24 = 9.0; bar prints "9 / 9".
+    const r = ppOrdersGoal(9, 9)
+    expect(r.status).toBe('green')
+    expect(r.note).toContain('9/9')
+  })
+  it('fractional expectation rounds to the printed target before grading', () => {
+    // 12:24 → expected 9.3, printed as 9. Reading "9/9" must not colour amber.
+    expect(ppOrdersGoal(9, 9.3).status).toBe('green')
+    expect(ppOrdersGoal(9, 9.4).note).toContain('9/9')
+  })
+  it('amber only strictly below the paced target', () => {
+    expect(ppOrdersGoal(8, 9.3).status).toBe('amber')
+    expect(ppOrdersGoal(7, 9.3).status).toBe('amber')
+  })
+  it('above pace stays green with a full bar', () => {
+    const r = ppOrdersGoal(12, 9.3)
+    expect(r.status).toBe('green')
+    expect(r.pct).toBe(100)
+  })
+})

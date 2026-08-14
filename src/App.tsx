@@ -9,6 +9,7 @@ import { PondBackground } from './components/PondBackground'
 import { initAmbient, setAmbientEnabled, setAmbientPeriod } from './lib/ambient'
 import { useTheme } from './hooks/useTheme'
 import { KPICard } from './components/KPICard'
+import { DayDigest } from './components/DayDigest'
 import { StatusBadge } from './components/StatusBadge'
 import { GieniuAvatar } from './components/GieniuAvatar'
 import { AutomationRuns } from './components/AutomationRuns'
@@ -438,6 +439,10 @@ function RightPanel({
   sttConfidence,
   sttRejectionReason,
   sttPrefillInput,
+  digestToday,
+  digestYesterday,
+  digestStale,
+  digestDateLabel,
 }: {
   response: string
   chart?: InsightChartSpec
@@ -465,6 +470,10 @@ function RightPanel({
   sttConfidence: number | null
   sttRejectionReason: string
   sttPrefillInput: string
+  digestToday: DailyPerformance | null
+  digestYesterday: DailyPerformance | null
+  digestStale: boolean
+  digestDateLabel?: string
 }) {
   const [inputVal, setInputVal] = useState('')
 
@@ -503,6 +512,15 @@ function RightPanel({
             the response text. Pulses + glow + "Speaking…" when active, calm breathing
             when idle. Tap to quack. */}
         <StanleyOwl state={speaking ? 'speaking' : thinking ? 'thinking' : 'idle'} />
+
+        {/* Today's numbers, from data the dashboard has already loaded — no Wake
+            tap needed. This is what used to be dead space above the input. */}
+        <DayDigest
+          today={digestToday}
+          yesterday={digestYesterday}
+          stale={digestStale}
+          dateLabel={digestDateLabel}
+        />
 
         {/* Response text */}
         {response ? (
@@ -619,15 +637,13 @@ function RightPanel({
             )}
           </>
         ) : (
-          <div style={{ padding: '28px 20px', background: 'var(--surface)', border: '1px dashed var(--border)', borderRadius: '4px', textAlign: 'center' }}>
-            <div style={{ fontSize: '2rem', marginBottom: '10px', opacity: 0.35 }}>🎙</div>
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.9rem', color: 'var(--muted)', lineHeight: 1.7, fontStyle: 'italic' }}>
+          <div style={{ padding: '14px 16px', background: 'var(--surface)', border: '1px dashed var(--border)', borderRadius: '4px' }}>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.82rem', color: 'var(--muted)', lineHeight: 1.6, fontStyle: 'italic' }}>
               Speak or type to receive the briefing.
             </div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', marginTop: '10px', lineHeight: 1.6 }}>
-              Try: "how are we doing?"<br />
-              "how was yesterday?" · "this week so far"<br />
-              "what's wrong with ads?"
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--muted2)', marginTop: '7px', lineHeight: 1.6 }}>
+              "how are we doing?" · "how was yesterday?"<br />
+              "this week so far" · "what's wrong with ads?"
             </div>
           </div>
         )}
@@ -1403,6 +1419,17 @@ export default function App() {
     : rangeRows
   const activeMetric = expandedMetric ? (KPI_METRICS[expandedMetric] ?? null) : null
   const toggleMetric = (id: string) => setExpandedMetric(m => (m === id ? null : id))
+  // ── Chat-panel day digest — today vs yesterday, no Wake tap required ────────
+  const digestTodayISO = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const digestYestISO  = new Date(Date.parse(digestTodayISO + 'T12:00:00Z') - 86400000)
+    .toISOString().slice(0, 10)
+  const digestRows     = monthTrend.length > 0 ? monthTrend : trend
+  // perf is the live view row for today; fall back to the newest trend row when
+  // today's row hasn't landed yet, and say so via digestStale.
+  const digestToday    = perf ?? digestRows.find(r => r.date === digestTodayISO) ?? trend[0] ?? null
+  const digestYesterday = digestRows.find(r => r.date === digestYestISO) ?? null
+  const digestStale    = !perf && !digestRows.some(r => r.date === digestTodayISO) && !!digestToday
+
   const isToday      = range === 'today'
   const perfIsStale  = isToday && !perf && trend.length > 0
   const cpaHigh      = displayPerf?.real_cpa != null && displayPerf.real_cpa > 50
@@ -1502,7 +1529,7 @@ export default function App() {
                     </div>
                   )}
                   {/* Row 1: core metrics + profit */}
-                  <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                  <div className="kpi-grid">
                     <KPICard label="Wix Orders" value={fmtNum(displayPerf?.wix_orders)} sublabel={perfIsStale ? trend[0]?.date : undefined} onClick={() => toggleMetric('wix_orders')} active={expandedMetric === 'wix_orders'} />
                     <KPICard label="Wix Revenue" value={fmtPln(displayPerf?.wix_revenue)} accent sublabel={perfIsStale ? trend[0]?.date : undefined} onClick={() => toggleMetric('wix_revenue')} active={expandedMetric === 'wix_revenue'} />
                     <KPICard label="Ad Spend" value={fmtPln(displayPerf?.meta_spend)} sublabel={perfIsStale ? trend[0]?.date : undefined} onClick={() => toggleMetric('meta_spend')} active={expandedMetric === 'meta_spend'} />
@@ -1516,8 +1543,8 @@ export default function App() {
                       onClick={() => toggleMetric('est_profit')}
                       active={expandedMetric === 'est_profit'}
                     />
-                    <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Ad spend ÷ wszystkie zamówienia Wix (zakres)" onClick={() => toggleMetric('real_cpa')} active={expandedMetric === 'real_cpa'} />
-                    <KPICard label="Real ROAS" value={fmtRoas(displayPerf?.real_roas)} sublabel="Wix revenue / Meta spend" onClick={() => toggleMetric('real_roas')} active={expandedMetric === 'real_roas'} />
+                    <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Ad spend ÷ zamówienia" onClick={() => toggleMetric('real_cpa')} active={expandedMetric === 'real_cpa'} />
+                    <KPICard label="Real ROAS" value={fmtRoas(displayPerf?.real_roas)} sublabel="Revenue ÷ ad spend" onClick={() => toggleMetric('real_roas')} active={expandedMetric === 'real_roas'} />
                   </div>
 
                   {/* Goal progress bars — KPI realization vs business targets */}
@@ -1560,11 +1587,11 @@ export default function App() {
 
                   {/* Row 2: margin/profit detail — now range-aware (profit endpoint
                       accepts from/to), so it shows for every range. */}
-                  <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
+                  <div className="kpi-grid" style={{ marginTop: '4px' }}>
                     <KPICard
-                      label="Margin Before Ads"
+                      label="Margin Pre-Ads"
                       value={profitSummary ? fmtPln(profitSummary.marginBeforeAds) : '—'}
-                      sublabel="Known contribution margin"
+                      sublabel="Known margin"
                       onClick={() => toggleMetric('margin_before_ads')}
                       active={expandedMetric === 'margin_before_ads'}
                     />
@@ -1585,10 +1612,10 @@ export default function App() {
                       active={expandedMetric === 'margin_roas'}
                     />
                     <KPICard
-                      label="Unmapped Revenue"
+                      label="Unmapped Rev."
                       value={profitData?.ok ? fmtPln(profitData.unknownRevenue) : '—'}
                       warning={hasUnknownRevenue}
-                      sublabel={hasUnknownRevenue ? 'Needs margin mapping' : 'All products mapped'}
+                      sublabel={hasUnknownRevenue ? 'Needs margin mapping' : 'All mapped'}
                       onClick={() => toggleMetric('unmapped_rev')}
                       active={expandedMetric === 'unmapped_rev'}
                     />
@@ -1596,15 +1623,15 @@ export default function App() {
                       label="Ambiguous Rev."
                       value={profitData?.ok ? fmtPln(ambiguousRev) : '—'}
                       warning={hasAmbiguous}
-                      sublabel={hasAmbiguous ? `${profitData?.ambiguousOrdersCount ?? 0} orders · min. margin ${fmtPln(ambiguousMinMar)}` : 'No ambiguous orders'}
+                      sublabel={hasAmbiguous ? `${profitData?.ambiguousOrdersCount ?? 0} zam. · min. ${fmtPln(ambiguousMinMar)}` : 'None ambiguous'}
                       onClick={() => toggleMetric('ambiguous_rev')}
                       active={expandedMetric === 'ambiguous_rev'}
                     />
                     <KPICard
-                      label="Unknown-margin Rev."
+                      label="Unknown Margin"
                       value={profitData?.ok ? fmtPln(unknownMarginRev) : '—'}
                       warning={hasUnknownMargin}
-                      sublabel={hasUnknownMargin ? `WSZTP — marża nieznana (${profitData?.unknownMarginOrdersCount ?? 0} orders)` : 'None'}
+                      sublabel={hasUnknownMargin ? `WSZTP · ${profitData?.unknownMarginOrdersCount ?? 0} zam.` : 'None'}
                       onClick={() => toggleMetric('unknown_margin_rev')}
                       active={expandedMetric === 'unknown_margin_rev'}
                     />
@@ -1621,13 +1648,13 @@ export default function App() {
                     const cpc  = totalClicks > 0      ? totalSpend / totalClicks : null
                     const cpm  = totalImpressions > 0 ? totalSpend / totalImpressions * 1000 : null
                     return (
-                      <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '4px' }}>
-                        <KPICard label="CTR" value={fmtPct(ctr)} sublabel="Link clicks / impressions" onClick={() => toggleMetric('ctr')} active={expandedMetric === 'ctr'} />
+                      <div className="kpi-grid" style={{ marginTop: '4px' }}>
+                        <KPICard label="CTR" value={fmtPct(ctr)} sublabel="Link clicks ÷ impr." onClick={() => toggleMetric('ctr')} active={expandedMetric === 'ctr'} />
                         <KPICard label="CPC" value={fmtPln(cpc)} sublabel="Spend / clicks" onClick={() => toggleMetric('cpc')} active={expandedMetric === 'cpc'} />
-                        <KPICard label="CPM" value={fmtPln(cpm)} sublabel="Spend / 1 000 impr." onClick={() => toggleMetric('cpm')} active={expandedMetric === 'cpm'} />
-                        <KPICard label="Total Clicks" value={fmtNum(totalClicks)} dim sublabel="All Meta campaigns" onClick={() => toggleMetric('clicks')} active={expandedMetric === 'clicks'} />
-                        <KPICard label="Impressions" value={fmtNum(totalImpressions)} dim sublabel="All Meta campaigns" onClick={() => toggleMetric('impressions')} active={expandedMetric === 'impressions'} />
-                        <KPICard label="Meta Attr." value={fmtNum(displayPerf.meta_purchases ?? 0)} dim sublabel="Meta-reported purchases" onClick={() => toggleMetric('meta_attr')} active={expandedMetric === 'meta_attr'} />
+                        <KPICard label="CPM" value={fmtPln(cpm)} sublabel="Spend ÷ 1000 impr." onClick={() => toggleMetric('cpm')} active={expandedMetric === 'cpm'} />
+                        <KPICard label="Total Clicks" value={fmtNum(totalClicks)} dim sublabel="All campaigns" onClick={() => toggleMetric('clicks')} active={expandedMetric === 'clicks'} />
+                        <KPICard label="Impressions" value={fmtNum(totalImpressions)} dim sublabel="All campaigns" onClick={() => toggleMetric('impressions')} active={expandedMetric === 'impressions'} />
+                        <KPICard label="Meta Attr." value={fmtNum(displayPerf.meta_purchases ?? 0)} dim sublabel="Meta purchases" onClick={() => toggleMetric('meta_attr')} active={expandedMetric === 'meta_attr'} />
                       </div>
                     )
                   })()}
@@ -1797,6 +1824,10 @@ export default function App() {
         sttConfidence={sttConfidence}
         sttRejectionReason={sttRejectionReason}
         sttPrefillInput={sttPrefillInput}
+        digestToday={digestToday}
+        digestYesterday={digestYesterday}
+        digestStale={digestStale}
+        digestDateLabel={digestToday?.date}
       />
 
       {/* Mobile bottom nav */}

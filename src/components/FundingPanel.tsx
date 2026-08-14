@@ -1,5 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { FUNDING, FUNDING_PATHS, type FundingItem, type FundingVerdict, type FundingPathKey } from '../data/funding'
+import {
+  hermes, counters, statusesFor, effectiveCheckBy, zeroOwn, isLubelskie, openWindow,
+  daysUntil, sortByUrgency, sortByAmount, sortByDeadline,
+  STATUS_COLOR, type CheckMap, type FundingStatus,
+} from '../lib/fundingStatus'
+import { fetchFundingChecks, saveFundingCheck } from '../services/fundingChecks'
 
 // Amount formatting — mirrors dashboard.html fmtAmt, in the Stanley palette.
 function fmtAmt(o: FundingItem): string {
@@ -12,71 +18,102 @@ function fmtAmt(o: FundingItem): string {
   return o.amtNote || '—'
 }
 
-// Days to a HARD deadline (YYYY-MM-DD) — the only field we count from. `timing` is
-// descriptive text and is NEVER parsed. Returns null when there is no hard deadline.
-function deadlineDays(deadline: string | null, todayISO: string): number | null {
-  if (!deadline) return null
-  const d = Date.parse(deadline + 'T00:00:00Z')
-  const t = Date.parse(todayISO + 'T00:00:00Z')
-  if (!Number.isFinite(d) || !Number.isFinite(t)) return null
-  return Math.ceil((d - t) / 86_400_000)
-}
-
 const VERDICT_COLOR: Record<FundingVerdict, string> = {
   GO: 'var(--emerald)', MAYBE: 'var(--amber)', SKIP: 'var(--muted)',
-}
-const VERDICT_LABEL: Record<FundingVerdict, string> = {
-  GO: 'GO — rób wniosek', MAYBE: 'MAYBE — sprawdź', SKIP: 'SKIP — pomiń',
 }
 
 const warsawTodayISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
 
-type SortKey = 'amount' | 'deadline'
+type SortKey = 'urgency' | 'amount' | 'deadline'
+
+/** Short window text for the collapsed row — a hard deadline wins over prose. */
+function windowText(o: FundingItem, todayISO: string): { text: string; color: string } {
+  const d = daysUntil(o.deadline, todayISO)
+  if (o.deadline && d != null) {
+    if (d < 0) return { text: `termin minął (${-d} dni temu)`, color: 'var(--muted)' }
+    return { text: `termin za ${d} dni`, color: d <= 30 ? 'var(--orange)' : 'var(--text2)' }
+  }
+  if (openWindow(o, todayISO)) return { text: 'okno otwarte', color: 'var(--emerald)' }
+  return { text: o.timing, color: 'var(--muted)' }
+}
 
 export function FundingPanel() {
   const todayISO = warsawTodayISO()
   const [verdictFilter, setVerdictFilter] = useState<FundingVerdict | 'ALL'>('ALL')
   const [pathFilter, setPathFilter] = useState<FundingPathKey | 'ALL'>('ALL')
-  const [sortBy, setSortBy] = useState<SortKey>('amount')
+  const [regionFilter, setRegionFilter] = useState<'ALL' | 'LUBELSKIE'>('ALL')
+  const [zeroOwnOnly, setZeroOwnOnly] = useState(false)
+  const [sortBy, setSortBy] = useState<SortKey>('urgency')   // action-first by default
+  const [expanded, setExpanded] = useState<string | null>(null)
 
-  const counts = useMemo(() => ({
-    GO:    FUNDING.filter(o => o.verdict === 'GO').length,
-    MAYBE: FUNDING.filter(o => o.verdict === 'MAYBE').length,
-    SKIP:  FUNDING.filter(o => o.verdict === 'SKIP').length,
-  }), [])
+  // checkBy overrides. Missing table => empty map + a visible notice, never a crash.
+  const [checks, setChecks] = useState<CheckMap>({})
+  const [checksError, setChecksError] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    fetchFundingChecks().then(r => {
+      if (!alive) return
+      setChecks(r.checks)
+      setChecksError(r.error)
+    })
+    return () => { alive = false }
+  }, [])
+
+  async function updateCheckBy(id: string, value: string | null) {
+    setChecks(prev => ({ ...prev, [id]: { ...prev[id], checkBy: value } }))   // optimistic
+    const res = await saveFundingCheck(id, value)
+    if (!res.ok) setChecksError(res.error)
+  }
+
+  const cnt = useMemo(() => counters(FUNDING, checks, todayISO), [checks, todayISO])
+  const herald = useMemo(() => hermes(FUNDING, checks, todayISO), [checks, todayISO])
 
   const items = useMemo(() => {
-    let list = FUNDING.filter(o =>
+    const list = FUNDING.filter(o =>
       (verdictFilter === 'ALL' || o.verdict === verdictFilter) &&
-      (pathFilter === 'ALL' || o.paths.includes(pathFilter)),
+      (pathFilter === 'ALL' || o.paths.includes(pathFilter)) &&
+      (regionFilter === 'ALL' || isLubelskie(o)) &&
+      (!zeroOwnOnly || zeroOwn(o)),
     )
-    list = [...list].sort((a, b) => {
-      if (sortBy === 'amount') return (b.amtMax ?? b.amtMin ?? 0) - (a.amtMax ?? a.amtMin ?? 0)
-      // deadline: hard deadlines first (soonest → latest), then items without one.
-      const da = deadlineDays(a.deadline, todayISO)
-      const db = deadlineDays(b.deadline, todayISO)
-      if (da == null && db == null) return 0
-      if (da == null) return 1
-      if (db == null) return -1
-      return da - db
-    })
-    return list
-  }, [verdictFilter, pathFilter, sortBy, todayISO])
+    if (sortBy === 'amount') return sortByAmount(list)
+    if (sortBy === 'deadline') return sortByDeadline(list, todayISO)
+    return sortByUrgency(list, todayISO)
+  }, [verdictFilter, pathFilter, regionFilter, zeroOwnOnly, sortBy, todayISO])
 
   return (
     <div>
       <div className="section-title section-title-gold" style={{ marginBottom: 6 }}>Funding Radar</div>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--muted2)', marginBottom: 14 }}>
-        {FUNDING.length} pozycji · GO {counts.GO} · MAYBE {counts.MAYBE} · SKIP {counts.SKIP} · zrzut radaru (edukacja · ekologia · Cogni · baza)
+
+      {/* Action bar — what needs a move, not what exists. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', marginBottom: 12 }}>
+        <span style={{ color: 'var(--emerald)' }}>okno otwarte: {cnt.openWindow}</span>
+        <span style={{ color: 'var(--gold-bright)' }}>do sprawdzenia: {cnt.checkNow}</span>
+        <span style={{ color: 'var(--amber)' }}>niezweryfikowane: {cnt.unverified}</span>
+        <span style={{ color: 'var(--muted)' }}>po terminie: {cnt.pastDue}</span>
+        <span style={{ color: 'var(--teal)' }}>bez wkładu własnego: {cnt.zeroOwn}</span>
       </div>
 
+      <HermesPanel herald={herald} />
+
+      {checksError && (
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--orange)', background: 'rgba(251,146,60,0.06)', border: '1px solid rgba(251,146,60,0.25)', borderRadius: 3, padding: '6px 10px', marginBottom: 12 }}>
+          Daty sprawdzenia nie są zapisywane: {checksError}
+        </div>
+      )}
+
       {/* Filters + sort */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 16 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
         <ChipGroup label="Werdykt">
           <Chip active={verdictFilter === 'ALL'} onClick={() => setVerdictFilter('ALL')}>Wszystkie</Chip>
           {(['GO', 'MAYBE', 'SKIP'] as FundingVerdict[]).map(v => (
             <Chip key={v} active={verdictFilter === v} onClick={() => setVerdictFilter(v)} color={VERDICT_COLOR[v]}>{v}</Chip>
           ))}
+        </ChipGroup>
+        <ChipGroup label="Region">
+          <Chip active={regionFilter === 'ALL'} onClick={() => setRegionFilter('ALL')}>Wszystkie</Chip>
+          <Chip active={regionFilter === 'LUBELSKIE'} onClick={() => setRegionFilter('LUBELSKIE')} color="var(--teal)">
+            Lublin / lubelskie
+          </Chip>
         </ChipGroup>
         <ChipGroup label="Ścieżka">
           <Chip active={pathFilter === 'ALL'} onClick={() => setPathFilter('ALL')}>Wszystkie</Chip>
@@ -84,14 +121,28 @@ export function FundingPanel() {
             <Chip key={p} active={pathFilter === p} onClick={() => setPathFilter(p)}>{FUNDING_PATHS[p]}</Chip>
           ))}
         </ChipGroup>
+        <ChipGroup label="Wkład">
+          <Chip active={zeroOwnOnly} onClick={() => setZeroOwnOnly(v => !v)} color="var(--teal)">Bez wkładu własnego</Chip>
+        </ChipGroup>
         <ChipGroup label="Sortuj">
+          <Chip active={sortBy === 'urgency'} onClick={() => setSortBy('urgency')}>Pilność</Chip>
           <Chip active={sortBy === 'amount'} onClick={() => setSortBy('amount')}>Kwota</Chip>
           <Chip active={sortBy === 'deadline'} onClick={() => setSortBy('deadline')}>Termin</Chip>
         </ChipGroup>
       </div>
 
-      <div style={{ display: 'grid', gap: 12 }}>
-        {items.map(o => <FundingCard key={o.id} o={o} todayISO={todayISO} />)}
+      <div style={{ display: 'grid', gap: 4 }}>
+        {items.map(o => (
+          <FundingRow
+            key={o.id}
+            o={o}
+            todayISO={todayISO}
+            checks={checks}
+            open={expanded === o.id}
+            onToggle={() => setExpanded(cur => (cur === o.id ? null : o.id))}
+            onCheckBy={v => updateCheckBy(o.id, v)}
+          />
+        ))}
         {items.length === 0 && (
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--muted)' }}>Brak pozycji dla wybranych filtrów.</div>
         )}
@@ -100,64 +151,220 @@ export function FundingPanel() {
   )
 }
 
-function FundingCard({ o, todayISO }: { o: FundingItem; todayISO: string }) {
-  const days = deadlineDays(o.deadline, todayISO)
-  const past = days != null && days < 0
-  const total = o.crit.reduce((a, b) => a + b, 0)
+// ── HERMES ────────────────────────────────────────────────────────────────────
+// A herald, not a commentator: counts, names, order. Nothing that does not follow
+// from funding.ts + funding_checks.
+const HERMES_PREVIEW = 5
+
+function HermesPanel({ herald }: { herald: ReturnType<typeof hermes> }) {
+  // A herald announces; he does not read the whole ledger aloud. Naming all twelve
+  // pushed the actual list a full screen down, so the top few show by default and
+  // the rest are one click away.
+  const [showAll, setShowAll] = useState(false)
+  const shown = showAll ? herald.items : herald.items.slice(0, HERMES_PREVIEW)
+  const rest = herald.items.length - shown.length
 
   return (
     <div className="panel-illuminate" style={{
-      border: `1px solid ${past ? 'var(--border)' : 'var(--border)'}`,
-      borderLeft: `3px solid ${past ? 'var(--muted2)' : VERDICT_COLOR[o.verdict]}`,
-      borderRadius: 6, padding: '13px 15px', background: 'var(--surface)',
-      opacity: past ? 0.55 : 1,   // PO TERMINIE → wyszarzone, ale NIE usuwane
+      border: '1px solid var(--border)', borderLeft: '3px solid var(--gold)',
+      borderRadius: 4, background: 'var(--surface)', padding: '11px 14px', marginBottom: 14,
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem', color: 'var(--text)', fontWeight: 600 }}>{o.ttl}</span>
-            {o.verify && (
-              <span title="Pozycja niezweryfikowana — sprawdź źródło przed aplikacją" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: 'var(--amber)', border: '1px solid var(--amber)', borderRadius: 3, padding: '1px 5px', letterSpacing: '0.05em' }}>NIEZWERYFIKOWANE</span>
-            )}
-            {past && (
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: 'var(--muted)', border: '1px solid var(--muted2)', borderRadius: 3, padding: '1px 5px', letterSpacing: '0.05em' }}>PO TERMINIE</span>
-            )}
-          </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted)', marginTop: 3 }}>
-            {o.funder} · {o.region} · {o.type}
-          </div>
+      <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.72rem', color: 'var(--gold)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 7 }}>
+        Hermes
+      </div>
+      {herald.count === 0 ? (
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem', color: 'var(--emerald)' }}>
+          {herald.message}
         </div>
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', fontWeight: 700, color: VERDICT_COLOR[o.verdict], letterSpacing: '0.06em' }}>{VERDICT_LABEL[o.verdict]}</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)', marginTop: 2 }}>fit {total}/100</div>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: '0.7rem' }}>
-        <span style={{ color: 'var(--gold-bright)' }}>{fmtAmt(o)}</span>
-        <span style={{ color: 'var(--text2)' }}>wkład: {o.own}</span>
-        {/* Countdown ONLY from a hard deadline. `timing` is shown literally, never parsed. */}
-        {o.deadline
-          ? <span style={{ color: past ? 'var(--muted)' : days != null && days <= 30 ? 'var(--orange)' : 'var(--text2)' }}>
-              termin: {new Date(o.deadline).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })} {past ? '(minął)' : `(za ${days} dni)`}
-            </span>
-          : <span style={{ color: 'var(--muted)' }}>okno: {o.timing}</span>}
-      </div>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
-        {o.paths.map(p => (
-          <span key={p} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: 'var(--teal)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 6px' }}>{FUNDING_PATHS[p]}</span>
-        ))}
-      </div>
-
-      <div style={{ fontFamily: 'var(--font-sans)', fontSize: '0.8rem', color: 'var(--text2)', marginTop: 9, lineHeight: 1.55 }}>{o.why}</div>
-      <div style={{ fontFamily: 'var(--font-sans)', fontSize: '0.76rem', color: 'var(--muted)', marginTop: 6, lineHeight: 1.5 }}>
-        <span style={{ color: 'var(--gold)' }}>Wejście: </span>{o.entry}
-      </div>
-      {o.link && (
-        <a href={o.link} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--teal)' }}>{o.link} ↗</a>
+      ) : (
+        <>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem', color: 'var(--text)', marginBottom: 6 }}>
+            {herald.count} {herald.count === 1 ? 'pozycja wymaga' : herald.count < 5 ? 'pozycje wymagają' : 'pozycji wymaga'} ruchu.
+          </div>
+          <ol style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 1 }}>
+            {shown.map(i => (
+              <li key={i.id} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--text2)' }}>
+                {i.ttl}
+                <span style={{ color: VERDICT_COLOR[i.verdict] }}> · {i.verdict}</span>
+                {i.statuses.map(s => (
+                  <span key={s} style={{ color: STATUS_COLOR[s] }}> · {s}</span>
+                ))}
+              </li>
+            ))}
+          </ol>
+          {(rest > 0 || showAll) && (
+            <button
+              onClick={() => setShowAll(v => !v)}
+              style={{
+                marginTop: 5, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+                fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--gold)',
+              }}
+            >
+              {showAll ? '▴ zwiń' : `▾ pozostałe ${rest}`}
+            </button>
+          )}
+        </>
       )}
     </div>
+  )
+}
+
+// ── one row ───────────────────────────────────────────────────────────────────
+// Collapsed: a single line — name, verdict, amount, own contribution, window.
+// Everything else (why / entry / link / paths / fit) is behind the click.
+function FundingRow({
+  o, todayISO, checks, open, onToggle, onCheckBy,
+}: {
+  o: FundingItem
+  todayISO: string
+  checks: CheckMap
+  open: boolean
+  onToggle: () => void
+  onCheckBy: (v: string | null) => void
+}) {
+  const statuses = statusesFor(o, checks, todayISO)
+  const past = statuses.includes('PO TERMINIE') || (daysUntil(o.deadline, todayISO) ?? 0) < 0
+  const win = windowText(o, todayISO)
+  const free = zeroOwn(o)
+  const total = o.crit.reduce((a, b) => a + b, 0)
+  const cb = effectiveCheckBy(o, checks)
+
+  return (
+    <div className="funding-row" style={{
+      border: '1px solid var(--border)',
+      borderLeft: `3px solid ${past ? 'var(--muted2)' : VERDICT_COLOR[o.verdict]}`,
+      borderRadius: 4,
+      background: free ? 'var(--surface2)' : 'var(--surface)',
+      opacity: past ? 0.6 : 1,
+      boxShadow: free ? 'inset 3px 0 0 -1px var(--teal)' : undefined,
+    }}>
+      {/* Collapsed line — exactly one line at desktop width (see .funding-line). */}
+      <div
+        className="funding-line"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={onToggle}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
+      >
+        <span className="fl-chev" aria-hidden="true" style={{ color: 'var(--muted2)', fontSize: '0.7rem' }}>{open ? '▾' : '▸'}</span>
+
+        <span className="fl-name" style={{ fontFamily: 'var(--font-serif)', fontSize: '0.88rem', color: 'var(--text)', fontWeight: 600 }} title={o.ttl}>
+          {o.ttl}
+        </span>
+
+        <span className="fl-verdict" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', fontWeight: 700, color: VERDICT_COLOR[o.verdict], letterSpacing: '0.06em' }}>
+          {o.verdict}
+        </span>
+
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--gold-bright)' }} title={fmtAmt(o)}>
+          {fmtAmt(o)}
+        </span>
+
+        <span
+          title={`wkład własny: ${o.own}`}
+          style={{
+            fontFamily: 'var(--font-mono)', fontSize: '0.64rem',
+            color: free ? 'var(--teal)' : 'var(--text2)', fontWeight: free ? 700 : 400,
+          }}
+        >
+          {free ? '0% wkładu' : o.own}
+        </span>
+
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: win.color }} title={o.timing}>
+          {win.text}
+        </span>
+
+        {/* Compact markers — the full wording lives in Hermes and in the expanded
+            body; spelled out here they were wider than the data they annotate. */}
+        <span className="fl-marks" style={{ display: 'flex', gap: 3 }}>
+          {statuses.map(s => <StatusMark key={s} s={s} />)}
+        </span>
+
+        {/* Inline checkBy — clicking the field opens the native date picker. */}
+        <input
+          className="fl-date"
+          type="date"
+          value={cb ?? ''}
+          onClick={e => e.stopPropagation()}
+          onKeyDown={e => e.stopPropagation()}
+          onChange={e => onCheckBy(e.target.value || null)}
+          title="Kiedy sprawdzić stronę programu"
+          aria-label={`Data sprawdzenia: ${o.ttl}`}
+          style={{
+            fontFamily: 'var(--font-mono)', fontSize: '0.6rem', padding: '1px 3px',
+            background: 'transparent', color: cb ? 'var(--text2)' : 'var(--muted2)',
+            border: `1px solid ${cb ? 'var(--border)' : 'var(--border-gold)'}`, borderRadius: 3,
+            colorScheme: 'dark light',
+          }}
+        />
+      </div>
+
+      {/* Expanded detail */}
+      {open && (
+        <div style={{ padding: '0 12px 12px 25px', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted)', marginBottom: 7 }}>
+            {o.funder} · {o.region} · {o.type} · fit {total}/100
+          </div>
+
+          {/* Statuses spelled out here — the row above only carries the markers. */}
+          {statuses.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+              {statuses.map(s => (
+                <span key={s} style={{
+                  fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.05em',
+                  color: STATUS_COLOR[s], border: `1px solid ${STATUS_COLOR[s]}`, borderRadius: 3, padding: '1px 6px',
+                }}>{s}</span>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+            {o.paths.map(p => (
+              <span key={p} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: 'var(--teal)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 6px' }}>{FUNDING_PATHS[p]}</span>
+            ))}
+          </div>
+
+          {/* Full window text verbatim — never re-interpreted. */}
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted)', marginBottom: 8 }}>
+            okno: {o.timing}
+            {o.deadline && ` · twardy termin: ${o.deadline}`}
+            {` · wkład własny: ${o.own}`}
+          </div>
+
+          <div style={{ fontFamily: 'var(--font-sans)', fontSize: '0.8rem', color: 'var(--text2)', lineHeight: 1.55 }}>{o.why}</div>
+          <div style={{ fontFamily: 'var(--font-sans)', fontSize: '0.76rem', color: 'var(--muted)', marginTop: 6, lineHeight: 1.5 }}>
+            <span style={{ color: 'var(--gold)' }}>Wejście: </span>{o.entry}
+          </div>
+          {o.link && (
+            <a href={o.link} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--teal)' }}>{o.link} ↗</a>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// One-glyph status marker for the collapsed line. The word itself is ~90–115px
+// wide, which crowded out the data it was annotating; the full label is one hover
+// (or one click) away.
+const MARK: Record<FundingStatus, string> = {
+  'SPRAWDŹ TERAZ': '!',
+  NIEZWERYFIKOWANE: '?',
+  'PO TERMINIE': '×',
+}
+
+function StatusMark({ s }: { s: FundingStatus }) {
+  return (
+    <span
+      title={s}
+      aria-label={s}
+      style={{
+        fontFamily: 'var(--font-mono)', fontSize: '0.62rem', fontWeight: 700, lineHeight: 1,
+        width: 15, height: 15, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        color: STATUS_COLOR[s], border: `1px solid ${STATUS_COLOR[s]}`, borderRadius: 3, flexShrink: 0,
+      }}
+    >{MARK[s]}</span>
   )
 }
 

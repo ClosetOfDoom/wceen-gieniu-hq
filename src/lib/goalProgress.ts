@@ -30,8 +30,13 @@ export function ppOrdersGoal(count: number | null, expected: number = PP_ORDERS_
   if (count == null) return { pct: 0, status: 'red', note: 'no orders data' }
   const exp  = Math.max(expected, 0)
   const tgt  = Math.max(1, Math.round(exp))
-  const pace = exp > 0 ? count / exp : (count > 0 ? 1 : 0)
-  const pct  = clamp(exp > 0 ? (count / exp) * 100 : 0)
+  // Pace is measured against tgt — the SAME rounded target the bar prints — not
+  // against the raw fractional expectation. Orders are whole numbers, so grading 9
+  // against a hidden 9.3 made a bar reading "9/9" colour amber "watch": exactly on
+  // the stated target, yet flagged as behind it. Comparing against the printed
+  // target means at-or-above pace is green, and amber starts strictly below it.
+  const pace = exp > 0 ? count / tgt : (count > 0 ? 1 : 0)
+  const pct  = clamp(exp > 0 ? (count / tgt) * 100 : 0)
   if (pace >= 1)             return { pct, status: 'green', note: `on pace — ${count}/${tgt} ✓` }
   if (pace >= PP_AMBER_PACE) return { pct, status: 'amber', note: `watch — ${count}/${tgt}` }
   if (pace >= PP_ATTN_PACE)  return { pct, status: 'red',   note: `attention — below pace (${count}/${tgt})` }

@@ -179,6 +179,41 @@ button:disabled {
   transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
+/* ── KPI grid ──────────────────────────────────────────────────────────────
+   Real CSS grid, not flex-wrap. Flex-wrap left the 6th card orphaned on its own
+   row stretched to full width; a fixed 3-up track makes six cards a clean 3x2
+   block. align-items:stretch (grid default, stated for intent) + height:100% on
+   the card gives every card in a row the tallest card height, so a longer
+   sublabel can never make one card taller than its neighbours. */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Equal-height rows: without this a row whose cards carry no sublabel renders
+     shorter than its neighbours, so the block reads as ragged even though each
+     individual row is internally consistent. */
+  grid-auto-rows: 1fr;
+  gap: 10px;
+  align-items: stretch;
+}
+
+/* Card label: always ONE line. Long labels ellipsis rather than wrap — a wrapped
+   title ("WIX REVENUE") used to push its card taller than the rest of the row. */
+.kpi-label-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Sublabel: one line too, same reasoning. Size lives here, not inline, so the
+   narrow-viewport rules below can actually shrink it. */
+.kpi-sublabel {
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Large desktop */
 @media (min-width: 1600px) {
   .hud-layout { grid-template-columns: 230px 1fr 520px; }
@@ -196,6 +231,14 @@ button:disabled {
     grid-template-rows: 100vh;
   }
   .hud-sidebar { display: none; }
+
+  /* 2-up: the main column here is viewport minus the 340px chat panel. */
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* ~177px of card here, so the label needs the same shrink as on mobile. */
+  .kpi-label-text { font-size: 0.58rem; letter-spacing: 0.04em; }
+  .kpi-sublabel { font-size: 0.58rem; }
+  .kpi-card { padding: 14px 12px; }
 }
 
 /* Mobile (≤699px) — single column, GIENIU chat first */
@@ -258,20 +301,21 @@ button:disabled {
     gap: 18px !important;
   }
 
-  /* KPI grid: 2 columns on mobile */
+  /* KPI grid: 2 columns on mobile -> six cards read as 2x3. */
   .kpi-grid {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
+
+  /* Narrow cards: shrink the label so a long one still fits on its single line. */
+  .kpi-label-text { font-size: 0.62rem; letter-spacing: 0.05em; }
+  .kpi-sublabel { font-size: 0.62rem; }
 
   /* KPI cards: tighter padding on mobile. Value font-size is set inline per value
      length (see KPICard.valueFontSize) so long numbers shrink to fit — no override
      here, otherwise a fixed size would clip long values inside the 2-col grid. */
   .kpi-card {
     padding: 14px 12px !important;
-    min-width: 0 !important;
-    flex: unset !important;
   }
 
   /* GIENIU panel header section tight on mobile */
@@ -289,9 +333,10 @@ button:disabled {
 /* Small mobile (≤390px) — extra tightening */
 @media (max-width: 390px) {
   .kpi-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 6px !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
   }
+  .kpi-label-text { font-size: 0.58rem; letter-spacing: 0.04em; }
 }
 
 /* Small mobile (≤430px) — extra tightening */
@@ -1389,4 +1434,44 @@ button:active, [role="button"]:active,
 .prompt-chip:active, .btn-mic:active, .gieniu-duck:active {
   transform: scale(0.98);
   filter: brightness(0.94);
+}
+
+/* ── Funding radar rows ─────────────────────────────────────────────────────
+   The collapsed row is a GRID, not a wrapping flex line: every item must read
+   as exactly one line so a screenful shows a work queue rather than two cards.
+   Each cell clips with an ellipsis instead of pushing the row to a second line. */
+.funding-line {
+  display: grid;
+  grid-template-columns:
+    14px                /* chevron */
+    minmax(0, 2.2fr)    /* name */
+    46px                /* verdict */
+    minmax(0, 1.1fr)    /* amount */
+    minmax(0, 0.9fr)    /* own contribution */
+    minmax(0, 1.2fr)    /* window */
+    auto                /* status markers */
+    auto;               /* check-by date */
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.funding-line > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Below the tablet breakpoint one line stops being honest — the name alone needs
+   the width. Fall back to a wrapping line rather than shrinking every field to
+   noise; the one-line rule is a desktop promise, not a 360px one. */
+@media (max-width: 899px) {
+  .funding-line {
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .funding-line .fl-name { flex: 1 1 55%; }
 }

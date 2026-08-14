@@ -188,8 +188,10 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
         border: `1px solid ${active ? 'var(--border-gold)' : borderColor}`,
         borderRadius: '4px',
         padding: '20px 22px',
-        minWidth: '140px',
-        flex: '1 1 140px',
+        minWidth: 0,
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
         position: 'relative',
         overflow: 'hidden',
         cursor: clickable ? 'pointer' : undefined,
@@ -227,10 +229,11 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
         display: 'flex',
         alignItems: 'center',
         gap: '6px',
+        flexShrink: 0,
       }}>
-        {label}
+        <span className="kpi-label-text" title={label}>{label}</span>
         {clickable && (
-          <span aria-hidden="true" style={{ color: active ? 'var(--gold)' : 'var(--muted2)', fontSize: '0.7rem', transition: 'color 0.15s' }}>
+          <span aria-hidden="true" style={{ color: active ? 'var(--gold)' : 'var(--muted2)', fontSize: '0.7rem', flexShrink: 0, transition: 'color 0.15s' }}>
             {active ? '▾' : '▸'}
           </span>
         )}
@@ -261,7 +264,7 @@ export function KPICard({ label, value, accent, warning, positive, danger, dim, 
         </span>
       </div>
       {sublabel && (
-        <div style={{ fontSize: '0.7rem', color: 'var(--muted2)', marginTop: '5px', fontFamily: 'var(--font-mono)' }}>
+        <div className="kpi-sublabel" title={sublabel} style={{ color: 'var(--muted2)', marginTop: 'auto', paddingTop: '5px', fontFamily: 'var(--font-mono)' }}>
           {sublabel}
         </div>
       )}

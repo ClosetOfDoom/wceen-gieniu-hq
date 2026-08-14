@@ -1337,7 +1337,7 @@ function renderWebinarRegistrants(sessions, participants, buyers) {
   L.push('--- WEBINAR REGISTRANTS PER SESSION (webinar_participants ⋈ webinar_sessions) ---')
   L.push('Use this to answer "who registered for the <day> webinar and who of them bought".')
   L.push('HARD LIMITS you MUST state when relevant:')
-  L.push('  • ATTENDANCE IS UNKNOWN: webinar_attendance is empty, so you do NOT know who')
+  L.push('  • ATTENDANCE IS NOT PER-REGISTRANT HERE: use the WEBINAR FUNNEL block for')
   L.push('    actually attended any webinar. Never say someone attended or was absent.')
   L.push('  • registered_at is NULL on every webinar_participants row → you do NOT know the')
   L.push('    exact registration time. Say "registration time not recorded" if asked.')
@@ -1376,17 +1376,130 @@ function renderWebinarRegistrants(sessions, participants, buyers) {
       if (matched.length) {
         buyNote = matched.map(r => `${(Number(r.amount) || 0).toFixed(0)} PLN ${buyerPhase(r) === 'after' ? 'AFTER (conversion)' : 'BEFORE (pre-webinar)'}`).join(', ')
       }
-      L.push(`  • ${maskEmail2(p.email)} | registered_at: ${p.registered_at ?? 'NULL (not recorded)'} | attendance: UNKNOWN (table empty) | ${buyNote}`)
+      L.push(`  • ${maskEmail2(p.email)} | registered_at: ${p.registered_at ?? 'NULL (not recorded)'} | attendance: see WEBINAR FUNNEL block (per-session, not per-registrant here) | ${buyNote}`)
     }
     if (regs.length > 40) L.push(`  …+${regs.length - 40} more registrants`)
   }
   return L.join('\n')
 }
 
+// v_webinar_funnel — the ONE source for webinar session numbers. It keys
+// attendance on clickmeeting_room_id + clickmeeting_session_id. Never join
+// attendance on webinar_id: that column is NULL on every row since the FK to
+// webinars was dropped, which is why attendance used to look empty.
+async function fetchWebinarFunnelView(supabaseUrl, serviceKey) {
+  if (!supabaseUrl || !serviceKey) return []
+  try {
+    const url = new URL(`${supabaseUrl}/rest/v1/v_webinar_funnel`)
+    url.searchParams.set('select', '*')
+    url.searchParams.set('order', 'session_started_at.desc')
+    url.searchParams.set('limit', '60')
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' },
+    })
+    if (!res.ok) return []
+    return await res.json()
+  } catch {
+    return []
+  }
+}
+
+// Render the webinar funnel for the LLM, including the time-in-room signal —
+// currently the only measure that actually separates one session from another.
+function renderWebinarFunnelView(rows) {
+  const L = []
+  L.push('--- WEBINAR FUNNEL (v_webinar_funnel — the ONLY webinar source of truth) ---')
+  if (!rows.length) {
+    L.push('No rows returned. Say plainly that webinar figures are unavailable.')
+    return L.join('\n')
+  }
+  L.push('RULES:')
+  L.push('  • Key is clickmeeting_room_id + clickmeeting_session_id. webinar_id is NULL')
+  L.push('    everywhere and must NEVER be used to reason about attendance.')
+  L.push('  • attendees / avg_minutes / buyers / revenue_7d come straight from this view.')
+  L.push('  • SHOW-UP RATE: registration data is INCOMPLETE — in most sessions MORE people')
+  L.push('    attended than registered. When attendees > registered, the show-up rate is')
+  L.push('    UNKNOWN. Say "rejestracje niekompletne". NEVER report a percentage above 100,')
+  L.push('    and never compute a rate off that denominator.')
+  L.push('  • A session with no attendance rows is "brak danych", NOT zero attendees.')
+  L.push('  • revenue_7d = orders within 7 days AFTER the session start.')
+  L.push('')
+  L.push('date | product | registered | attendees | avg_min | buyers | revenue_7d | session_name')
+  for (const r of rows) {
+    const d = String(r.session_started_at ?? '').slice(0, 10)
+    const reg = r.registered == null ? 'n/d' : r.registered
+    const att = r.attendees == null || r.attendees === 0 ? 'brak danych' : r.attendees
+    const su = (r.registered > 0 && r.attendees != null && r.attendees > r.registered)
+      ? ' [show-up UNKNOWN: rejestracje niekompletne]' : ''
+    L.push(`${d} | ${r.product_tag ?? '—'} | ${reg} | ${att} | ${r.avg_minutes ?? 'n/d'} | ${r.buyers ?? 0} | ${Math.round(r.revenue_7d ?? 0)} | ${r.session_name}${su}`)
+  }
+
+  // Time-in-room vs sales, ranked — so "which sessions held people longest, and
+  // did that sell?" is answerable from figures rather than impression.
+  const usable = rows.filter(r => r.avg_minutes != null && r.attendees > 0)
+  if (usable.length) {
+    const byTime = [...usable].sort((a, b) => (b.avg_minutes ?? 0) - (a.avg_minutes ?? 0))
+    L.push('')
+    L.push('TIME-IN-ROOM RANKING (longest average first) — the only signal that currently')
+    L.push('differentiates sessions. Pair it with buyers/revenue_7d when asked what works:')
+    for (const r of byTime.slice(0, 10)) {
+      const conv = r.attendees > 0 ? ((r.buyers ?? 0) / r.attendees * 100).toFixed(1) : 'n/d'
+      L.push(`  ${String(r.session_started_at ?? '').slice(0, 10)} ${r.product_tag ?? '—'} — ${r.avg_minutes} min avg · ${r.attendees} obecnych · ${r.buyers ?? 0} kupiło (${conv}% obecnych) · ${Math.round(r.revenue_7d ?? 0)} PLN`)
+    }
+    const top = byTime.slice(0, Math.max(1, Math.ceil(byTime.length / 2)))
+    const bot = byTime.slice(Math.max(1, Math.ceil(byTime.length / 2)))
+    const rate = (g) => {
+      const a = g.reduce((s, r) => s + (r.attendees ?? 0), 0)
+      const b = g.reduce((s, r) => s + (r.buyers ?? 0), 0)
+      return a > 0 ? (b / a * 100).toFixed(1) + '%' : 'n/d'
+    }
+    L.push(`  Longer-half sessions convert ${rate(top)} of attendees; shorter-half ${rate(bot)}.`)
+  }
+  return L.join('\n')
+}
+
+// checkBy overrides live in funding_checks (the browser cannot write funding.ts).
+// A missing table is not an error here: it simply means nothing is scheduled, so
+// every GO/MAYBE item reads as SPRAWDŹ TERAZ — the same verdict the panel shows.
+async function fetchFundingChecks(supabaseUrl, serviceKey) {
+  if (!supabaseUrl || !serviceKey) return {}
+  try {
+    const url = new URL(`${supabaseUrl}/rest/v1/funding_checks`)
+    url.searchParams.set('select', 'funding_id,check_by')
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' },
+    })
+    if (!res.ok) return {}
+    const rows = await res.json()
+    const out = {}
+    for (const r of rows || []) out[r.funding_id] = r.check_by ?? null
+    return out
+  } catch {
+    return {}
+  }
+}
+
+// Action statuses — the SAME rules as src/lib/fundingStatus.ts, so Stanley quotes
+// the numbers the Funding panel is showing rather than a second opinion.
+//   SPRAWDŹ TERAZ    — GO/MAYBE with no checkBy, or a checkBy already past
+//   NIEZWERYFIKOWANE — verify:true
+//   PO TERMINIE      — hard deadline already past
+// SKIP items produce no statuses.
+function fundingStatuses(o, checks, todayISO) {
+  if (o.verdict === 'SKIP') return []
+  const past = (iso) => iso && Date.parse(iso + 'T00:00:00Z') < Date.parse(todayISO + 'T00:00:00Z')
+  const cb = Object.prototype.hasOwnProperty.call(checks, o.id) ? checks[o.id] : (o.checkBy ?? null)
+  const out = []
+  if (cb == null || past(cb)) out.push('SPRAWDŹ TERAZ')
+  if (o.verify) out.push('NIEZWERYFIKOWANE')
+  if (past(o.deadline)) out.push('PO TERMINIE')
+  return out
+}
+
 // Render the FUNDING RADAR block for the LLM. The whole table goes in, so Stanley can
 // answer "what to apply for now" / "what needs own contribution" — always with verdict,
 // amount and verified status, and NEVER inventing programmes outside this list.
-function renderFundingRadar(todayISO) {
+function renderFundingRadar(todayISO, checks = {}) {
   const { DATA, PATHS } = FUNDING_RADAR
   const L = []
   L.push('--- FUNDING RADAR (13 opportunities — the ONLY funding source of truth) ---')
@@ -1397,6 +1510,9 @@ function renderFundingRadar(todayISO) {
   L.push('  verify=true => UNVERIFIED (say so). "own" = required own contribution.')
   L.push('  A hard "deadline" (YYYY-MM-DD) is the ONLY date to reason about; "timing" is')
   L.push('  descriptive text — quote it literally, never compute days from it. today=' + todayISO)
+  L.push('  checkBy = when to re-check the programme page (null = never scheduled).')
+  L.push('  STATUS lines are the SAME ones the Funding panel shows — when asked what')
+  L.push('  needs checking, answer with THESE items and THIS count, nothing else.')
   const amt = (o) => {
     if (o.amtNote && o.amtMin == null && o.amtMax == null) return o.amtNote
     if (o.amtMin != null && o.amtMax != null) return `${o.amtMin}–${o.amtMax} zł`
@@ -1410,8 +1526,25 @@ function renderFundingRadar(todayISO) {
     L.push(`  paths: ${o.paths.map(p => PATHS[p] || p).join(', ')} | region: ${o.region} | type: ${o.type}`)
     L.push(`  amount: ${amt(o)} | own contribution: ${o.own}`)
     L.push(`  deadline: ${o.deadline ? o.deadline + (past ? ' (PAST)' : '') : 'none (hard)'} | timing (literal, do not parse): "${o.timing}"`)
+    L.push(`  checkBy: ${(Object.prototype.hasOwnProperty.call(checks, o.id) ? checks[o.id] : (o.checkBy ?? null)) ?? 'not set'}`)
+    const st = fundingStatuses(o, checks, todayISO)
+    L.push(`  STATUS: ${st.length ? st.join(', ') : 'none — no action required'}`)
     L.push(`  why: ${o.why}`)
     L.push(`  entry: ${o.entry}`)
+  }
+
+  // Hermes summary — the herald's own count and order, so the panel and the
+  // answer can never disagree about how much work is outstanding.
+  const needing = DATA
+    .map(o => ({ o, st: fundingStatuses(o, checks, todayISO) }))
+    .filter(x => x.st.length)
+  L.push('')
+  L.push('--- HERMES (funding items needing a move) ---')
+  if (!needing.length) {
+    L.push('Nic nie wymaga ruchu — wszystkie pozycje sprawdzone i w terminie.')
+  } else {
+    L.push(`${needing.length} items need a move:`)
+    for (const x of needing) L.push(`  - ${x.o.ttl} [${x.o.verdict}] ${x.st.join(', ')}`)
   }
   return L.join('\n')
 }
@@ -1567,6 +1700,14 @@ You MUST state plainly that ATTENDANCE IS UNKNOWN — webinar_attendance is empt
 do not know who actually attended; never claim someone attended or was absent. Also note
 that registration time is not recorded (registered_at is null). Thursday 18:00 = JSU,
 Tuesday 18:00 = JZK. If a session isn't in the data, say so — do not invent registrants.
+
+━━━ WEBINAR SHOW-UP RATE ━━━
+Registration data is incomplete: in most sessions MORE people attended than registered.
+NEVER report a show-up rate above 100%, and never divide attendees by registered when
+attendees > registered — say "rejestracje niekompletne" and give the raw counts instead.
+A session with no attendance rows is "brak danych", never zero attendees.
+When asked what differentiates sessions, use average time in room (avg_minutes) against
+buyers / revenue_7d — that is the one signal that currently separates them.
 
 ━━━ FUNDING RADAR (grants / financing) ━━━
 For "what should we apply for first / now", "what needs own contribution", "which grants
@@ -1763,6 +1904,16 @@ exports.handler = async (event) => {
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   )
+  // v_webinar_funnel — per-session attendance, time in room and 7-day revenue.
+  const webinarFunnelPromise = fetchWebinarFunnelView(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+  )
+  // checkBy overrides for the funding radar (Hermes statuses).
+  const fundingChecksPromise = fetchFundingChecks(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+  )
 
   // 1 — Detect intent
   const { intent, confidence, matchedTerms } = detectIntent(message)
@@ -1878,7 +2029,9 @@ exports.handler = async (event) => {
   const adRows30 = await adRows30Promise
   const webinarBuyers = await webinarBuyersPromise
   const webinarReg = await webinarRegistrantsPromise
-  const creativeAnalyticsText = `${renderCreativeAnalytics(adRows30, today)}\n\n${renderWebinarBuyers(webinarBuyers)}\n\n${renderWebinarRegistrants(webinarReg.sessions, webinarReg.participants, webinarBuyers)}\n\n${renderFundingRadar(today)}`
+  const fundingChecks = await fundingChecksPromise
+  const webinarFunnelRows = await webinarFunnelPromise
+  const creativeAnalyticsText = `${renderCreativeAnalytics(adRows30, today)}\n\n${renderWebinarBuyers(webinarBuyers)}\n\n${renderWebinarRegistrants(webinarReg.sessions, webinarReg.participants, webinarBuyers)}\n\n${renderFundingRadar(today, fundingChecks)}\n\n${renderWebinarFunnelView(webinarFunnelRows)}`
 
   // Build LLM user message with context. When we have a deterministic answer for
   // this intent, hand the LLM those EXACT numbers as a verified anchor and ask it

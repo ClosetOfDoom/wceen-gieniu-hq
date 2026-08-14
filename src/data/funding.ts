@@ -25,6 +25,10 @@ export interface FundingItem {
   entry: string
   link: string
   verify: boolean           // true => UNVERIFIED lead
+  // When to re-check the programme page. NEVER generated here and never derived
+  // from the timing text — null until a human sets one. The live value comes from
+  // the funding_checks table; this field is only the default.
+  checkBy?: string | null   // YYYY-MM-DD or null
 }
 
 // Path key -> Polish label (from PATHS in dashboard.html).
@@ -50,7 +54,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "GO", crit: [7, 10, 9, 8, 10, 1, 7, 4, 8, 9],
     why: "Najlepsze dopasowanie do Cogni: grant dla fundacji na demo/wdrożenie cyfrowego narzędzia rozwiązującego problem społeczny, do 170 tys. zł, plus 3-miesięczna inkubacja z mentorami. Bez wymaganego wkładu gotówkowego.",
     entry: "Zgłoś Cogni jako narzędzie przeciw wykluczeniu edukacyjnemu (pamięć, koncentracja, nauka dla seniorów i uczniów z trudnościami). Zespół 2–5 osób. Pilnuj otwarcia ed. 2026/27 i złóż w pierwszych dniach.",
-    link: "https://sektor3-0.pl/fundusz/", verify: false,
+    link: "https://sektor3-0.pl/fundusz/", verify: false, checkBy: null,
   },
   {
     id: "pes", ttl: "Pożyczki PES — TISE / OIC Lublin", funder: "TISE · OIC Poland (Lublin)",
@@ -60,7 +64,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "GO", crit: [7, 9, 5, 7, 5, 7, 8, 9, 9, 7],
     why: "Najszybsza droga do gotówki (4–10 tyg.), bez wymaganego wkładu, z potencjałem umorzenia do ~40%. Idealna jako finansowanie pomostowe pod dotacje i na pilny remont bazy terenowej.",
     entry: "Napisz do TISE (pes@tise.pl) i OIC Lublin (sekretariat@oic.lublin.pl). Przygotuj uproszczony biznesplan działalności odpłatnej (warsztaty, turnusy, licencje Cogni).",
-    link: "https://www.tise.pl/", verify: false,
+    link: "https://www.tise.pl/", verify: false, checkBy: null,
   },
   {
     id: "oppmech", ttl: "1,5% podatku PIT (mechanizm OPP)", funder: "mechanizm OPP — kampania własna",
@@ -70,7 +74,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "GO", crit: [5, 10, 9, 9, 5, 5, 8, 5, 9, 8],
     why: "Nie grant, lecz stały strumień przychodu dzięki statusowi OPP — zero kosztu wejścia. Wymaga kampanii (połącz z Google Ad Grants). Najtańszy kapitałowo zasób, który WCEEN już ma.",
     entry: "Zrób prostą stronę „przekaż 1,5%” z numerem KRS, dodaj KRS na wszystkich materiałach, odpal kampanię marzec–kwiecień (wykorzystaj darmowe Google Ads).",
-    link: "", verify: false,
+    link: "", verify: false, checkBy: null,
   },
   {
     id: "googlead", ttl: "Google Ad Grants dla NGO", funder: "Google for Nonprofits (via ngo.pl)",
@@ -80,7 +84,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "GO", crit: [5, 10, 10, 7, 8, 1, 8, 8, 7, 7],
     why: "Stały, całoroczny kredyt na reklamy Google Ads — zero gotówki. Idealny do promocji Cogni i naboru uczestników warsztatów. Nie sfinansuje remontu ani pensji, ale tnie koszt dotarcia do zera.",
     entry: "Zweryfikuj kwalifikację (strona eccehomo21.com, treści zgodne z polityką), załóż konto Google for Nonprofits, uruchom kampanie pod Cogni i zielone szkoły.",
-    link: "https://fundusze.ngo.pl/aktualne", verify: false,
+    link: "https://fundusze.ngo.pl/aktualne", verify: false, checkBy: null,
   },
   {
     id: "nowefio", ttl: "NOWEFIO 2027", funder: "NIW-CRSO",
@@ -90,7 +94,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "GO", crit: [7, 9, 8, 8, 5, 4, 7, 5, 7, 6],
     why: "Sztandarowy program FIO dla NGO; granty rzędu 100–250 tys., niski lub zerowy wkład finansowy, status OPP punktuje w ocenie. Naturalne miejsce na projekt edukacji pozaformalnej + zielone szkoły z komponentem Cogni.",
     entry: "Przygotuj koncepcję z wyprzedzeniem (edukacja pozaformalna + zielone szkoły + Cogni jako narzędzie). Zgłoś w pierwszym możliwym naborze ~XI 2026.",
-    link: "https://niw.gov.pl/", verify: false,
+    link: "https://niw.gov.pl/", verify: false, checkBy: null,
   },
   {
     id: "erasmus", ttl: "Erasmus+ KA2 — partnerstwa małej skali", funder: "FRSE (Erasmus+)",
@@ -100,7 +104,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "GO", crit: [7, 10, 9, 7, 9, 2, 6, 4, 7, 7],
     why: "Partnerstwa edtech w duchu Cogni — finansowanie ryczałtowe (30/60 tys. EUR), brak wymaganego wkładu finansowego. Warunek: partner zagraniczny. Buduje też prestiż międzynarodowy fundacji.",
     entry: "Zacznij teraz budować 1–2 partnerstwa zagraniczne (szkoły/NGO/edtech). Koncepcja: Cogni w nauczaniu hybrydowym i nauce języków. Nabór ~III 2027.",
-    link: "https://erasmusplus.org.pl/", verify: false,
+    link: "https://erasmusplus.org.pl/", verify: false, checkBy: null,
   },
   {
     id: "wfos", ttl: "Edukacja ekologiczna — WFOŚiGW Lublin", funder: "WFOŚiGW w Lublinie",
@@ -110,7 +114,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "GO", crit: [6, 6, 6, 9, 3, 7, 7, 5, 7, 5],
     why: "Regionalny fundusz wprost pod edukację ekologiczną i zielone szkoły — w samym sercu profilu WCEEN i pod bazę terenową. Najbliższy realny grant „eko” o lokalnej, przyjaznej dla młodej fundacji skali.",
     entry: "Monitoruj ogłoszenia WFOŚiGW Lublin. Przygotuj projekt zielonych szkół / warsztatów terenowych z bazą jako miejscem realizacji.",
-    link: "https://www.wfos.lublin.pl/", verify: false,
+    link: "https://www.wfos.lublin.pl/", verify: false, checkBy: null,
   },
   {
     id: "niwmrw", ttl: "Fundusz Inicjatyw Międzynar. Roku Wolontariatu", funder: "NIW-CRSO",
@@ -120,7 +124,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "MAYBE", crit: [9, 8, 6, 7, 4, 3, 6, 6, 7, 6],
     why: "Duża pula (2,5 mln; granty do 2,1 mln) na zwiększanie aktywności społecznej i wolontariatu. WCEEN może wpisać wolontariat edukacyjny i warsztaty; OPP punktuje. Motyw „wolontariat” trzeba dopasować realnie, nie sztucznie.",
     entry: "Pobierz regulamin, sprawdź czy edukacja pozaformalna + wolontariat młodzieży kwalifikuje. Jeśli tak — projekt łączący zielone szkoły z wolontariatem.",
-    link: "https://fundusze.ngo.pl/aktualne", verify: false,
+    link: "https://fundusze.ngo.pl/aktualne", verify: false, checkBy: null,
   },
   {
     id: "orlen", ttl: "Program grantowy „Więcej ciepła”", funder: "Fundacja ORLEN",
@@ -130,7 +134,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "MAYBE", crit: [8, 7, 6, 8, 4, 5, 6, 6, 7, 6],
     why: "Grant dla NGO działających na rzecz dzieci, młodzieży, seniorów i osób z niepełnosprawnościami; do 500 tys. zł. Edukacja i seniorzy = mocne dopasowanie. Wątpliwość: zasięg terytorialny (oddział „dla Pomorza”).",
     entry: "Sprawdź regulamin i zasięg. Jeśli ogólnopolski — projekt edukacyjny dla seniorów (trening pamięci, Cogni) z wyraźnym wątkiem społecznym.",
-    link: "https://fundusze.ngo.pl/aktualne", verify: true,
+    link: "https://fundusze.ngo.pl/aktualne", verify: true, checkBy: null,
   },
   {
     id: "felu", ttl: "FELU — infrastruktura / edukacja (7.x)", funder: "Fundusze Europejskie dla Lubelskiego 2021–27",
@@ -140,7 +144,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "MAYBE", crit: [10, 3, 5, 7, 5, 9, 4, 2, 8, 8],
     why: "Największe kwoty i wprost pod bazę/infrastrukturę edukacyjną, ale wysoki wkład własny, długi proces i ostra konkurencja — trudne dla młodej fundacji w pojedynkę. Realne raczej w partnerstwie i z pożyczką pomostową.",
     entry: "Długi horyzont. Najpierw zbuduj historię mniejszymi grantami; rozważ partnerstwo z JST/szkołą; pożyczka PES jako finansowanie pomostowe pod refundację.",
-    link: "https://www.funduszeeuropejskie.gov.pl/nabory-wnioskow/", verify: true,
+    link: "https://www.funduszeeuropejskie.gov.pl/nabory-wnioskow/", verify: true, checkBy: null,
   },
   {
     id: "techedu", ttl: "Mikrogrant: technologia + edukacja + ekologia", funder: "lead z ngo.pl (do weryfikacji)",
@@ -150,7 +154,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "MAYBE", crit: [3, 8, 7, 8, 7, 2, 7, 7, 6, 4],
     why: "Mała kwota, ale temat w dziesiątkę (technologie + edukacja + ekologia + III sektor). Dobry na szybki pilotaż Cogni albo mikrowarsztat eko-edukacyjny, by zbudować portfolio przed większymi naborami.",
     entry: "Wejdź na ngo.pl, odfiltruj kategorie technologie/edukacja/ekologia, dopasuj konkretny program i złóż szybki, prosty wniosek pilotażowy.",
-    link: "https://fundusze.ngo.pl/aktualne?page=1&cats%5B630%5D=631&cats%5B630%5D=637", verify: true,
+    link: "https://fundusze.ngo.pl/aktualne?page=1&cats%5B630%5D=631&cats%5B630%5D=637", verify: true, checkBy: null,
   },
   {
     id: "big175", ttl: "Program prywatny 40 tys.–1,75 mln zł", funder: "lead z ngo.pl (do weryfikacji)",
@@ -160,7 +164,7 @@ export const FUNDING: FundingItem[] = [
     verdict: "MAYBE", crit: [9, 6, 5, 6, 4, 4, 5, 5, 7, 6],
     why: "Wysoki pułap kwotowy z listy prywatnych/centralnych funduszy na ngo.pl — ale bez potwierdzonego zakresu tematycznego. Warte 15 minut weryfikacji, bo górna granica jest poważna.",
     entry: "Otwórz listę „centralne/prywatne” na ngo.pl, znajdź ten program, sprawdź temat i uprawnionych. Jeśli pasuje do edukacji — awansuj do GO.",
-    link: "https://fundusze.ngo.pl/aktualne?page=1&cats%5B630%5D=631&cats%5B630%5D=637", verify: true,
+    link: "https://fundusze.ngo.pl/aktualne?page=1&cats%5B630%5D=631&cats%5B630%5D=637", verify: true, checkBy: null,
   },
   {
     id: "seniorzy15", ttl: "Działania dla seniorów i społeczności (zdrowa żywność)", funder: "Federacja UTW (via ngo.pl)",
@@ -170,6 +174,6 @@ export const FUNDING: FundingItem[] = [
     verdict: "SKIP", crit: [3, 7, 6, 4, 1, 1, 6, 7, 4, 3],
     why: "WCEEN kwalifikuje się terytorialnie (lubelskie), ale motyw to zdrowa lokalna żywność i integracja wokół rolnictwa — poza profilem fundacji. Wpisalibyśmy się tylko sztucznie, a kwota jest symboliczna.",
     entry: "Pomiń — chyba że masz realny pomysł łączący edukację seniorów ze zdrową żywnością. Lepiej skupić energię na PES, Sektor 3.0 i NOWEFIO.",
-    link: "https://fundusze.ngo.pl/aktualne", verify: false,
+    link: "https://fundusze.ngo.pl/aktualne", verify: false, checkBy: null,
   },
 ]

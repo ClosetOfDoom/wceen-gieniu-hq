@@ -1,9 +1,11 @@
-import { useState, Fragment, type CSSProperties } from 'react'
+import { useState, useEffect } from 'react'
 import type { JsuFunnelSummary, JsuFunnelRow, JsuParticipantRow, FunnelBottleneck, JsuFunnelDebug } from '../services/webinarFunnel'
 import { pct, fmtPlnFunnel } from '../services/webinarFunnel'
 import { ParticipantJourneyTable } from './ParticipantJourneyTable'
 import type { JsuCommandKey } from '../brain/responses'
 import { normalizeProduct, type ProductTag } from '../lib/webinarProduct'
+import { WebinarHistoryTable } from './WebinarHistoryTable'
+import { fetchWebinarFunnelView, type FunnelViewRow } from '../services/webinarFunnelView'
 
 // SINGLE SOURCE OF TRUTH: webinar_sessions.product_tag (no session_name parsing).
 function tagOf(s: { product_tag?: string | null }): ProductTag {
@@ -158,135 +160,6 @@ function DataDebugBar({ debug }: { debug?: JsuFunnelDebug }) {
   )
 }
 
-function SessionRow({ s, attendancePopulated, expanded, onToggle }: {
-  s: JsuFunnelRow
-  attendancePopulated: boolean
-  expanded: boolean
-  onToggle: () => void
-}) {
-  const product = normalizeProduct({ product_tag: s.product_tag })
-  const productColor = product.canonicalTag === 'JZK' ? 'var(--teal)' : product.canonicalTag === 'JSU' ? 'var(--gold)' : 'var(--muted2)'
-
-  return (
-    <tr
-      onClick={onToggle}
-      style={{ borderBottom: '1px solid var(--border)', fontSize: '0.73rem', fontFamily: 'var(--font-mono)', cursor: 'pointer', background: expanded ? 'var(--surface2)' : undefined }}
-      title="Kliknij, aby rozwinąć listę uczestników"
-    >
-      <td style={{ padding: '5px 8px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
-        <span aria-hidden="true" style={{ color: expanded ? 'var(--gold)' : 'var(--muted2)', marginRight: 5 }}>{expanded ? '▾' : '▸'}</span>
-        {s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : s.session_date}
-      </td>
-      <td style={{ padding: '5px 8px', whiteSpace: 'nowrap' }}>
-        <span style={{ fontSize: '0.65rem', color: productColor, border: `1px solid var(--border)`, borderRadius: '3px', padding: '1px 5px' }}>
-          {product.canonicalTag}
-        </span>
-        {product.reason.includes('overridden') && (
-          <span style={{ marginLeft: '4px', fontSize: '0.6rem', color: 'var(--orange)' }} title={product.reason}>⚠</span>
-        )}
-      </td>
-      <td style={{ padding: '5px 8px', color: 'var(--text2)', textAlign: 'right' }}>
-        {s.registered_count > 0 ? s.registered_count : <span style={{ color: 'var(--muted2)' }}>—</span>}
-      </td>
-      <td style={{ padding: '5px 8px', textAlign: 'right', color: attendancePopulated ? 'var(--text2)' : 'var(--muted2)' }}>
-        {attendancePopulated
-          ? (s.attendee_count > 0 ? s.attendee_count : '0')
-          : <span style={{ fontSize: '0.66rem', color: 'var(--muted2)', fontStyle: 'italic' }}>n/p</span>}
-      </td>
-      <td style={{ padding: '5px 8px', textAlign: 'right', color: attendancePopulated && s.attendance_rate_pct !== null && s.attendance_rate_pct < 60 ? 'var(--orange)' : 'var(--muted)' }}>
-        {attendancePopulated && s.attendance_rate_pct != null
-          ? s.attendance_rate_pct + '%'
-          : <span style={{ fontSize: '0.66rem', color: 'var(--muted2)', fontStyle: 'italic' }}>n/p</span>}
-      </td>
-      {/* Sales = registrants who ordered AFTER this webinar (true conversions).
-          JSU course (549) shown separately — the key efficacy metric.
-          Pre-webinar customers (ordered before) are shown muted, never counted here. */}
-      <td style={{ padding: '5px 8px', textAlign: 'right', color: s.purchases > 0 ? 'var(--emerald)' : 'var(--muted2)', fontWeight: s.purchases > 0 ? 700 : 400 }}>
-        {s.purchases}
-        {(s.jsu_course_sales ?? 0) > 0 && (
-          <span style={{ marginLeft: 4, fontSize: '0.62rem', color: 'var(--gold)' }} title="JSU course sold after the webinar (549 PLN)">
-            JSU {s.jsu_course_sales}
-          </span>
-        )}
-        {(s.pre_webinar_count ?? 0) > 0 && (
-          <div style={{ fontSize: '0.6rem', color: 'var(--muted2)', fontStyle: 'italic' }} title="Pre-webinar customers: ordered BEFORE the webinar — funnel entries, not conversions">
-            +{s.pre_webinar_count} pre
-          </div>
-        )}
-      </td>
-      <td style={{ padding: '5px 8px', textAlign: 'right', color: s.revenue > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
-        {s.revenue > 0 ? s.revenue.toFixed(0) + ' PLN' : '—'}
-        {(s.jsu_course_revenue ?? 0) > 0 && (
-          <div style={{ fontSize: '0.62rem', color: 'var(--gold)' }} title="JSU course revenue after the webinar (549 PLN)">
-            JSU {s.jsu_course_revenue!.toFixed(0)} PLN
-          </div>
-        )}
-        {(s.pre_webinar_revenue ?? 0) > 0 && (
-          <div style={{ fontSize: '0.6rem', color: 'var(--muted2)', fontStyle: 'italic' }} title="Pre-webinar revenue — not attributable to this webinar">
-            {s.pre_webinar_revenue!.toFixed(0)} pre
-          </div>
-        )}
-      </td>
-    </tr>
-  )
-}
-
-// Expanded participant list for one session: email, registration status, attendance
-// status (brak danych vs present/absent), and any purchase (before/after phase).
-function SessionParticipants({ rows }: { rows: JsuParticipantRow[] }) {
-  if (rows.length === 0) {
-    return <div style={{ padding: '10px 12px', fontSize: '0.7rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>Brak zarejestrowanych uczestników dla tej sesji.</div>
-  }
-  const attCell = (st: JsuParticipantRow['attendance_status']) => {
-    if (st === 'present') return <span style={{ color: 'var(--emerald)' }}>obecny</span>
-    if (st === 'absent')  return <span style={{ color: 'var(--muted)' }}>nieobecny</span>
-    // No row in webinar_attendance → we simply do not know. NOT "nie był".
-    return <span style={{ color: 'var(--muted2)', fontStyle: 'italic' }} title="webinar_attendance nie ma wiersza — brak informacji, nie nieobecność">brak danych</span>
-  }
-  return (
-    <div style={{ padding: '4px 8px 12px', overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.68rem', fontFamily: 'var(--font-mono)', minWidth: '620px' }}>
-        <thead>
-          <tr style={{ color: 'var(--muted2)', textAlign: 'left' }}>
-            <th style={{ padding: '3px 8px' }}>E-mail</th>
-            <th style={{ padding: '3px 8px' }}>Rejestracja</th>
-            <th style={{ padding: '3px 8px' }}>Obecność</th>
-            <th style={{ padding: '3px 8px' }}>Kupił?</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(p => (
-            <tr key={p.participant_id} style={{ borderTop: '1px solid var(--border)', color: 'var(--text2)' }}>
-              <td style={{ padding: '3px 8px', whiteSpace: 'nowrap' }}>{p.email}</td>
-              <td style={{ padding: '3px 8px', whiteSpace: 'nowrap' }}>
-                {p.registered_at_missing || !p.registered_at
-                  ? <span style={{ color: 'var(--amber)', fontStyle: 'italic' }} title="Kolumna registered_at jest null na wszystkich wierszach">brak pola: registered_at</span>
-                  : new Date(p.registered_at).toLocaleString('pl-PL')}
-              </td>
-              <td style={{ padding: '3px 8px', whiteSpace: 'nowrap' }}>{attCell(p.attendance_status)}</td>
-              <td style={{ padding: '3px 8px' }}>
-                {p.purchases.length === 0
-                  ? <span style={{ color: 'var(--muted2)' }}>—</span>
-                  : p.purchases.map((q, i) => (
-                      <div key={i} style={{ whiteSpace: 'nowrap' }}>
-                        <span style={{ color: q.is_jsu_course ? 'var(--gold)' : 'var(--text)' }}>{q.amount.toFixed(0)} PLN</span>
-                        {q.is_jsu_course && <span style={{ color: 'var(--gold)', fontSize: '0.6rem' }}> JSU</span>}
-                        <span style={{ color: 'var(--muted)' }}> · {q.order_created_at ? new Date(q.order_created_at).toLocaleDateString('pl-PL') : '—'} · </span>
-                        {q.phase === 'after'
-                          ? <span style={{ color: 'var(--emerald)' }}>konwersja</span>
-                          : <span style={{ color: 'var(--muted2)', fontStyle: 'italic' }} title="Zamówienie sprzed webinaru — wejście do lejka, nie konwersja">pre-webinar</span>}
-                        <span style={{ color: 'var(--muted2)' }} title={q.product_name_raw ?? ''}> · {(q.product_name_raw ?? '').slice(0, 26)}</span>
-                      </div>
-                    ))}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
 function detectProduct(sessions: JsuFunnelRow[]): ProductTag {
   const counts: Record<ProductTag, number> = { JSU: 0, JZK: 0, UNKNOWN: 0 }
   for (const s of sessions) counts[tagOf(s)]++
@@ -298,7 +171,24 @@ function detectProduct(sessions: JsuFunnelRow[]): ProductTag {
 export function WebinarFunnelPanel({ summary, participants, participantsLoading, loading, onCommand, gieniuResponse }: Props) {
   const [showParticipants, setShowParticipants] = useState(false)
   const [productFilter, setProductFilter] = useState<ProductTag | 'ALL'>('ALL')
-  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null)
+
+  // Webinar history reads v_webinar_funnel directly. The old path joined
+  // webinar_attendance on webinar_id, which is NULL on every row since the FK to
+  // webinars was dropped — the join matched nothing, so attendance never showed
+  // even though the table holds 2292 rows across 52 sessions.
+  const [funnelView, setFunnelView] = useState<FunnelViewRow[]>([])
+  const [funnelViewError, setFunnelViewError] = useState<string | null>(null)
+  const [funnelViewLoading, setFunnelViewLoading] = useState(true)
+  useEffect(() => {
+    let alive = true
+    fetchWebinarFunnelView().then(r => {
+      if (!alive) return
+      setFunnelView(r.rows)
+      setFunnelViewError(r.error)
+      setFunnelViewLoading(false)
+    })
+    return () => { alive = false }
+  }, [])
 
   if (loading) {
     return (
@@ -315,12 +205,6 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
   const debug = summary?._debug
   const attendancePopulated = debug?.attendanceStatus === 'populated' || (summary?.totals.attendees ?? 0) > 0
   const purchasesMapped     = debug?.purchaseMappingStatus === 'mapped' || (summary?.totals.purchases ?? 0) > 0
-
-  // Filtered sessions for table view — product_tag is the single source of truth
-  const filteredSessions = summary?.sessions.filter(s => {
-    if (productFilter === 'ALL') return true
-    return tagOf(s) === productFilter
-  }) ?? []
 
   // Detect dominant product from all sessions (by product_tag)
   const dominantProduct = summary?.sessions.length ? detectProduct(summary.sessions) : 'JSU'
@@ -558,54 +442,21 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
         </div>
       </div>
 
-      {/* Per-session table */}
-      {summary && filteredSessions.length > 0 && (
-        <div>
-          <div style={{ fontSize: '0.65rem', color: 'var(--muted)', fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
-            Webinar History {productFilter !== 'ALL' ? `· ${productFilter}` : ''}
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.73rem', fontFamily: 'var(--font-mono)', minWidth: '640px' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
-                  <th style={{ ...thStyle, textAlign: 'left' }}>Date</th>
-                  <th style={{ ...thStyle, textAlign: 'left' }}>Product</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>Reg.</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>Live</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>Show-up</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>Sales</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>Revenue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSessions.map(s => {
-                  const expanded = expandedSessionId === s.session_id
-                  return (
-                    <Fragment key={s.session_id}>
-                      <SessionRow
-                        s={s}
-                        attendancePopulated={attendancePopulated}
-                        expanded={expanded}
-                        onToggle={() => setExpandedSessionId(prev => prev === s.session_id ? null : s.session_id)}
-                      />
-                      {expanded && (
-                        <tr style={{ background: 'var(--surface2)' }}>
-                          <td colSpan={7} style={{ padding: 0 }}>
-                            <SessionParticipants rows={participants.filter(p => p.session_id === s.session_id)} />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ marginTop: '4px', fontSize: '0.62rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)' }}>
-            Kliknij wiersz sesji, aby rozwinąć listę uczestników. n/p = attendance not populated · „brak danych" = brak wiersza w webinar_attendance (nie „nieobecny").
-          </div>
+      {/* Per-session history — v_webinar_funnel is the only source. */}
+      <div>
+        <div style={{ fontSize: '0.65rem', color: 'var(--muted)', fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
+          Webinar History {productFilter !== 'ALL' ? `· ${productFilter}` : ''}
         </div>
-      )}
+        {funnelViewLoading ? (
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted)' }}>Ładowanie v_webinar_funnel…</div>
+        ) : funnelViewError ? (
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)' }}>v_webinar_funnel: {funnelViewError}</div>
+        ) : (
+          <WebinarHistoryTable
+            rows={funnelView.filter(r => productFilter === 'ALL' || normalizeProduct({ product_tag: r.product_tag }).canonicalTag === productFilter)}
+          />
+        )}
+      </div>
 
       {/* Participant journey toggle */}
       {summary && summary.hasClickMeetingData && (
@@ -646,10 +497,4 @@ export function WebinarFunnelPanel({ summary, participants, participantsLoading,
       )}
     </div>
   )
-}
-
-const thStyle: CSSProperties = {
-  padding: '4px 8px',
-  fontWeight: 'normal',
-  whiteSpace: 'nowrap',
 }
