@@ -80,39 +80,49 @@ export function isLubelskie(o: FundingItem): boolean {
 }
 
 // ── urgency ordering ────────────────────────────────────────────────────────
-// Verdict first (GO before MAYBE before SKIP), then how soon the item can
-// actually be acted on. Sorting by amount put a 2 mln zł horizon project above a
-// grant closing this month, which is the opposite of a work queue.
+// Urgency tier first, verdict second WITHIN a tier. Ranking by verdict first
+// buried actionable MAYBE items under GO items that cannot be touched for
+// months; ranking by "has a deadline at all" did the same, floating a deadline
+// eight months out above intake that is open today.
 const VERDICT_RANK: Record<FundingVerdict, number> = { GO: 0, MAYBE: 1, SKIP: 2 }
 
-//  0 — a hard deadline still ahead (soonest first)
-//  1 — intake open right now
-//  2 — everything else: future window, horizon, long process
-//  3 — deadline already gone
+/** A hard deadline this close counts as immediate work. */
+export const DEADLINE_SOON_DAYS = 60
+
+//  1 — hard deadline within DEADLINE_SOON_DAYS (soonest first)
+//  2 — intake open right now
+//  3 — hard deadline further out than DEADLINE_SOON_DAYS (soonest first)
+//  4 — horizon: future window, long process, nothing to act on yet
+//  5 — deadline already gone
 export function urgencyTier(o: FundingItem, todayISO: string): number {
-  if (isPast(o.deadline, todayISO)) return 3
-  if (o.deadline) return 0
-  if (openWindow(o, todayISO)) return 1
-  return 2
+  const d = daysUntil(o.deadline, todayISO)
+  if (d != null && d < 0) return 5
+  if (d != null && d <= DEADLINE_SOON_DAYS) return 1
+  // An open window outranks a distant deadline: it can be acted on today.
+  if (openWindow(o, todayISO)) return 2
+  if (d != null) return 3
+  return 4
 }
 
 const amountOf = (o: FundingItem) => o.amtMax ?? o.amtMin ?? 0
 
 /**
- * Default ordering: urgency of action. Within a tier of dated items the nearest
- * deadline wins; otherwise the larger amount breaks the tie so the order is
- * deterministic rather than dependent on array position.
+ * Default ordering: urgency of action.
+ *   tier → verdict (GO, MAYBE, SKIP) → nearest deadline → largest amount
+ * The amount tiebreak keeps the order deterministic rather than dependent on
+ * position in the source array.
  */
 export function sortByUrgency(list: FundingItem[], todayISO: string): FundingItem[] {
   return [...list].sort((a, b) => {
-    const v = VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict]
-    if (v !== 0) return v
-
     const ta = urgencyTier(a, todayISO)
     const tb = urgencyTier(b, todayISO)
     if (ta !== tb) return ta - tb
 
-    if (ta === 0) {
+    const v = VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict]
+    if (v !== 0) return v
+
+    // Both dated tiers rank by how soon the deadline actually falls.
+    if (ta === 1 || ta === 3) {
       const da = daysUntil(a.deadline, todayISO) ?? Number.MAX_SAFE_INTEGER
       const db = daysUntil(b.deadline, todayISO) ?? Number.MAX_SAFE_INTEGER
       if (da !== db) return da - db

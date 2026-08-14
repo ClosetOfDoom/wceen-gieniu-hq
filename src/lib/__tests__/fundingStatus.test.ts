@@ -72,20 +72,57 @@ describe('Lublin / lubelskie scope', () => {
   })
 })
 
+describe('urgency tiers', () => {
+  const tier = (id: string) => urgencyTier(FUNDING.find(o => o.id === id)!, TODAY)
+
+  it('an open window outranks a distant hard deadline', () => {
+    // oppmech closes 2027-04-30 — 259 days out, so it is not immediate work.
+    expect(tier('oppmech')).toBe(3)
+    expect(tier('pes')).toBe(2)
+    expect(tier('googlead')).toBe(2)
+  })
+
+  it('horizon items sit below anything actionable', () => {
+    expect(tier('nowefio')).toBe(4)
+    expect(tier('felu')).toBe(4)
+    expect(tier('wfos')).toBe(4)
+  })
+
+  it('a passed deadline is last', () => {
+    expect(tier('seniorzy15')).toBe(5)
+  })
+
+  it('a deadline inside the 60-day window is tier 1', () => {
+    const soon = { ...FUNDING.find(o => o.id === 'oppmech')!, deadline: '2026-09-30' }  // 47 days
+    expect(urgencyTier(soon, TODAY)).toBe(1)
+    const edge = { ...soon, deadline: '2026-10-13' }                                    // 60 days
+    expect(urgencyTier(edge, TODAY)).toBe(1)
+    const past60 = { ...soon, deadline: '2026-10-14' }                                  // 61 days
+    expect(urgencyTier(past60, TODAY)).toBe(3)
+  })
+})
+
 describe('default sort — urgency of action, not amount', () => {
   const ordered = sortByUrgency(FUNDING, TODAY)
 
-  it('GO before MAYBE before SKIP', () => {
-    const rank = { GO: 0, MAYBE: 1, SKIP: 2 } as const
-    const seq = ordered.map(o => rank[o.verdict])
+  it('tiers are the primary key and never interleave', () => {
+    const seq = ordered.map(o => urgencyTier(o, TODAY))
     expect(seq).toEqual([...seq].sort((a, b) => a - b))
   })
 
-  it('within GO, a dated item leads, then open windows, then the rest', () => {
-    const go = ordered.filter(o => o.verdict === 'GO')
-    expect(go[0].id).toBe('oppmech')                       // only GO with a hard future deadline
-    expect(urgencyTier(go[0], TODAY)).toBe(0)
-    expect(go.slice(1, 3).map(o => o.id).sort()).toEqual(['googlead', 'pes'])   // open windows
+  it('GO comes before MAYBE before SKIP WITHIN each tier', () => {
+    const rank = { GO: 0, MAYBE: 1, SKIP: 2 } as const
+    for (const t of [1, 2, 3, 4, 5]) {
+      const seq = ordered.filter(o => urgencyTier(o, TODAY) === t).map(o => rank[o.verdict])
+      expect(seq).toEqual([...seq].sort((a, b) => a - b))
+    }
+  })
+
+  it('open intake leads the list; the 8-month deadline does not', () => {
+    expect(ordered[0].id).toBe('pes')
+    const idx = (id: string) => ordered.findIndex(o => o.id === id)
+    expect(idx('oppmech')).toBeGreaterThan(idx('pes'))
+    expect(idx('oppmech')).toBeGreaterThan(idx('googlead'))
   })
 
   it('a 2 mln zł horizon project does not outrank an actionable one', () => {
@@ -94,7 +131,7 @@ describe('default sort — urgency of action, not amount', () => {
     expect(idx('felu')).toBeGreaterThan(idx('techedu'))
   })
 
-  it('past-deadline items sink to the bottom of their group', () => {
+  it('past-deadline items sink to the bottom', () => {
     expect(ordered[ordered.length - 1].id).toBe('seniorzy15')
   })
 })
@@ -113,7 +150,7 @@ describe('Hermes', () => {
   it('names every item needing a move, most urgent first', () => {
     const h = hermes(FUNDING, NO_CHECKS, TODAY)
     expect(h.count).toBe(12)
-    expect(h.items[0].ttl).toBe(FUNDING.find(o => o.id === 'oppmech')!.ttl)
+    expect(h.items[0].ttl).toBe(FUNDING.find(o => o.id === 'pes')!.ttl)
     expect(h.message).toContain('12 pozycji wymaga ruchu.')
   })
 
