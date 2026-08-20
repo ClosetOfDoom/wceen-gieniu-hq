@@ -1424,7 +1424,10 @@ async function fetchProductBuyers(supabaseUrl, serviceKey, days = 60) {
     })
     if (!res.ok) return { ok: false, rows: [] }
     const rows = await res.json()
-    return { ok: true, rows: rows || [], from: from.slice(0, 10), today, days }
+    // Monday of the current week, so the model can filter "this week" exactly.
+    const wd = new Date(today + 'T12:00:00Z')
+    wd.setUTCDate(wd.getUTCDate() - ((wd.getUTCDay() + 6) % 7))
+    return { ok: true, rows: rows || [], from: from.slice(0, 10), today, days, weekStart: wd.toISOString().slice(0, 10) }
   } catch {
     return { ok: false, rows: [] }
   }
@@ -1442,6 +1445,13 @@ function renderProductBuyers(data) {
   L.push('  Classification is by the canonical PRICE table: 549 PLN = Kurs Jak się uczyć (JSU),')
   L.push('  347 PLN = Językozak AI. Other amounts are different products and are NOT listed here.')
   L.push('  Give masked e-mails exactly as written below — never reconstruct a full address.')
+  // The window is 60 days wide; a question about "this month" covers part of it.
+  // Without this the whole list gets returned under a "this month" heading.
+  L.push(`  PERIOD FILTERING IS YOURS TO DO. This window is WIDER than most questions.`)
+  L.push(`  Current month starts ${data.today.slice(0, 7)}-01. Current week starts ${data.weekStart}.`)
+  L.push('  If asked for a period (this month / this week / last N days), INCLUDE ONLY rows')
+  L.push('  whose date falls inside it, count only those, and state the period you used.')
+  L.push('  NEVER present the full window under a narrower heading such as "this month".')
   const PRICES = { 549: 'JSU', 347: 'JZK' }
   const buckets = { JSU: [], JZK: [] }
   for (const r of data.rows) {
