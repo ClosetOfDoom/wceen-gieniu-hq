@@ -806,11 +806,12 @@ export default function App() {
   const [runsLoading, setRunsLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
 
-  // JSU funnel
+  // JSU funnel — the Webinars tab no longer renders this, but Stanley's intent
+  // router and the deterministic JSU reports still read the summary.
   const [jsuSummary, setJsuSummary]                   = useState<JsuFunnelSummary | null>(null)
-  const [jsuParticipants, setJsuParticipants]         = useState<JsuParticipantRow[]>([])
-  const [jsuLoading, setJsuLoading]                   = useState(false)
-  const [jsuParticipantsLoading, setJsuParticipantsLoading] = useState(false)
+  const [, setJsuParticipants]                        = useState<JsuParticipantRow[]>([])
+  const [, setJsuLoading]                             = useState(false)
+  const [, setJsuParticipantsLoading]                 = useState(false)
 
   // Ops week report
   const [opsWeekReport, setOpsWeekReport]       = useState<OpsWeekReport | null>(null)
@@ -1741,10 +1742,6 @@ export default function App() {
           {section === 'webinars' && (
             <div className="panel-illuminate card">
               <WebinarFunnelPanel
-                summary={jsuSummary}
-                participants={jsuParticipants}
-                participantsLoading={jsuParticipantsLoading}
-                loading={jsuLoading}
                 onCommand={handleJsuCommand}
                 gieniuResponse=""
               />

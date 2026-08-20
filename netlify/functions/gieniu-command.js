@@ -1330,15 +1330,15 @@ async function fetchWebinarRegistrantsData(supabaseUrl, serviceKey) {
 }
 
 // Render the per-session REGISTRANT list. Joins participants→session and marks who
-// bought (from v_webinar_buyers, before/after phase). States plainly that attendance
-// is unknown while webinar_attendance is empty and registered_at is null everywhere.
+// bought (from v_webinar_buyers, before/after phase). This is a historical list:
+// registration stopped with attendance on ATTENDANCE_CUTOFF.
 function renderWebinarRegistrants(sessions, participants, buyers) {
   const L = []
-  L.push('--- WEBINAR REGISTRANTS PER SESSION (webinar_participants ⋈ webinar_sessions) ---')
+  L.push(`--- WEBINAR REGISTRANTS PER SESSION (historical, ends ${ATTENDANCE_CUTOFF}) ---`)
   L.push('Use this to answer "who registered for the <day> webinar and who of them bought".')
   L.push('HARD LIMITS you MUST state when relevant:')
-  L.push('  • ATTENDANCE IS NOT PER-REGISTRANT HERE: use the WEBINAR FUNNEL block for')
-  L.push('    actually attended any webinar. Never say someone attended or was absent.')
+  L.push(`  • REGISTRATION DATA ENDS ${ATTENDANCE_CUTOFF} and is no longer collected.`)
+  L.push('  • ATTENDANCE IS NOT HERE. Never say someone attended or was absent.')
   L.push('  • registered_at is NULL on every webinar_participants row → you do NOT know the')
   L.push('    exact registration time. Say "registration time not recorded" if asked.')
   L.push('  • "bought" = an order joined by e-mail (v_webinar_buyers). phase after = bought')
@@ -1383,6 +1383,72 @@ function renderWebinarRegistrants(sessions, participants, buyers) {
   return L.join('\n')
 }
 
+// Attendance and registration collection stopped here. Anything about who was
+// in the room is history, not a current figure.
+const ATTENDANCE_CUTOFF = '2026-08-14'
+
+// JSU / Językozak buyers straight from orders, by the canonical price table.
+// This is the ONLY source for "who bought the course and when" — the webinar
+// tables carry registrations, not purchases.
+async function fetchProductBuyers(supabaseUrl, serviceKey, days = 60) {
+  if (!supabaseUrl || !serviceKey) return { ok: false, rows: [] }
+  try {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+    const from = new Date(Date.parse(today + 'T12:00:00Z') - (days - 1) * 86400000).toISOString()
+    const url = new URL(`${supabaseUrl}/rest/v1/orders`)
+    url.searchParams.set('select', 'email,amount,order_created_at,product_name_raw')
+    url.searchParams.set('order_created_at', `gte.${from}`)
+    url.searchParams.set('order', 'order_created_at.desc')
+    url.searchParams.set('limit', '5000')
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' },
+    })
+    if (!res.ok) return { ok: false, rows: [] }
+    const rows = await res.json()
+    return { ok: true, rows: rows || [], from: from.slice(0, 10), today, days }
+  } catch {
+    return { ok: false, rows: [] }
+  }
+}
+
+// Canonical price table: 549 = Kurs Jak się uczyć, 347 = Językozak AI.
+function renderProductBuyers(data) {
+  const L = []
+  L.push('--- PRODUCT SALES from orders (JSU 549 / Językozak AI 347) ---')
+  if (!data.ok) {
+    L.push('orders unavailable — say so plainly, do not estimate.')
+    return L.join('\n')
+  }
+  L.push(`RULES: this block is the ONLY source for who bought and when. Window ${data.from} → ${data.today} (${data.days} days).`)
+  L.push('  Classification is by the canonical PRICE table: 549 PLN = Kurs Jak się uczyć (JSU),')
+  L.push('  347 PLN = Językozak AI. Other amounts are different products and are NOT listed here.')
+  L.push('  Give masked e-mails exactly as written below — never reconstruct a full address.')
+  const PRICES = { 549: 'JSU', 347: 'JZK' }
+  const buckets = { JSU: [], JZK: [] }
+  for (const r of data.rows) {
+    const amt = Number(r.amount)
+    const k = PRICES[amt]
+    if (!k) continue
+    buckets[k].push({
+      email: maskEmail2(r.email),
+      amount: amt,
+      at: r.order_created_at,
+      name: r.product_name_raw ?? '',
+    })
+  }
+  for (const [k, label] of [['JSU', 'Kurs Jak się uczyć (549 PLN)'], ['JZK', 'Językozak AI (347 PLN)']]) {
+    const b = buckets[k]
+    const revenue = b.reduce((s, x) => s + x.amount, 0)
+    L.push('')
+    L.push(`${label}: ${b.length} sales, ${revenue} PLN`)
+    for (const x of b) {
+      L.push(`  • ${x.email} | ${x.amount} PLN | ${String(x.at).slice(0, 16).replace('T', ' ')}${x.name ? ` | "${String(x.name).slice(0, 45)}"` : ''}`)
+    }
+    if (!b.length) L.push('  (none in this window)')
+  }
+  return L.join('\n')
+}
+
 // v_webinar_funnel — the ONE source for webinar session numbers. It keys
 // attendance on clickmeeting_room_id + clickmeeting_session_id. Never join
 // attendance on webinar_id: that column is NULL on every row since the FK to
@@ -1408,7 +1474,13 @@ async function fetchWebinarFunnelView(supabaseUrl, serviceKey) {
 // currently the only measure that actually separates one session from another.
 function renderWebinarFunnelView(rows) {
   const L = []
-  L.push('--- WEBINAR FUNNEL (v_webinar_funnel — the ONLY webinar source of truth) ---')
+  L.push(`--- WEBINAR HISTORY SNAPSHOT (v_webinar_funnel — FROZEN at ${ATTENDANCE_CUTOFF}) ---`)
+  L.push(`THIS IS HISTORY, NOT CURRENT DATA. Attendance and registration collection`)
+  L.push(`STOPPED on ${ATTENDANCE_CUTOFF}. There are no figures after that date and none`)
+  L.push('are being gathered. If asked how many attended the LAST/most recent webinar,')
+  L.push(`say plainly that attendance data ends on ${ATTENDANCE_CUTOFF} and is no longer`)
+  L.push('collected. NEVER guess, extrapolate or infer an attendance number for any')
+  L.push('session after that date. For sales questions use the PRODUCT SALES block.')
   if (!rows.length) {
     L.push('No rows returned. Say plainly that webinar figures are unavailable.')
     return L.join('\n')
@@ -1696,18 +1768,21 @@ ABSOLUTE RULES — no fabrication:
     registrant list and count. Do not borrow registrants or the count from another session.
   • If the block lists more registrants than you name, say how many in total and that you
     are listing a sample — do not fabricate the remainder.
-You MUST state plainly that ATTENDANCE IS UNKNOWN — webinar_attendance is empty, so you
-do not know who actually attended; never claim someone attended or was absent. Also note
-that registration time is not recorded (registered_at is null). Thursday 18:00 = JSU,
+Attendance data ENDS on 2026-08-14 and is no longer collected — never claim someone
+attended or was absent, and never state an attendance figure for a session after that
+date. Registration time is not recorded (registered_at is null). Thursday 18:00 = JSU,
 Tuesday 18:00 = JZK. If a session isn't in the data, say so — do not invent registrants.
 
-━━━ WEBINAR SHOW-UP RATE ━━━
-Registration data is incomplete: in most sessions MORE people attended than registered.
-NEVER report a show-up rate above 100%, and never divide attendees by registered when
-attendees > registered — say "rejestracje niekompletne" and give the raw counts instead.
-A session with no attendance rows is "brak danych", never zero attendees.
-When asked what differentiates sessions, use average time in room (avg_minutes) against
-buyers / revenue_7d — that is the one signal that currently separates them.
+━━━ WEBINAR ATTENDANCE — COLLECTION STOPPED 2026-08-14 ━━━
+Attendance and registration data END on 2026-08-14 and are NO LONGER COLLECTED.
+The WEBINAR HISTORY SNAPSHOT block is history; it is not a current figure.
+• Asked how many attended the last / most recent webinar: say that attendance data
+  ends on 2026-08-14 and is no longer gathered. Do NOT guess, estimate, extrapolate
+  from earlier sessions, or infer a number from sales. There is no answer to give.
+• Registration counts and show-up rates are gone. Never quote or compute one.
+• Sales questions ("who bought JSU / Językozak and when") are answered from the
+  PRODUCT SALES block, which reads the orders table by canonical price
+  (549 = Kurs Jak się uczyć, 347 = Językozak AI). Quote masked e-mails verbatim.
 
 ━━━ FUNDING RADAR (grants / financing) ━━━
 For "what should we apply for first / now", "what needs own contribution", "which grants
@@ -1904,6 +1979,12 @@ exports.handler = async (event) => {
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   )
+  // JSU / Językozak buyers from orders — the only source for "who bought".
+  const productBuyersPromise = fetchProductBuyers(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    60,
+  )
   // v_webinar_funnel — per-session attendance, time in room and 7-day revenue.
   const webinarFunnelPromise = fetchWebinarFunnelView(
     process.env.SUPABASE_URL,
@@ -2031,7 +2112,8 @@ exports.handler = async (event) => {
   const webinarReg = await webinarRegistrantsPromise
   const fundingChecks = await fundingChecksPromise
   const webinarFunnelRows = await webinarFunnelPromise
-  const creativeAnalyticsText = `${renderCreativeAnalytics(adRows30, today)}\n\n${renderWebinarBuyers(webinarBuyers)}\n\n${renderWebinarRegistrants(webinarReg.sessions, webinarReg.participants, webinarBuyers)}\n\n${renderFundingRadar(today, fundingChecks)}\n\n${renderWebinarFunnelView(webinarFunnelRows)}`
+  const productBuyers = await productBuyersPromise
+  const creativeAnalyticsText = `${renderCreativeAnalytics(adRows30, today)}\n\n${renderWebinarBuyers(webinarBuyers)}\n\n${renderWebinarRegistrants(webinarReg.sessions, webinarReg.participants, webinarBuyers)}\n\n${renderFundingRadar(today, fundingChecks)}\n\n${renderProductBuyers(productBuyers)}\n\n${renderWebinarFunnelView(webinarFunnelRows)}`
 
   // Build LLM user message with context. When we have a deterministic answer for
   // this intent, hand the LLM those EXACT numbers as a verified anchor and ask it

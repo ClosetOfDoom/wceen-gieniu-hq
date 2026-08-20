@@ -1,500 +1,134 @@
-import { useState, useEffect } from 'react'
-import type { JsuFunnelSummary, JsuFunnelRow, JsuParticipantRow, FunnelBottleneck, JsuFunnelDebug } from '../services/webinarFunnel'
-import { pct, fmtPlnFunnel } from '../services/webinarFunnel'
-import { ParticipantJourneyTable } from './ParticipantJourneyTable'
-import type { JsuCommandKey } from '../brain/responses'
+// Webinars tab.
+//
+// The tab is about PRODUCT SALES now: JSU (549) and Językozak AI (347) counted
+// from the orders table via the canonical price table. Registrations, show-up
+// rates and the whole email→registration→attendance funnel are gone from the
+// view — those feeds stopped, and every "not populated" / "brak danych" cell was
+// a promise about data that will not arrive.
+//
+// The webinar history survives underneath as an explicitly frozen snapshot, so
+// nobody reads last quarter's attendance as a current number.
+
+import { useEffect, useState } from 'react'
 import { normalizeProduct, type ProductTag } from '../lib/webinarProduct'
+import { ProductSalesPanel } from './ProductSalesPanel'
 import { WebinarHistoryTable } from './WebinarHistoryTable'
 import { fetchWebinarFunnelView, type FunnelViewRow } from '../services/webinarFunnelView'
-
-// SINGLE SOURCE OF TRUTH: webinar_sessions.product_tag (no session_name parsing).
-function tagOf(s: { product_tag?: string | null }): ProductTag {
-  return normalizeProduct({ product_tag: s.product_tag }).canonicalTag
-}
+import { ATTENDANCE_CUTOFF } from '../services/productSales'
+import type { JsuCommandKey } from '../brain/responses'
 
 interface Props {
-  summary: JsuFunnelSummary | null
-  participants: JsuParticipantRow[]
-  participantsLoading: boolean
-  loading: boolean
   onCommand: (key: JsuCommandKey) => void
   gieniuResponse: string
 }
 
-// Semantic accent colours — theme-agnostic (saturated, readable on cream and on
-// forest-dark). Neutrals (backgrounds, borders, muted text) use CSS theme tokens
-// so this panel follows the active light/dark theme like the rest of the app.
-const BOTTLENECK_COLOR: Record<FunnelBottleneck, string> = {
-  NO_DATA:         'var(--muted2)',
-  NO_SOURCES:      'var(--muted)',
-  DELIVERABILITY:  'var(--orange)',
-  OPENS:           'var(--orange)',
-  CLICKS:          'var(--orange)',
-  REGISTRATIONS:   'var(--orange)',
-  ATTENDANCE:      'var(--amber)',
-  PURCHASE_PITCH:  'var(--orange)',
-  PRODUCT_MAPPING: 'var(--red)',
-  OK:              'var(--emerald)',
-}
-
-const BOTTLENECK_LABEL: Record<FunnelBottleneck, string> = {
-  NO_DATA:         'NO DATA',
-  NO_SOURCES:      'NO SOURCES',
-  DELIVERABILITY:  'DELIVERABILITY',
-  OPENS:           'OPEN RATE',
-  CLICKS:          'CLICK RATE',
-  REGISTRATIONS:   'REGISTRATIONS',
-  ATTENDANCE:      'ATTENDANCE',
-  PURCHASE_PITCH:  'PITCH / OFFER',
-  PRODUCT_MAPPING: 'PRODUCT MAPPING',
-  OK:              'OK',
-}
-
-const JSU_COMMANDS: { key: JsuCommandKey; label: string }[] = [
-  { key: 'webinar jak się uczyć',        label: 'JSU — Report' },
-  { key: 'czemu kurs się nie sprzedaje', label: 'Why Not Selling?' },
-  { key: 'funnel JSU',                   label: 'JSU Funnel' },
-  { key: 'porównaj webinary JSU',        label: 'Compare Webinars' },
-  { key: 'deliverability',               label: 'Deliverability' },
-  { key: 'czy mailing siadł',            label: 'Mailing Crashed?' },
-  { key: 'attendance rate',              label: 'Attendance Rate' },
-  { key: 'kto był i kupił',              label: 'Who Attended & Bought' },
+const COMMANDS: JsuCommandKey[] = [
+  'webinar jak się uczyć',
+  'czemu kurs się nie sprzedaje',
 ]
 
-function FunnelStep({
-  label, value, rate, rateLabel, missing, notPopulated, notMapped,
-}: {
-  label: string
-  value: number | string
-  rate?: number | null
-  rateLabel?: string
-  missing?: boolean
-  notPopulated?: boolean
-  notMapped?: boolean
-}) {
-  const dim = missing || notPopulated || notMapped
-  const statusText = notPopulated ? 'not populated' : notMapped ? 'not mapped yet' : null
-
-  return (
-    <div style={{
-      flex: '1 1 100px',
-      background: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: '8px',
-      padding: '10px 12px',
-      minWidth: '90px',
-    }}>
-      <div style={{ fontSize: '0.62rem', color: 'var(--muted)', fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
-        {label}
-      </div>
-      <div style={{ fontSize: missing ? '1rem' : '1.3rem', fontWeight: 700, color: dim ? 'var(--muted2)' : 'var(--text)', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>
-        {missing ? '—' : value}
-      </div>
-      {statusText && (
-        <div style={{ fontSize: '0.62rem', color: 'var(--muted2)', marginTop: '3px', fontFamily: 'var(--font-mono)', fontStyle: 'italic' }}>
-          {statusText}
-        </div>
-      )}
-      {rate !== undefined && !notPopulated && !notMapped && (
-        <div style={{ fontSize: '0.68rem', color: missing ? 'var(--muted2)' : 'var(--muted)', marginTop: '3px', fontFamily: 'var(--font-mono)' }}>
-          {missing ? '—' : (rate != null ? pct(rate) : '—')} {rateLabel ?? ''}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ClickMeetingStatus({ debug }: { debug?: JsuFunnelDebug }) {
-  if (debug && (debug.sessionsCount > 0 || debug.participantsCount > 0)) {
-    return (
-      <div style={{ background: 'var(--surface2)', border: '1px dashed var(--border)', borderRadius: '8px', padding: '12px 16px', fontSize: '0.78rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.7 }}>
-        <div style={{ color: 'var(--amber)', fontWeight: 700, marginBottom: '4px' }}>ClickMeeting sessions found</div>
-        {debug.sessionsCount > 0 && <div>✓ Sessions in DB: <span style={{ color: 'var(--text)' }}>{debug.sessionsCount}</span></div>}
-        {debug.participantsCount > 0 && <div>✓ Participants in DB: <span style={{ color: 'var(--text)' }}>{debug.participantsCount}</span></div>}
-        {debug.sessionsCount > 0 && debug.participantsCount === 0 && <div style={{ color: 'var(--orange)' }}>⚠ No participant rows yet — Make may still be syncing</div>}
-        <div style={{ marginTop: '4px', color: 'var(--muted2)', fontSize: '0.7rem' }}>Email/ESP data missing — deliverability not assessable.</div>
-      </div>
-    )
-  }
-  return (
-    <div style={{ background: 'var(--surface2)', border: '1px dashed var(--border)', borderRadius: '8px', padding: '12px 16px', fontSize: '0.78rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
-      No ClickMeeting data yet — registrations and attendance cannot be assessed.
-      <br />
-      Connect Make → ClickMeeting API → Supabase (webinar_sessions, webinar_participants).
-    </div>
-  )
-}
-
-function DataDebugBar({ debug }: { debug?: JsuFunnelDebug }) {
-  if (!debug) return null
-  return (
-    <div style={{
-      marginTop: '6px',
-      padding: '5px 10px',
-      background: 'var(--surface2)',
-      border: '1px solid var(--border)',
-      borderRadius: '4px',
-      fontFamily: 'var(--font-mono)',
-      fontSize: '0.64rem',
-      color: 'var(--muted2)',
-      display: 'flex',
-      gap: '16px',
-      flexWrap: 'wrap',
-    }}>
-      <span>data debug:</span>
-      <span>source: <span style={{ color: debug.source === 'raw_tables' ? 'var(--emerald)' : 'var(--muted)' }}>{debug.source}</span></span>
-      <span>sessions: <span style={{ color: debug.sessionsCount > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>{debug.sessionsCount}</span></span>
-      <span>participants: <span style={{ color: debug.participantsCount > 0 ? 'var(--emerald)' : 'var(--orange)' }}>{debug.participantsCount}</span></span>
-      {debug.rawParticipants != null && debug.rawParticipants !== debug.participantsCount && (
-        <span>raw: <span style={{ color: debug.rawParticipants > 0 ? 'var(--amber)' : 'var(--muted2)' }}>{debug.rawParticipants}</span></span>
-      )}
-      {debug.uniqueEmails != null && <span>unique: <span style={{ color: debug.uniqueEmails > 0 ? 'var(--text)' : 'var(--muted2)' }}>{debug.uniqueEmails}</span></span>}
-      {debug.hasMismatch && <span style={{ color: 'var(--orange)' }}>⚠ view mismatch: raw participants available</span>}
-      {debug.registrationsFromParticipants && <span style={{ color: 'var(--amber)' }}>reg from participants ↑</span>}
-      {debug.attendanceStatus === 'not_populated' && <span style={{ color: 'var(--orange)' }}>attendance: not populated</span>}
-      {debug.purchaseMappingStatus === 'not_mapped_yet' && <span style={{ color: 'var(--muted2)' }}>purchases: not mapped</span>}
-      {debug.latestSessionDate && <span>latest: <span style={{ color: 'var(--muted)' }}>{debug.latestSessionDate}{debug.latestSessionName ? ` / ${debug.latestSessionName.slice(0, 30)}` : ''}</span></span>}
-      {debug.lastError && <span style={{ color: 'var(--orange)' }}>error: {debug.lastError.slice(0, 60)}</span>}
-      <span style={{ color: 'var(--muted2)', marginLeft: 'auto' }}>schedule: Tue 18:00=JZK · Thu 18:00=JSU</span>
-    </div>
-  )
-}
-
-function detectProduct(sessions: JsuFunnelRow[]): ProductTag {
-  const counts: Record<ProductTag, number> = { JSU: 0, JZK: 0, UNKNOWN: 0 }
-  for (const s of sessions) counts[tagOf(s)]++
-  if (counts.JZK > counts.JSU) return 'JZK'
-  if (counts.JSU > 0) return 'JSU'
-  return 'UNKNOWN'
-}
-
-export function WebinarFunnelPanel({ summary, participants, participantsLoading, loading, onCommand, gieniuResponse }: Props) {
-  const [showParticipants, setShowParticipants] = useState(false)
+export function WebinarFunnelPanel({ onCommand, gieniuResponse }: Props) {
   const [productFilter, setProductFilter] = useState<ProductTag | 'ALL'>('ALL')
+  const [showHistory, setShowHistory] = useState(false)
 
-  // Webinar history reads v_webinar_funnel directly. The old path joined
-  // webinar_attendance on webinar_id, which is NULL on every row since the FK to
-  // webinars was dropped — the join matched nothing, so attendance never showed
-  // even though the table holds 2292 rows across 52 sessions.
-  const [funnelView, setFunnelView] = useState<FunnelViewRow[]>([])
-  const [funnelViewError, setFunnelViewError] = useState<string | null>(null)
-  const [funnelViewLoading, setFunnelViewLoading] = useState(true)
+  // The historical snapshot is loaded once, on demand. It is a closed set — no
+  // refresh, no polling; new sessions do not land here any more.
+  const [rows, setRows] = useState<FunnelViewRow[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
+
   useEffect(() => {
+    if (!showHistory || loaded) return
     let alive = true
     fetchWebinarFunnelView().then(r => {
       if (!alive) return
-      setFunnelView(r.rows)
-      setFunnelViewError(r.error)
-      setFunnelViewLoading(false)
+      setRows(r.rows)
+      setError(r.error)
+      setLoaded(true)
     })
     return () => { alive = false }
-  }, [])
+  }, [showHistory, loaded])
 
-  if (loading) {
-    return (
-      <div style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', padding: '20px 0' }}>
-        Loading webinar funnel data...
-      </div>
-    )
-  }
-
-  const noData = !summary || summary.bottleneck === 'NO_DATA' || summary.bottleneck === 'NO_SOURCES'
-  const bn = summary?.bottleneck ?? 'NO_DATA'
-  const bnColor = BOTTLENECK_COLOR[bn]
-
-  const debug = summary?._debug
-  const attendancePopulated = debug?.attendanceStatus === 'populated' || (summary?.totals.attendees ?? 0) > 0
-  const purchasesMapped     = debug?.purchaseMappingStatus === 'mapped' || (summary?.totals.purchases ?? 0) > 0
-
-  // Detect dominant product from all sessions (by product_tag)
-  const dominantProduct = summary?.sessions.length ? detectProduct(summary.sessions) : 'JSU'
-  const productLabel = dominantProduct === 'JZK' ? 'Językozak AI' : 'Jak się uczyć'
-  const productSubtitle = dominantProduct === 'JZK' ? 'Language webinar · Tuesday 18:00' : 'Memory webinar · Thursday 18:00'
-
-  // Count products for tab badges — from product_tag (JSU / JZK / UNKNOWN)
-  const jsuCount     = summary?.sessions.filter(s => tagOf(s) === 'JSU').length ?? 0
-  const jzkCount     = summary?.sessions.filter(s => tagOf(s) === 'JZK').length ?? 0
-  const unknownCount = summary?.sessions.filter(s => tagOf(s) === 'UNKNOWN').length ?? 0
-
-  // This-week sessions split by schedule
-  const thisWeekSessions = (() => {
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-    const [y, m, d] = today.split('-').map(Number)
-    const dow = new Date(y, m - 1, d).getDay()
-    const daysToMon = dow === 0 ? 6 : dow - 1
-    const weekStart = new Date(y, m - 1, d - daysToMon).toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-    return summary?.sessions.filter(s => {
-      if (!s.scheduled_at) return false
-      const sd = new Date(s.scheduled_at).toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-      return sd >= weekStart && sd <= today
-    }) ?? []
-  })()
-  const thisWeekJsu = thisWeekSessions.filter(s => tagOf(s) === 'JSU')
-  const thisWeekJzk = thisWeekSessions.filter(s => tagOf(s) === 'JZK')
+  const filtered = rows.filter(
+    r => productFilter === 'ALL' || normalizeProduct({ product_tag: r.product_tag }).canonicalTag === productFilter,
+  )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-        <div>
-          <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 700, fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.05em' }}>
-            WEBINARS — funnel
-          </div>
-          <div style={{ fontSize: '0.68rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
-            {summary?.sessions.length ? `${summary.sessions.length} sessions · dominant: ${productLabel}` : productSubtitle}
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.72rem',
-            letterSpacing: '0.08em', color: bnColor,
-            border: `1px solid ${bnColor}`, padding: '3px 10px', borderRadius: '16px',
-          }}>
-            {BOTTLENECK_LABEL[bn]}
-          </span>
-        </div>
-      </div>
+      {/* ── Main view: product sales from orders ─────────────────────────── */}
+      <ProductSalesPanel />
 
-      {/* Funnel steps */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-        <FunnelStep label="Sent"       value={summary?.totals.email_sent.toLocaleString('en-US') ?? 0} missing={!summary?.hasEmailData} />
-        <FunnelStep label="Delivered"  value={summary?.totals.email_delivered.toLocaleString('en-US') ?? 0} rate={summary?.rates.delivery_rate} rateLabel="del." missing={!summary?.hasEmailData} />
-        <FunnelStep label="Opens"      value={summary?.totals.email_opens.toLocaleString('en-US') ?? 0} rate={summary?.rates.open_rate} rateLabel="OR" missing={!summary?.hasEmailData} />
-        <FunnelStep label="Clicks"     value={summary?.totals.email_clicks.toLocaleString('en-US') ?? 0} rate={summary?.rates.click_rate} rateLabel="CTR" missing={!summary?.hasEmailData} />
-        <FunnelStep label="Reg."       value={summary?.totals.registered ?? 0} missing={!summary?.hasClickMeetingData} />
-        <FunnelStep label="Live"       value={summary?.totals.attendees ?? 0} rate={summary?.rates.attendance_rate} rateLabel="show-up"
-          missing={!summary?.hasClickMeetingData}
-          notPopulated={summary?.hasClickMeetingData && !attendancePopulated} />
-        <FunnelStep label="Sales 7d"   value={summary?.totals.purchases ?? 0} rate={summary?.rates.purchase_rate} rateLabel="conv."
-          missing={!summary?.hasClickMeetingData}
-          notMapped={summary?.hasClickMeetingData && !purchasesMapped} />
-        <FunnelStep label="Revenue 7d" value={fmtPlnFunnel(summary?.totals.revenue)}
-          missing={!summary?.hasClickMeetingData}
-          notMapped={summary?.hasClickMeetingData && !purchasesMapped} />
-      </div>
-
-      {/* This-week JSU / JZK cards — separate by fixed schedule */}
-      {thisWeekSessions.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
-          {/* JSU card (Thursday 18:00) */}
-          <div style={{ background: 'var(--surface)', border: `1px solid ${thisWeekJsu.length > 0 ? 'var(--border-gold)' : 'var(--border)'}`, borderRadius: '8px', padding: '14px 16px' }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: thisWeekJsu.length > 0 ? 'var(--gold)' : 'var(--muted2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
-              JSU / Memory — Thu 18:00
-            </div>
-            {thisWeekJsu.length === 0 ? (
-              <div style={{ fontSize: '0.72rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)' }}>No session this week</div>
-            ) : thisWeekJsu.map(s => {
-              const sp = summary!.sessions.find(r => r.session_id === s.session_id)!
-              const dateStr = s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' }) : s.session_date
-              return (
-                <div key={s.session_id} style={{ fontSize: '0.73rem', fontFamily: 'var(--font-mono)', lineHeight: 1.7 }}>
-                  <div style={{ color: 'var(--text2)' }}>{dateStr} · {s.session_name?.slice(0, 30)}</div>
-                  <div style={{ color: sp?.registered_count > 0 ? 'var(--text)' : 'var(--muted2)' }}>
-                    Registrations: {sp?.registered_count > 0 ? sp.registered_count : <span style={{ color: 'var(--muted2)' }}>—</span>}
-                  </div>
-                  <div style={{ color: 'var(--muted)' }}>
-                    Attendance: {attendancePopulated && sp?.attendee_count > 0 ? sp.attendee_count : <span style={{ fontStyle: 'italic' }}>not populated</span>}
-                  </div>
-                  <div style={{ color: (sp?.purchases ?? 0) > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
-                    Sales: {sp?.purchases ?? 0}{(sp?.revenue ?? 0) > 0 ? ` · ${sp!.revenue.toFixed(0)} PLN` : ''}
-                    {(sp?.jsu_course_sales ?? 0) > 0 && (
-                      <span style={{ color: 'var(--gold)' }} title="JSU course sold after the webinar (549 PLN)"> · JSU {sp!.jsu_course_sales} ({sp!.jsu_course_revenue!.toFixed(0)} PLN)</span>
-                    )}
-                  </div>
-                  {(sp?.pre_webinar_count ?? 0) > 0 && (
-                    <div style={{ color: 'var(--muted2)', fontStyle: 'italic', fontSize: '0.66rem' }} title="Pre-webinar customers: ordered BEFORE the webinar — funnel entries, not conversions">
-                      Pre-webinar customers: {sp!.pre_webinar_count} · {sp!.pre_webinar_revenue!.toFixed(0)} PLN (not counted as sales)
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* JZK card (Tuesday 18:00) */}
-          <div style={{ background: 'var(--surface)', border: `1px solid ${thisWeekJzk.length > 0 ? 'var(--teal)' : 'var(--border)'}`, borderRadius: '8px', padding: '14px 16px' }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: thisWeekJzk.length > 0 ? 'var(--teal)' : 'var(--muted2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
-              JZK / Językozak AI — Tue 18:00
-            </div>
-            {thisWeekJzk.length === 0 ? (
-              <div style={{ fontSize: '0.72rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)' }}>No session this week</div>
-            ) : thisWeekJzk.map(s => {
-              const sp = summary!.sessions.find(r => r.session_id === s.session_id)!
-              const dateStr = s.scheduled_at ? new Date(s.scheduled_at).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' }) : s.session_date
-              return (
-                <div key={s.session_id} style={{ fontSize: '0.73rem', fontFamily: 'var(--font-mono)', lineHeight: 1.7 }}>
-                  <div style={{ color: 'var(--text2)' }}>{dateStr} · {s.session_name?.slice(0, 30)}</div>
-                  <div style={{ color: sp?.registered_count > 0 ? 'var(--text)' : 'var(--muted2)' }}>
-                    Registrations: {sp?.registered_count > 0 ? sp.registered_count : <span style={{ color: 'var(--muted2)' }}>—</span>}
-                  </div>
-                  <div style={{ color: 'var(--muted)' }}>
-                    Attendance: {attendancePopulated && sp?.attendee_count > 0 ? sp.attendee_count : <span style={{ fontStyle: 'italic' }}>not populated</span>}
-                  </div>
-                  <div style={{ color: (sp?.purchases ?? 0) > 0 ? 'var(--emerald)' : 'var(--muted2)' }}>
-                    Sales: {sp?.purchases ?? 0}{(sp?.revenue ?? 0) > 0 ? ` · ${sp!.revenue.toFixed(0)} PLN` : ''}
-                    {(sp?.jsu_course_sales ?? 0) > 0 && (
-                      <span style={{ color: 'var(--gold)' }} title="JSU course sold after the webinar (549 PLN)"> · JSU {sp!.jsu_course_sales} ({sp!.jsu_course_revenue!.toFixed(0)} PLN)</span>
-                    )}
-                  </div>
-                  {(sp?.pre_webinar_count ?? 0) > 0 && (
-                    <div style={{ color: 'var(--muted2)', fontStyle: 'italic', fontSize: '0.66rem' }} title="Pre-webinar customers: ordered BEFORE the webinar — funnel entries, not conversions">
-                      Pre-webinar customers: {sp!.pre_webinar_count} · {sp!.pre_webinar_revenue!.toFixed(0)} PLN (not counted as sales)
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Product filter tabs — from product_tag (UNKNOWN is its own category) */}
-      {(jsuCount > 0 || jzkCount > 0 || unknownCount > 0) && (
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          {(['ALL', 'JSU', 'JZK', 'UNKNOWN'] as const).map(tag => {
-            const count = tag === 'ALL' ? (summary?.sessions.length ?? 0)
-              : tag === 'JSU' ? jsuCount
-              : tag === 'JZK' ? jzkCount
-              : unknownCount
-            if (tag !== 'ALL' && count === 0) return null
-            const isActive = productFilter === tag
-            const label = tag === 'ALL' ? 'All'
-              : tag === 'JSU' ? 'JSU / Memory'
-              : tag === 'JZK' ? 'JZK / Językozak'
-              : 'UNKNOWN'
-            return (
-              <button
-                key={tag}
-                onClick={() => setProductFilter(tag)}
-                style={{
-                  fontFamily: 'var(--font-mono)', fontSize: '0.7rem', letterSpacing: '0.06em',
-                  padding: '4px 12px', borderRadius: '14px', cursor: 'pointer',
-                  border: `1px solid ${isActive ? 'var(--border-gold)' : 'var(--border)'}`,
-                  background: isActive ? 'rgba(238,157,0,0.10)' : 'var(--surface2)',
-                  color: isActive ? 'var(--gold)' : 'var(--muted)',
-                }}
-              >
-                {label}
-                {count > 0 && <span style={{ marginLeft: '6px', opacity: 0.6 }}>{count}</span>}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Data source debug bar — always visible */}
-      <DataDebugBar debug={debug} />
-
-      {/* Missing data notices */}
-      {!summary?.hasEmailData && (
-        <div style={{
-          background: 'var(--surface2)', border: '1px dashed var(--border)', borderRadius: '8px',
-          padding: '12px 16px', fontSize: '0.78rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.6,
-        }}>
-          No email data yet — deliverability, open rate, and click rate cannot be assessed.
-          <br />
-          Connect Make → ESP → Supabase (email_campaigns, email_recipient_events).
-        </div>
-      )}
-      {!summary?.hasClickMeetingData && (
-        <ClickMeetingStatus debug={debug} />
-      )}
-
-      {/* Diagnosis box */}
-      {summary && !noData && (
-        <div style={{
-          background: 'var(--surface)', border: '1px solid var(--border)',
-          borderLeft: `3px solid ${bnColor}`, borderRadius: '8px', padding: '14px 16px',
-        }}>
-          <div style={{ fontSize: '0.65rem', color: bnColor, fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
-            Stanley's Diagnosis
-          </div>
-          <div style={{ fontSize: '0.86rem', color: 'var(--text)', lineHeight: 1.65, fontFamily: 'var(--font-mono)' }}>
-            {summary.diagnosis}
-          </div>
-        </div>
-      )}
-
-      {/* GIENIU response (from commands) */}
-      {gieniuResponse && (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '16px' }}>
-          <div style={{ fontSize: '0.65rem', color: 'var(--gold)', fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
-            STANLEY
-          </div>
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '0.86rem', color: 'var(--text)', lineHeight: 1.7 }}>
-            {gieniuResponse}
-          </pre>
-        </div>
-      )}
-
-      {/* Command buttons */}
+      {/* ── Stanley commands ─────────────────────────────────────────────── */}
       <div>
-        <div style={{ fontSize: '0.65rem', color: 'var(--muted)', fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
-          JSU Commands
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          {JSU_COMMANDS.map(cmd => (
-            <button key={cmd.key} className="btn-cmd" onClick={() => onCommand(cmd.key)}>
-              {cmd.label}
-            </button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {COMMANDS.map(key => (
+            <button key={key} className="btn-sm" onClick={() => onCommand(key)}>{key}</button>
           ))}
         </div>
-      </div>
-
-      {/* Per-session history — v_webinar_funnel is the only source. */}
-      <div>
-        <div style={{ fontSize: '0.65rem', color: 'var(--muted)', fontFamily: 'var(--font-sans)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
-          Webinar History {productFilter !== 'ALL' ? `· ${productFilter}` : ''}
-        </div>
-        {funnelViewLoading ? (
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted)' }}>Ładowanie v_webinar_funnel…</div>
-        ) : funnelViewError ? (
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)' }}>v_webinar_funnel: {funnelViewError}</div>
-        ) : (
-          <WebinarHistoryTable
-            rows={funnelView.filter(r => productFilter === 'ALL' || normalizeProduct({ product_tag: r.product_tag }).canonicalTag === productFilter)}
-          />
+        {gieniuResponse && (
+          <pre style={{
+            whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '0.74rem',
+            lineHeight: 1.7, color: 'var(--text2)', background: 'var(--surface)',
+            border: '1px solid var(--border)', borderLeft: '3px solid var(--gold)',
+            borderRadius: 4, padding: '10px 12px', margin: '10px 0 0',
+          }}>
+            {gieniuResponse}
+          </pre>
         )}
       </div>
 
-      {/* Participant journey toggle */}
-      {summary && summary.hasClickMeetingData && (
-        <div>
-          <button className="btn-sm" onClick={() => setShowParticipants(prev => !prev)}>
-            {showParticipants ? 'Hide participants' : `Show participants (${debug?.participantsCount ?? '?'})`}
-          </button>
-          {showParticipants && (
-            <div style={{ marginTop: '12px' }}>
-              <ParticipantJourneyTable
-                rows={participants}
-                loading={participantsLoading}
-                attendancePopulated={attendancePopulated}
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Empty state */}
-      {noData && (
+      {/* ── Historical snapshot ──────────────────────────────────────────── */}
+      <div>
         <div style={{
-          background: 'var(--surface2)', border: '1px dashed var(--border)',
-          borderRadius: '10px', padding: '24px', textAlign: 'center',
+          border: '1px solid var(--border)', borderLeft: '3px solid var(--muted2)',
+          borderRadius: 4, background: 'var(--surface)', padding: '11px 14px',
         }}>
-          <div style={{ fontSize: '0.78rem', color: 'var(--muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.8 }}>
-            No JSU funnel data.
-            <br /><br />
-            Step 1: Run <code style={{ color: 'var(--text2)' }}>supabase/webinar_funnel_schema.sql</code> in Supabase SQL Editor.
-            <br />
-            Step 2: Connect Make → ClickMeeting → webinar_sessions + webinar_participants.
-            <br />
-            Step 3: Connect Make → ESP → email_campaigns + email_recipient_events.
-            <br /><br />
-            Guide: <code style={{ color: 'var(--text2)' }}>docs/clickmeeting_make_scenarios.md</code>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div>
+              <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.8rem', color: 'var(--text2)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                Historia webinarów
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--amber)', marginTop: 3 }}>
+                SNAPSHOT HISTORYCZNY DO {ATTENDANCE_CUTOFF} · nie odświeża się
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)', marginTop: 3 }}>
+                Frekwencja i czas w pokoju nie są już zbierane. Te liczby zamarły na {ATTENDANCE_CUTOFF} — nie są bieżące.
+              </div>
+            </div>
+            <button className="btn-sm" onClick={() => setShowHistory(v => !v)}>
+              {showHistory ? 'Ukryj snapshot' : 'Pokaż snapshot'}
+            </button>
           </div>
         </div>
-      )}
+
+        {showHistory && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              {(['ALL', 'JSU', 'JZK'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setProductFilter(t as ProductTag | 'ALL')}
+                  style={{
+                    fontFamily: 'var(--font-mono)', fontSize: '0.66rem', padding: '3px 10px', borderRadius: 3, cursor: 'pointer',
+                    border: `1px solid ${productFilter === t ? 'var(--border-gold)' : 'var(--border)'}`,
+                    background: productFilter === t ? 'var(--surface2)' : 'transparent',
+                    color: productFilter === t ? 'var(--gold)' : 'var(--muted)',
+                  }}
+                >{t === 'ALL' ? 'Wszystkie' : t}</button>
+              ))}
+            </div>
+
+            {!loaded ? (
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted)' }}>Ładowanie snapshotu…</div>
+            ) : error ? (
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--orange)' }}>v_webinar_funnel: {error}</div>
+            ) : (
+              <WebinarHistoryTable rows={filtered} />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

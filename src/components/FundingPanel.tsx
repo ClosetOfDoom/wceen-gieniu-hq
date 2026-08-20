@@ -45,6 +45,13 @@ export function FundingPanel() {
   const [zeroOwnOnly, setZeroOwnOnly] = useState(false)
   const [sortBy, setSortBy] = useState<SortKey>('urgency')   // action-first by default
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
+  const activeFilters =
+    (verdictFilter !== 'ALL' ? 1 : 0) +
+    (regionFilter !== 'ALL' ? 1 : 0) +
+    (pathFilter !== 'ALL' ? 1 : 0) +
+    (zeroOwnOnly ? 1 : 0)
 
   // checkBy overrides. Missing table => empty map + a visible notice, never a crash.
   const [checks, setChecks] = useState<CheckMap>({})
@@ -101,8 +108,33 @@ export function FundingPanel() {
         </div>
       )}
 
-      {/* Filters + sort */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
+      {/* Sort stays in the open at every width; the four filter groups collapse
+          behind one button on a phone, where they filled the screen before the
+          first result appeared. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14, marginBottom: 10 }}>
+        <ChipGroup label="Sortuj">
+          <Chip active={sortBy === 'urgency'} onClick={() => setSortBy('urgency')}>Pilność</Chip>
+          <Chip active={sortBy === 'amount'} onClick={() => setSortBy('amount')}>Kwota</Chip>
+          <Chip active={sortBy === 'deadline'} onClick={() => setSortBy('deadline')}>Termin</Chip>
+        </ChipGroup>
+        <button
+          className="funding-filters-toggle"
+          onClick={() => setFiltersOpen(v => !v)}
+          aria-expanded={filtersOpen}
+          style={{
+            fontFamily: 'var(--font-mono)', fontSize: '0.66rem', padding: '4px 10px', borderRadius: 3, cursor: 'pointer',
+            border: `1px solid ${activeFilters > 0 ? 'var(--border-gold)' : 'var(--border)'}`,
+            background: activeFilters > 0 ? 'var(--surface2)' : 'transparent',
+            color: activeFilters > 0 ? 'var(--gold)' : 'var(--muted)',
+          }}
+        >
+          {filtersOpen ? '▴' : '▾'} Filtry{activeFilters > 0 ? ` (${activeFilters} aktywne)` : ''}
+        </button>
+      </div>
+
+      {/* display lives in CSS, not inline — an inline value would beat the media
+          query and the panel would stay open on a phone regardless. */}
+      <div className={`funding-filters${filtersOpen ? ' is-open' : ''}`} style={{ flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
         <ChipGroup label="Werdykt">
           <Chip active={verdictFilter === 'ALL'} onClick={() => setVerdictFilter('ALL')}>Wszystkie</Chip>
           {(['GO', 'MAYBE', 'SKIP'] as FundingVerdict[]).map(v => (
@@ -123,11 +155,6 @@ export function FundingPanel() {
         </ChipGroup>
         <ChipGroup label="Wkład">
           <Chip active={zeroOwnOnly} onClick={() => setZeroOwnOnly(v => !v)} color="var(--teal)">Bez wkładu własnego</Chip>
-        </ChipGroup>
-        <ChipGroup label="Sortuj">
-          <Chip active={sortBy === 'urgency'} onClick={() => setSortBy('urgency')}>Pilność</Chip>
-          <Chip active={sortBy === 'amount'} onClick={() => setSortBy('amount')}>Kwota</Chip>
-          <Chip active={sortBy === 'deadline'} onClick={() => setSortBy('deadline')}>Termin</Chip>
         </ChipGroup>
       </div>
 
@@ -257,28 +284,38 @@ function FundingRow({
           {o.verdict}
         </span>
 
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--gold-bright)' }} title={fmtAmt(o)}>
-          {fmtAmt(o)}
-        </span>
+        {/* display:contents on desktop, so these are grid cells of the row; a
+            flex-wrapping second line on a phone. */}
+        <span className="fl-meta">
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--gold-bright)' }} title={fmtAmt(o)}>
+            {fmtAmt(o)}
+          </span>
 
-        <span
-          title={`wkład własny: ${o.own}`}
-          style={{
-            fontFamily: 'var(--font-mono)', fontSize: '0.64rem',
-            color: free ? 'var(--teal)' : 'var(--text2)', fontWeight: free ? 700 : 400,
-          }}
-        >
-          {free ? '0% wkładu' : o.own}
-        </span>
+          <span
+            title={`wkład własny: ${o.own}`}
+            style={{
+              fontFamily: 'var(--font-mono)', fontSize: '0.64rem',
+              color: free ? 'var(--teal)' : 'var(--text2)', fontWeight: free ? 700 : 400,
+            }}
+          >
+            {free ? '0% wkładu' : o.own}
+          </span>
 
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: win.color }} title={o.timing}>
-          {win.text}
-        </span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: win.color }} title={o.timing}>
+            {win.text}
+          </span>
 
-        {/* Compact markers — the full wording lives in Hermes and in the expanded
-            body; spelled out here they were wider than the data they annotate. */}
-        <span className="fl-marks" style={{ display: 'flex', gap: 3 }}>
-          {statuses.map(s => <StatusMark key={s} s={s} />)}
+          {/* Compact markers — the full wording lives in Hermes and in the expanded
+              body; spelled out here they were wider than the data they annotate. */}
+          <span className="fl-marks" style={{ display: 'flex', gap: 3 }}>
+            {statuses.map(s => <StatusMark key={s} s={s} />)}
+          </span>
+
+          {/* Phone-only: the date as text. The picker lives in the expanded body,
+              where it has room — inline it was the widest thing in the row. */}
+          <span className="fl-date-text" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: cb ? 'var(--text2)' : 'var(--muted2)' }}>
+            {cb ? `spr. ${cb}` : 'spr. —'}
+          </span>
         </span>
 
         {/* Inline checkBy — clicking the field opens the native date picker. */}
@@ -331,6 +368,25 @@ function FundingRow({
             {o.deadline && ` · twardy termin: ${o.deadline}`}
             {` · wkład własny: ${o.own}`}
           </div>
+
+          {/* Phone-only picker: on a narrow screen the collapsed row shows the date
+              as text and the control lives here, where it has room. */}
+          <label className="funding-date-mobile" style={{ alignItems: 'center', gap: 7, marginBottom: 9, fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted)' }}>
+            sprawdzić do:
+            <input
+              type="date"
+              value={cb ?? ''}
+              onClick={e => e.stopPropagation()}
+              onChange={e => onCheckBy(e.target.value || null)}
+              aria-label={`Data sprawdzenia: ${o.ttl}`}
+              style={{
+                fontFamily: 'var(--font-mono)', fontSize: '0.68rem', padding: '3px 6px',
+                background: 'transparent', color: cb ? 'var(--text2)' : 'var(--muted2)',
+                border: `1px solid ${cb ? 'var(--border)' : 'var(--border-gold)'}`, borderRadius: 3,
+                colorScheme: 'dark light', maxWidth: '100%',
+              }}
+            />
+          </label>
 
           <div style={{ fontFamily: 'var(--font-sans)', fontSize: '0.8rem', color: 'var(--text2)', lineHeight: 1.55 }}>{o.why}</div>
           <div style={{ fontFamily: 'var(--font-sans)', fontSize: '0.76rem', color: 'var(--muted)', marginTop: 6, lineHeight: 1.5 }}>

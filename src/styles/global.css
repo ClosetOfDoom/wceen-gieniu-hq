@@ -286,14 +286,6 @@ button:disabled {
     letter-spacing: 0.1em;
   }
 
-  /* Build stamp repositioned to not overlap content */
-  .build-stamp {
-    position: static;
-    display: block;
-    padding: 4px 14px 8px;
-    text-align: right;
-    opacity: 0.5;
-  }
 
   /* Main content: tighter padding on mobile */
   .hud-main > div[style*="padding"] {
@@ -744,6 +736,21 @@ button:disabled {
   opacity: 0.85;
   pointer-events: none;
   z-index: 9999;
+}
+
+/* On a phone a fixed stamp sits on top of card content with nowhere to go, so
+   it drops into normal flow at the end of the page instead. This override has
+   to come AFTER the base rule — declared before it, equal specificity meant the
+   fixed positioning above simply won and the stamp kept overlapping. */
+@media (max-width: 699px) {
+  .build-stamp {
+    position: static;
+    display: block;
+    padding: 10px 14px 14px;
+    text-align: right;
+    opacity: 0.5;
+    z-index: auto;
+  }
 }
 
 @media (max-width: 699px) {
@@ -1457,21 +1464,73 @@ button:active, [role="button"]:active,
   cursor: pointer;
 }
 
-.funding-line > * {
+.funding-line > *,
+.funding-line .fl-meta > * {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Below the tablet breakpoint one line stops being honest — the name alone needs
-   the width. Fall back to a wrapping line rather than shrinking every field to
-   noise; the one-line rule is a desktop promise, not a 360px one. */
-@media (max-width: 899px) {
+/* On desktop the meta wrapper is transparent — its children ARE the grid cells. */
+.funding-line .fl-meta { display: contents; }
+
+/* Collapsed-row date is an input on desktop, plain text on a phone. */
+.funding-line .fl-date-text { display: none; }
+
+/* ── Funding rows on a phone ────────────────────────────────────────────────
+   One line stops being honest below 640px: fields ran past the right edge, the
+   GO/MAYBE badge was clipped off-screen and the meta line refused to wrap at
+   all. The row stacks instead — name + badge on the first line with the badge
+   pinned right, meta wrapping freely on the second. Nothing may force the page
+   to scroll sideways. */
+@media (max-width: 640px) {
   .funding-line {
+    grid-template-columns: 14px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "chev name verdict"
+      "meta meta meta";
+    row-gap: 5px;
+    align-items: start;
+  }
+
+  .funding-line .fl-chev    { grid-area: chev; padding-top: 2px; }
+  .funding-line .fl-name    { grid-area: name; white-space: normal; overflow-wrap: anywhere; }
+  /* Pinned to the right edge and never shrunk — this is the badge that was
+     getting cut off by the viewport. */
+  .funding-line .fl-verdict { grid-area: verdict; justify-self: end; }
+
+  .funding-line .fl-meta {
+    grid-area: meta;
     display: flex;
     flex-wrap: wrap;
-    row-gap: 4px;
+    align-items: center;
+    gap: 3px 10px;
+    min-width: 0;
   }
-  .funding-line .fl-name { flex: 1 1 55%; }
+  .funding-line .fl-meta > * { max-width: 100%; }
+
+  /* The date input was the single widest thing in the row; on a phone it moves
+     into the expanded body and the row shows the value as text. */
+  .funding-line .fl-date { display: none; }
+  .funding-line .fl-date-text { display: inline; }
+}
+
+/* ── Funding filters ────────────────────────────────────────────────────────
+   Four chip groups filled the whole phone screen before the first result. Below
+   640px they collapse behind one button; sorting stays out in the open. */
+.funding-filters { display: flex; }
+.funding-filters-toggle { display: none; }
+.funding-date-mobile { display: none; }
+
+@media (max-width: 640px) {
+  .funding-filters-toggle { display: inline-block; }
+  .funding-date-mobile { display: flex; }
+  .funding-filters { display: none; }
+  .funding-filters.is-open {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+  }
 }

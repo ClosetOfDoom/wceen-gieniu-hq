@@ -6,21 +6,12 @@
 // show nothing while the table held 2292 rows across 52 sessions.
 
 import { Fragment, useEffect, useState } from 'react'
-import {
-  fetchSessionAttendees, showUpRate,
-  type FunnelViewRow, type AttendeeRow,
-} from '../services/webinarFunnelView'
+import { fetchSessionAttendees, type FunnelViewRow, type AttendeeRow } from '../services/webinarFunnelView'
 
 const thStyle: React.CSSProperties = {
   padding: '5px 8px', fontWeight: 600, fontSize: '0.62rem',
   textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap',
 }
-
-const NoData = ({ title }: { title: string }) => (
-  <span style={{ color: 'var(--muted2)', fontStyle: 'italic', fontSize: '0.66rem' }} title={title}>
-    brak danych
-  </span>
-)
 
 const productColor = (tag: string | null) =>
   tag === 'JZK' ? 'var(--teal)' : tag === 'JSU' ? 'var(--gold)' : 'var(--muted2)'
@@ -44,10 +35,8 @@ export function WebinarHistoryTable({ rows }: { rows: FunnelViewRow[] }) {
             <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
               <th style={{ ...thStyle, textAlign: 'left' }}>Data</th>
               <th style={{ ...thStyle, textAlign: 'left' }}>Produkt</th>
-              <th style={{ ...thStyle, textAlign: 'right' }}>Zapisani</th>
               <th style={{ ...thStyle, textAlign: 'right' }}>Obecni</th>
               <th style={{ ...thStyle, textAlign: 'right' }}>Śr. min</th>
-              <th style={{ ...thStyle, textAlign: 'right' }}>Show-up</th>
               <th style={{ ...thStyle, textAlign: 'right' }}>Sprzedaż</th>
               <th style={{ ...thStyle, textAlign: 'right' }}>Przychód</th>
             </tr>
@@ -56,9 +45,7 @@ export function WebinarHistoryTable({ rows }: { rows: FunnelViewRow[] }) {
             {rows.map(s => {
               const key = `${s.clickmeeting_room_id}|${s.clickmeeting_session_id}`
               const isOpen = expanded === key
-              // No attendance rows for the session → unknown, never a measured zero.
               const hasAttendance = s.attendees != null && s.attendees > 0
-              const su = showUpRate(s.registered, s.attendees)
 
               return (
                 <Fragment key={key}>
@@ -81,32 +68,11 @@ export function WebinarHistoryTable({ rows }: { rows: FunnelViewRow[] }) {
                         {s.product_tag ?? '—'}
                       </span>
                     </td>
-                    <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--text2)' }}>
-                      {s.registered != null && s.registered > 0
-                        ? s.registered
-                        : <NoData title="Brak danych rejestracyjnych dla tej sesji" />}
-                    </td>
                     <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--text)', fontWeight: hasAttendance ? 700 : 400 }}>
-                      {hasAttendance
-                        ? s.attendees
-                        : <NoData title="Brak wierszy w webinar_attendance dla tej sesji — to nie to samo co zero obecnych" />}
+                      {hasAttendance ? s.attendees : <span style={{ color: 'var(--muted2)' }}>—</span>}
                     </td>
                     <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--teal)' }}>
-                      {s.avg_minutes != null && hasAttendance
-                        ? s.avg_minutes
-                        : <NoData title="Brak czasu w pokoju dla tej sesji" />}
-                    </td>
-                    {/* Show-up is never computed from an untrustworthy denominator:
-                        in most sessions attendees > registered, so a percentage
-                        would read above 100 and mean nothing. */}
-                    <td style={{ padding: '5px 8px', textAlign: 'right' }}>
-                      {su.kind === 'pct' ? (
-                        <span style={{ color: su.value < 60 ? 'var(--orange)' : 'var(--muted)' }}>{su.value}%</span>
-                      ) : su.kind === 'unreliable' ? (
-                        <span style={{ color: 'var(--amber)', cursor: 'help' }} title={su.reason}>?</span>
-                      ) : (
-                        <span style={{ color: 'var(--muted2)' }} title="Brak danych rejestracyjnych">—</span>
-                      )}
+                      {s.avg_minutes != null && hasAttendance ? s.avg_minutes : <span style={{ color: 'var(--muted2)' }}>—</span>}
                     </td>
                     <td style={{ padding: '5px 8px', textAlign: 'right', color: (s.buyers ?? 0) > 0 ? 'var(--emerald)' : 'var(--muted2)', fontWeight: (s.buyers ?? 0) > 0 ? 700 : 400 }}>
                       {s.buyers ?? 0}
@@ -118,7 +84,7 @@ export function WebinarHistoryTable({ rows }: { rows: FunnelViewRow[] }) {
 
                   {isOpen && (
                     <tr style={{ background: 'var(--surface2)' }}>
-                      <td colSpan={8} style={{ padding: 0 }}>
+                      <td colSpan={6} style={{ padding: 0 }}>
                         <AttendeeList room={s.clickmeeting_room_id} session={s.clickmeeting_session_id} />
                       </td>
                     </tr>
@@ -130,7 +96,7 @@ export function WebinarHistoryTable({ rows }: { rows: FunnelViewRow[] }) {
         </table>
       </div>
       <div style={{ marginTop: 4, fontSize: '0.62rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)' }}>
-        Źródło: v_webinar_funnel (klucz: clickmeeting_room_id + clickmeeting_session_id). Show-up „?" = obecnych więcej niż zapisanych, rejestracje niekompletne — procent nie jest liczony.
+        Źródło: v_webinar_funnel (klucz: clickmeeting_room_id + clickmeeting_session_id). Zbiór zamknięty — nowe sesje już tu nie trafiają.
       </div>
     </div>
   )
@@ -162,8 +128,8 @@ function AttendeeList({ room, session }: { room: string; session: string }) {
   }
   if (!state.hasData || state.rows.length === 0) {
     return (
-      <div style={{ padding: '10px 12px', fontSize: '0.7rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)', fontStyle: 'italic' }}>
-        Brak danych — webinar_attendance nie ma wierszy dla tej sesji (to nie znaczy, że nikogo nie było).
+      <div style={{ padding: '10px 12px', fontSize: '0.7rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)' }}>
+        Snapshot nie obejmuje listy obecnych dla tej sesji.
       </div>
     )
   }
