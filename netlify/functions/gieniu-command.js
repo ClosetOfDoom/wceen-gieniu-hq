@@ -7,6 +7,10 @@
 // Funding radar snapshot (same data as src/data/funding.ts, copied from dashboard.html).
 const FUNDING_RADAR = require('./_funding.json')
 
+// Attendance and registration collection stopped here. Anything about who was
+// in the room is history, not a current figure.
+const ATTENDANCE_CUTOFF = '2026-08-14'
+
 // ── Intent detection (mirrors src/brain/intentRouter.ts) ─────────────────────
 
 function normalizeQuery(s) {
@@ -61,6 +65,21 @@ const INTENT_DEFS = [
       'which creative', 'which ad', 'creative breakdown', 'per ad', 'per creative',
       'ad performance', 'which ad is burning', 'which creative is best',
       'which creative is worst', 'ad breakdown', 'creative data',
+    ],
+  },
+  // Buyer questions must reach the PRODUCT SALES block (orders), not the webinar
+  // funnel. "who bought the JSU course" used to match the bare 'jsu' phrase below
+  // and get answered — badly — from funnel data that no longer exists. These
+  // phrases are longer, so they outscore it. There is deliberately NO
+  // deterministic builder for this intent: the LLM answers from the orders block.
+  {
+    intent: 'product_sales',
+    phrases: [
+      'who bought', 'who purchased', 'kto kupil', 'kto kupowal',
+      'lista kupujacych', 'buyers', 'buyer list',
+      'jsu sales', 'jzk sales', 'jezykozak sales', 'course sales',
+      'sprzedaz jsu', 'sprzedaz kursu', 'sprzedaz jezykozaka', 'sprzedaz produktow',
+      'sold this month', 'sold this week', 'sales this month', 'sales this week',
     ],
   },
   {
@@ -581,8 +600,11 @@ function buildEfficiencyAnswer(ctx) {
 function buildJsuFunnelAnswer(ctx) {
   const jsu = ctx.jsuSummary
   if (!jsu || jsu.bottleneck === 'NO_DATA' || jsu.bottleneck === 'NO_SOURCES') {
-    const msg = 'JSU webinar funnel data is not available. Check Make → ClickMeeting sync in Automation.'
-    return { text: msg, speech: msg, sources: [], warnings: ['jsuSummary unavailable'] }
+    // Not a sync fault to chase any more — the feed was retired. Pointing at the
+    // Make scenario would send Lifidi after a pipeline nobody is going to restore.
+    const msg = `Webinar funnel data ends on ${ATTENDANCE_CUTOFF} and is no longer collected. `
+      + 'For sales, ask who bought the course — that comes from orders.'
+    return { text: msg, speech: msg, sources: [], warnings: ['webinar funnel retired'] }
   }
   const bottleneck = jsu.bottleneck ?? 'OK'
   const diagnosis = jsu.diagnosis ?? ''
@@ -813,6 +835,7 @@ function buildDeterministicAnswer(intent, context) {
     case 'data_health':          return buildDataHealthAnswer(context)
     case 'campaigns_today':      return buildCampaignsAnswer(context)
     case 'jsu_funnel':           return buildJsuFunnelAnswer(context)
+    case 'product_sales':        return null  // answered from the PRODUCT SALES context block
     case 'red_flags':            return buildRedFlagsAnswer(context)
     case 'yesterday':            return buildYesterdayAnswer(context)
     case 'today_vs_yesterday':   return buildTodayVsYesterdayAnswer(context)
@@ -1382,10 +1405,6 @@ function renderWebinarRegistrants(sessions, participants, buyers) {
   }
   return L.join('\n')
 }
-
-// Attendance and registration collection stopped here. Anything about who was
-// in the room is history, not a current figure.
-const ATTENDANCE_CUTOFF = '2026-08-14'
 
 // JSU / Językozak buyers straight from orders, by the canonical price table.
 // This is the ONLY source for "who bought the course and when" — the webinar
