@@ -1445,35 +1445,53 @@ function renderProductBuyers(data) {
   L.push('  Classification is by the canonical PRICE table: 549 PLN = Kurs Jak się uczyć (JSU),')
   L.push('  347 PLN = Językozak AI. Other amounts are different products and are NOT listed here.')
   L.push('  Give masked e-mails exactly as written below — never reconstruct a full address.')
-  // The window is 60 days wide; a question about "this month" covers part of it.
-  // Without this the whole list gets returned under a "this month" heading.
-  L.push(`  PERIOD FILTERING IS YOURS TO DO. This window is WIDER than most questions.`)
-  L.push(`  Current month starts ${data.today.slice(0, 7)}-01. Current week starts ${data.weekStart}.`)
-  L.push('  If asked for a period (this month / this week / last N days), INCLUDE ONLY rows')
-  L.push('  whose date falls inside it, count only those, and state the period you used.')
-  L.push('  NEVER present the full window under a narrower heading such as "this month".')
+  // Periods are pre-computed here rather than left to the model. Asked to filter
+  // a 60-day list down to "this month" it rewrote order dates to fit the heading —
+  // correct totals, invented dates. Each period below is already the right rows.
+  L.push('  PERIODS ARE PRE-COMPUTED BELOW. Answer a period question by reading THAT')
+  L.push('  section verbatim. Do NOT re-filter, re-date or re-count anything yourself,')
+  L.push('  and never move a row into a period it is not listed under.')
+
   const PRICES = { 549: 'JSU', 347: 'JZK' }
-  const buckets = { JSU: [], JZK: [] }
+  const LABEL = { JSU: 'Kurs Jak się uczyć (549 PLN)', JZK: 'Językozak AI (347 PLN)' }
+
+  const sales = []
   for (const r of data.rows) {
     const amt = Number(r.amount)
     const k = PRICES[amt]
     if (!k) continue
-    buckets[k].push({
+    const date = new Date(r.order_created_at).toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+    sales.push({
+      k,
       email: maskEmail2(r.email),
       amount: amt,
-      at: r.order_created_at,
+      date,
+      at: String(r.order_created_at).slice(0, 16).replace('T', ' '),
       name: r.product_name_raw ?? '',
     })
   }
-  for (const [k, label] of [['JSU', 'Kurs Jak się uczyć (549 PLN)'], ['JZK', 'Językozak AI (347 PLN)']]) {
-    const b = buckets[k]
-    const revenue = b.reduce((s, x) => s + x.amount, 0)
+  sales.sort((a, b) => (a.at < b.at ? 1 : -1))
+
+  const monthStart = data.today.slice(0, 7) + '-01'
+  const PERIODS = [
+    { title: `THIS MONTH (${monthStart} → ${data.today})`, keep: (s) => s.date >= monthStart },
+    { title: `THIS WEEK (${data.weekStart} → ${data.today})`, keep: (s) => s.date >= data.weekStart },
+    { title: `FULL WINDOW (${data.from} → ${data.today}, ${data.days} days)`, keep: () => true },
+  ]
+
+  for (const p of PERIODS) {
+    const rows = sales.filter(p.keep)
     L.push('')
-    L.push(`${label}: ${b.length} sales, ${revenue} PLN`)
-    for (const x of b) {
-      L.push(`  • ${x.email} | ${x.amount} PLN | ${String(x.at).slice(0, 16).replace('T', ' ')}${x.name ? ` | "${String(x.name).slice(0, 45)}"` : ''}`)
+    L.push(`### ${p.title}`)
+    for (const k of ['JSU', 'JZK']) {
+      const b = rows.filter((s) => s.k === k)
+      const revenue = b.reduce((s, x) => s + x.amount, 0)
+      L.push(`${LABEL[k]}: ${b.length} sales, ${revenue} PLN`)
+      for (const x of b) {
+        L.push(`  • ${x.email} | ${x.amount} PLN | ${x.at}${x.name ? ` | "${String(x.name).slice(0, 45)}"` : ''}`)
+      }
+      if (!b.length) L.push('  (none)')
     }
-    if (!b.length) L.push('  (none in this window)')
   }
   return L.join('\n')
 }
