@@ -377,3 +377,34 @@ export async function speak(text: string): Promise<TTSResult> {
     return { ok: false, provider: 'elevenlabs', error: String(err) }
   }
 }
+
+/**
+ * Satisfies the browser's "audio may only start from a user gesture" rule WITHOUT
+ * making a sound. Waking Stanley used to speak a test phrase purely to unlock
+ * playback — an utterance nobody asked for, and the first thing TTS ever said.
+ * A muted, near-empty buffer clears the same gate silently.
+ *
+ * Must be called synchronously from within the gesture handler.
+ */
+export function unlockAudioPlayback(): void {
+  try {
+    // 1-frame silent WAV — small enough to inline, long enough to count as playback.
+    const SILENCE =
+      'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
+    const a = new Audio(SILENCE)
+    a.muted = true
+    a.volume = 0
+    const p = a.play()
+    if (p && typeof p.then === 'function') p.then(() => a.pause()).catch(() => { /* gate stays closed; speak() will report it */ })
+  } catch { /* non-fatal */ }
+
+  // Browser speech synthesis has its own gesture gate, opened the same silent way.
+  try {
+    const synth = window.speechSynthesis
+    if (!synth) return
+    const u = new SpeechSynthesisUtterance('')
+    u.volume = 0
+    synth.speak(u)
+    synth.cancel()
+  } catch { /* non-fatal */ }
+}

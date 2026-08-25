@@ -52,7 +52,7 @@ import {
 import { fetchCampaignRows } from './lib/campaignDiagnosis'
 import { resolveIntent } from './brain/intent'
 import {
-  speak, stopAudio, prewarmAudio, isElevenLabsPaused, resetElevenLabs,
+  speak, stopAudio, prewarmAudio, unlockAudioPlayback, isElevenLabsPaused, resetElevenLabs,
   getAvailableVoices, selectBrowserVoice,
   resetVoiceState,
 } from './voice/tts'
@@ -60,7 +60,7 @@ import { fetchGieniuCommand, type GieniuCommandContext } from './lib/gieniuComma
 import {
   startListening, type SttResult,
 } from './voice/stt'
-import { isSpeaking as sttIsStanleySpeaking, onSpeechChange } from './lib/speechGate'
+import { isSpeaking as sttIsStanleySpeaking } from './lib/speechGate'
 
 import { RangeSwitcher } from './components/RangeSwitcher'
 import { KpiDetailChart } from './components/KpiDetailChart'
@@ -70,7 +70,6 @@ import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from './lib/t
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const OPENING_TEXT = "At your service, sir. One gesture and I shall commence the operational report."
 
 // ── Time range (panel-wide) — aggregation helpers over the daily performance view ─
 
@@ -522,7 +521,8 @@ function RightPanel({
           dateLabel={digestDateLabel}
         />
 
-        {/* Response text */}
+        {/* Response text — only ever a real answer. Idle and thinking states are
+            rendered below instead, and neither of them is a sentence. */}
         {response ? (
           <>
             {lastQuery && (
@@ -536,8 +536,28 @@ function RightPanel({
             </pre>
 
             {chart && <InsightChart spec={chart} />}
+          </>
+        ) : thinking ? (
+          /* Working — a pulse, not a sentence. Nothing here reaches TTS. */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '18px 4px' }} role="status" aria-label="Working">
+            <span className="stanley-dot" />
+            <span className="stanley-dot" />
+            <span className="stanley-dot" />
+          </div>
+        ) : (
+          /* Idle — a readiness indicator, deliberately wordless. Any sentence here
+             reads as Stanley having spoken when he has not. */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 4px' }} role="status" aria-label="Ready">
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)',
+              boxShadow: '0 0 6px var(--glow-gold)', opacity: 0.75, flexShrink: 0,
+            }} />
+            <span style={{ height: 1, flex: 1, background: 'linear-gradient(90deg, var(--border-gold), transparent)', opacity: 0.5 }} />
+          </div>
+        )}
 
-            {/* Voice controls */}
+        {/* Voice controls — always available, with or without an answer on screen. */}
+        <div>
             {!voiceUnlocked ? (
               <div style={{ marginTop: chart ? '14px' : '4px' }}>
                 <button
@@ -556,7 +576,7 @@ function RightPanel({
                   🎙 Wake STANLEY
                 </button>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', marginTop: '6px', textAlign: 'center' }}>
-                  One tap · unlocks voice &amp; mic
+                  One tap · unlocks voice, opens the mic
                 </div>
               </div>
             ) : (
@@ -635,18 +655,7 @@ function RightPanel({
                 {getFallbackBanner(ttsLastElevenError)}
               </div>
             )}
-          </>
-        ) : (
-          <div style={{ padding: '14px 16px', background: 'var(--surface)', border: '1px dashed var(--border)', borderRadius: '4px' }}>
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '0.82rem', color: 'var(--muted)', lineHeight: 1.6, fontStyle: 'italic' }}>
-              Speak or type to receive the briefing.
-            </div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--muted2)', marginTop: '7px', lineHeight: 1.6 }}>
-              "how are we doing?" · "how was yesterday?"<br />
-              "this week so far" · "what's wrong with ads?"
-            </div>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Input area — fixed at bottom */}
@@ -1003,14 +1012,8 @@ export default function App() {
     )
   }, [jsuSummary])
 
-  // ── Opening greeting ─────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    setResponse(OPENING_TEXT)
-    setResponseSpoken(OPENING_TEXT)
-    // Voice unlocks only on explicit Wake tap — never auto-speak on mount
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // No opening line. The panel starts empty: anything printed here before a real
+  // answer reads as Stanley speaking, and would be the first thing TTS said.
 
   // ── Stop speaking ────────────────────────────────────────────────────────────
 
@@ -1163,6 +1166,8 @@ export default function App() {
     setLastQuery(query)
     stopSpeaking()
     setThinking(true)
+    // TTS speaks the final answer exactly once per query; this tracks that it has.
+    let delivered = false
 
     try {
       const ctx = buildCommandContext()
@@ -1176,14 +1181,19 @@ export default function App() {
       } else if (cmdResult.llmUsed) {
         setLlmConnected(true)
       }
-      // Information first — the answer text/voice is delivered by speakAnswer above.
+      // The one and only utterance for this query — the final answer.
+      delivered = true
       speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText })
       // Then a subtle, silent visual mood accent (never audio, never blocking).
       if (isDayResultQuery(query) && perf?.real_roas != null) showResultMood(perf.real_roas)
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('gieniu-command failed — falling back to local intent resolve:', err)
+      // Guard against speaking twice: if the answer was already handed to TTS and
+      // something after it threw, the local fallback must stay silent.
+      if (delivered) return
       const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData, profitData })
+      delivered = true
       speakAnswer(result)
       if (isDayResultQuery(query) && perf?.real_roas != null) showResultMood(perf.real_roas)
     } finally {
@@ -1193,53 +1203,30 @@ export default function App() {
 
   // ── Start Stanley voice ───────────────────────────────────────────────────────
 
+  // Unlocks audio WITHOUT speaking. Browsers need a user gesture before audio can
+  // play, which used to be satisfied by speaking a test phrase — a preamble the
+  // user never asked for. A silent buffer satisfies the same gesture requirement.
   async function handleStartStanleyVoice() {
     prewarmAudio()
-    setTtsError('')
-    // eslint-disable-next-line no-console
-    console.log('GIENIU Start voice — endpoint: /.netlify/functions/gieniu-tts')
-    const testText = isElevenLabsPaused()
-      ? 'Stanley voice is active.'
-      : (responseSpoken || response || OPENING_TEXT)
-    const session = ++ttsSessionRef.current
-    setSpeaking(true)
-    const result = await speak(testText)
-    if (ttsSessionRef.current !== session) return
-    setSpeaking(false)
-    if (result.ok && result.provider === 'browser') {
-      setTtsFallbackActive(true)
-      if (result.elevenError) setTtsLastElevenError(result.elevenError)
-      else if (result.error) setTtsLastElevenError(result.error)
-      setVoiceUnlocked(true)
-    } else if (result.ok) {
-      setVoiceUnlocked(true)
-      // eslint-disable-next-line no-console
-      console.log('GIENIU voice unlocked', true)
-    } else if (!result.aborted) {
-      if (result.provider === 'elevenlabs') setTtsLastElevenError(result.error ?? '')
-      setTtsError(result.error ?? 'unknown error')
-      // eslint-disable-next-line no-console
-      console.log('GIENIU TTS error detail', result.error)
-    }
-  }
-
-  // ── Wake GIENIU: one tap → unlock voice + morning brief + mic ────────────────
-
-  async function handleWakeAndBrief() {
-    prewarmAudio()
+    unlockAudioPlayback()
     setTtsError('')
     setVoiceUnlocked(true)
-    voiceUnlockedRef.current = true  // update ref immediately so speakAnswer sees it
-    await handleIntentQuery('morning brief')
-    // Activate the mic for hands-free follow-up — but ONLY once Stanley has finished
-    // speaking, otherwise the mic catches his own voice and cuts the brief short.
-    if (!listening) {
-      if (sttIsStanleySpeaking()) {
-        const unsub = onSpeechChange(sp => { if (!sp) { unsub(); handleMic() } })
-      } else {
-        handleMic()
-      }
-    }
+    voiceUnlockedRef.current = true
+    // eslint-disable-next-line no-console
+    console.log('GIENIU voice unlocked (silent)')
+  }
+
+  // ── Wake STANLEY: one tap → unlock voice + open the mic ─────────────────────
+  // Deliberately does NOT run the morning brief. Waking is "I am listening", not
+  // "here is a report you did not ask for".
+
+  function handleWakeAndBrief() {
+    prewarmAudio()
+    unlockAudioPlayback()
+    setTtsError('')
+    setVoiceUnlocked(true)
+    voiceUnlockedRef.current = true  // so speakAnswer sees it on the first answer
+    if (!listening) handleMic()
   }
 
   // ── Retry ElevenLabs ─────────────────────────────────────────────────────────
@@ -1249,9 +1236,11 @@ export default function App() {
     setTtsFallbackActive(false)
     setTtsError('')
     prewarmAudio()
+    const toSpeak = responseSpoken || response
+    if (!toSpeak.trim()) return   // nothing real to say — never fall back to a canned line
     const session = ++ttsSessionRef.current
     setSpeaking(true)
-    const result = await speak(responseSpoken || response || OPENING_TEXT)
+    const result = await speak(toSpeak)
     if (ttsSessionRef.current !== session) return
     setSpeaking(false)
     if (result.ok && result.provider === 'browser') {

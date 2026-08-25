@@ -1534,3 +1534,27 @@ button:active, [role="button"]:active,
     width: 100%;
   }
 }
+
+/* ── Stanley working indicator ──────────────────────────────────────────────
+   Three breathing dots while an answer is in flight. Deliberately wordless: a
+   sentence in this slot reads as Stanley having spoken, and used to be the first
+   thing TTS picked up. */
+.stanley-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  opacity: 0.3;
+  animation: stanley-dot 1.25s ease-in-out infinite;
+}
+.stanley-dot:nth-child(2) { animation-delay: 0.16s; }
+.stanley-dot:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes stanley-dot {
+  0%, 100% { opacity: 0.22; transform: translateY(0); }
+  40%      { opacity: 0.95; transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stanley-dot { animation: none; opacity: 0.55; }
+}
