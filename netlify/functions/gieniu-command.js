@@ -1942,6 +1942,47 @@ function scrubEmails(text) {
   })
 }
 
+// ── Bare-refusal guard ──────────────────────────────────────────────────────
+// The system prompt forbids refusals that name nothing, but a prompt rule is a
+// request, not a guarantee. This makes it deterministic: any answer that refuses
+// without identifying a gap gets the gap appended, computed from the context we
+// actually sent. Lifidi always learns WHICH field or feed is empty.
+
+// Deliberately narrow — only the contentless formulas. A refusal that already
+// names a table or field (e.g. "meta_ads_daily has no rows") must pass through.
+const BARE_REFUSAL_RE =
+  /those particulars are not available|that information is not available|i lack the data|no data (?:is )?available|i (?:do not|don't) have (?:that|those|the) (?:information|particulars|details|data)(?![^.]*\b(?:for|in|from|about|because|since|on)\b)|not available to me(?!\s*[\u2014,;:-]\s*\S)/i
+
+// Names the sources that are genuinely empty in THIS request's context.
+function namedGaps(ctx) {
+  const c = ctx ?? {}
+  const today = c.dataHealth?.today ?? 'today'
+  const gaps = []
+  if (!c.todayKPIs) gaps.push(`v_daily_wix_meta_performance has no row for ${today}`)
+  if (!c.topCampaigns || c.topCampaigns.length === 0) gaps.push(`meta_ads_daily has no rows for ${today}`)
+  if (!c.metaEfficiency) gaps.push('no impressions/clicks recorded for the period')
+  if (!c.profitData) gaps.push('profit-data returned nothing, so margin is unknown')
+  if (!c.todayByProduct) gaps.push('orders carry no product classification')
+  if (!c.recentTrend || c.recentTrend.length === 0) gaps.push('the daily trend is empty')
+  return gaps
+}
+
+// The connected sources, for the case where nothing is empty — the asked-for
+// field simply is not collected anywhere.
+const CONNECTED_SOURCES =
+  'orders, meta_ads_daily, v_daily_wix_meta_performance, v_webinar_funnel and the funding radar'
+
+function enforceNamedRefusal(text, ctx) {
+  if (!text || !BARE_REFUSAL_RE.test(text)) return text
+  const gaps = namedGaps(ctx)
+  const detail = gaps.length
+    ? `The gap is specific, sir: ${gaps.join('; ')}.`
+    : `To be precise, sir: that field is not collected in any connected source — ${CONNECTED_SOURCES}.`
+  return `${text.trim()}
+
+${detail}`
+}
+
 function parseLLMResponse(raw) {
   const answerMatch = raw.match(/ANSWER:\s*([\s\S]*?)(?=\nSPEECH:|$)/i)
   const speechMatch = raw.match(/SPEECH:\s*([\s\S]*)$/i)
@@ -2108,7 +2149,9 @@ exports.handler = async (event) => {
         usedModel = process.env.OPENAI_MODEL || 'gpt-4o-mini'
       }
 
-      const { answerText, speechText } = parseLLMResponse(rawLLM)
+      const parsed = parseLLMResponse(rawLLM)
+      const answerText = enforceNamedRefusal(parsed.answerText, ctx)
+      const speechText = enforceNamedRefusal(parsed.speechText, ctx)
       return success({
         answerText,
         speechText,
@@ -2211,7 +2254,9 @@ exports.handler = async (event) => {
       throw new Error('No API key available')
     }
 
-    const { answerText, speechText } = parseLLMResponse(rawLLM)
+    const parsed = parseLLMResponse(rawLLM)
+    const answerText = enforceNamedRefusal(parsed.answerText, ctx)
+    const speechText = enforceNamedRefusal(parsed.speechText, ctx)
 
     return success({
       answerText,
