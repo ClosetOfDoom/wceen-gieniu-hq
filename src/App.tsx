@@ -57,6 +57,7 @@ import {
   resetVoiceState,
 } from './voice/tts'
 import { fetchGieniuCommand, type GieniuCommandContext } from './lib/gieniuCommand'
+import { enforceNamedRefusalLocal } from './lib/namedRefusal'
 import {
   startListening, type SttResult,
 } from './voice/stt'
@@ -1193,8 +1194,19 @@ export default function App() {
       // something after it threw, the local fallback must stay silent.
       if (delivered) return
       const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData, profitData })
+      // Same guard the backend applies to LLM answers. This path skipped it, and
+      // it is the likeliest source of a contentless refusal: the backend being
+      // unreachable is exactly the case with the least data behind the answer.
+      const gapCtx = {
+        perf, ads, trend, profitData, ordersData,
+        today: new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' }),
+      }
       delivered = true
-      speakAnswer(result)
+      speakAnswer({
+        ...result,
+        displayText: enforceNamedRefusalLocal(result.displayText, gapCtx, lastRefresh),
+        spokenText: enforceNamedRefusalLocal(result.spokenText, gapCtx, lastRefresh),
+      })
       if (isDayResultQuery(query) && perf?.real_roas != null) showResultMood(perf.real_roas)
     } finally {
       setThinking(false)
