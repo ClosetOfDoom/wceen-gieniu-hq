@@ -57,7 +57,7 @@ import {
   resetVoiceState,
 } from './voice/tts'
 import { fetchGieniuCommand, type GieniuCommandContext } from './lib/gieniuCommand'
-import { enforceNamedRefusalLocal } from './lib/namedRefusal'
+import { enforceRefusal } from './lib/refusalGuard'
 import {
   startListening, type SttResult,
 } from './voice/stt'
@@ -1025,18 +1025,23 @@ export default function App() {
 
   // ── Auto-speak every answer ──────────────────────────────────────────────────
 
-  async function speakAnswer(gr: GieniuResponse) {
+  // THE single choke point. Every answer — model, local fallback, JSU command
+  // buttons, error notices — arrives here, so the refusal validator runs here and
+  // nowhere else. `question` lets the guard name the right missing column.
+  async function speakAnswer(gr: GieniuResponse, question = '') {
     const session = ++ttsSessionRef.current
     stopSpeaking()
-    setResponse(gr.displayText)
-    setResponseSpoken(gr.spokenText)
+    const displayText = enforceRefusal(gr.displayText, question)
+    const spokenText = enforceRefusal(gr.spokenText, question)
+    setResponse(displayText)
+    setResponseSpoken(spokenText)
     setResponseChart(gr.chart)
     setTtsError('')
     // eslint-disable-next-line no-console
-    console.log('GIENIU spokenText', gr.spokenText.slice(0, 100))
-    if (muted || !voiceUnlockedRef.current || !gr.spokenText.trim()) return
+    console.log('GIENIU spokenText', spokenText.slice(0, 100))
+    if (muted || !voiceUnlockedRef.current || !spokenText.trim()) return
     setSpeaking(true)
-    const result = await speak(gr.spokenText)
+    const result = await speak(spokenText)
     if (ttsSessionRef.current !== session) return
     setSpeaking(false)
     if (result.ok && result.provider === 'browser') {
@@ -1184,7 +1189,7 @@ export default function App() {
       }
       // The one and only utterance for this query — the final answer.
       delivered = true
-      speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText })
+      speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText }, query)
       // Then a subtle, silent visual mood accent (never audio, never blocking).
       if (isDayResultQuery(query) && perf?.real_roas != null) showResultMood(perf.real_roas)
     } catch (err) {
@@ -1194,19 +1199,9 @@ export default function App() {
       // something after it threw, the local fallback must stay silent.
       if (delivered) return
       const result = resolveIntent(query, { perf, status, ads, metaStats, jsuSummary, trend, opsWeekReport, ordersData, profitData })
-      // Same guard the backend applies to LLM answers. This path skipped it, and
-      // it is the likeliest source of a contentless refusal: the backend being
-      // unreachable is exactly the case with the least data behind the answer.
-      const gapCtx = {
-        perf, ads, trend, profitData, ordersData,
-        today: new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' }),
-      }
       delivered = true
-      speakAnswer({
-        ...result,
-        displayText: enforceNamedRefusalLocal(result.displayText, gapCtx, lastRefresh),
-        spokenText: enforceNamedRefusalLocal(result.spokenText, gapCtx, lastRefresh),
-      })
+      // No second guard here — speakAnswer validates every path.
+      speakAnswer(result, query)
       if (isDayResultQuery(query) && perf?.real_roas != null) showResultMood(perf.real_roas)
     } finally {
       setThinking(false)
@@ -1299,7 +1294,7 @@ export default function App() {
       case 'attendance rate':              text = buildAttendanceRateReport(jsuSummary); break
       case 'kto był i kupił':              text = buildWhoAttendedAndBought(jsuSummary); break
     }
-    speakAnswer(wrapResponse(text))
+    speakAnswer(wrapResponse(text), key)
   }
 
   // ── Speech helpers ────────────────────────────────────────────────────────────
