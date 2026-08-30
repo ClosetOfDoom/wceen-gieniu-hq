@@ -11,13 +11,20 @@
 //   (b) where the data actually lives, or why it is not collected — from a
 //       closed list of real sources
 // Anything else is rewritten. Non-refusals are returned untouched.
+//
+// The guard errs towards LETTING AN ANSWER THROUGH. Deleting a correct answer is
+// worse than leaving a weak refusal, so every replacement needs positive
+// evidence that the answer does not address the question.
 
-/** Sources that actually exist in this business. Nothing else may be cited. */
+/**
+ * Payment providers that actually process WCEEN money: Wix + Stripe, with some
+ * PayPal. Przelewy24 is deliberately ABSENT — it is still in KYC and settles
+ * nothing, so citing it as a source would be a fabrication.
+ */
 export const REAL_SOURCES = [
   'Wix',
   'Stripe',
   'PayPal',
-  'Przelewy24',
   'Meta Ads',
   'ClickMeeting',
   'not collected by the Wix→Supabase sync',
@@ -56,8 +63,6 @@ export const REFUSAL_RE = new RegExp(
     'those particulars',
     'no information',
     'lacks?\\s+(?:the\\s+)?(?:data|information|detail)',
-    // "orders.payment_method does not exist, so I cannot tell you" is a refusal
-    // too — it was slipping past undetected and therefore unvalidated.
     'does not exist',
     'do(?:es)? not exist',
     'no such (?:column|field|table)',
@@ -96,74 +101,131 @@ const SOURCE_RE = new RegExp(
 )
 
 // ── known gaps ──────────────────────────────────────────────────────────────
-// What we actually know about the fields people ask for and the pipeline does
-// not carry. Each entry produces a refusal that satisfies (a) and (b) and tells
-// Fifi the one thing to do about it.
 
-interface KnownGap {
+/** Why the field cannot answer the question — each phrases the refusal differently. */
+type GapState =
+  | 'missing-column'  // the column is not in the schema at all
+  | 'column-empty'    // the column exists but nothing ever writes it
+  | 'frozen'          // it was fed once and the feed stopped
+
+export interface KnownGap {
+  key: string
+  /** Question patterns. Word-bounded throughout — an unbounded /utm/ matches "autumn". */
   match: RegExp
+  /** Vocabulary of the topic, used to spot a real answer about it. */
+  topic: RegExp
   column: string
+  state: GapState
   source: string
   action: string
+  /** false ⇒ reported as DO POTWIERDZENIA; not verifiable from code or schema. */
+  confirmed: boolean
 }
 
-const KNOWN_GAPS: KnownGap[] = [
+export const KNOWN_GAPS: KnownGap[] = [
   {
-    match: /payment method|payment_method|how (?:did|do) (?:they|customers) pay|paid (?:by|with)|przelewy|blik|payment type/i,
+    key: 'payment_method',
+    // methods? / types? — "payment methods" is how the question is actually asked.
+    match: /\bpayment\s+(?:methods?|types?)\b|\bpayment_method\b|\bhow\s+(?:did|do)\s+(?:they|customers|people)\s+pay\b|\bpaid\s+(?:by|with)\b|\bblik\b|\bprzelewy\b/i,
+    topic: /\bpayment\b|\bpaid\b|\bpay\b|\bcard\b|\bblik\b|\btransfer\b|\bstripe\b|\bpaypal\b/i,
     column: 'orders.payment_method',
-    source: 'Wix records it at checkout and Przelewy24 settles the transaction',
+    state: 'missing-column',
+    // Verified: the column is absent from orders. Providers per Fifi — Wix
+    // storefront, Stripe settlement, some PayPal. NOT Przelewy24: still in KYC.
+    source: 'Wix records the payment method at checkout and Stripe settles the transaction',
     action: 'add the payment-method field to the Make → Wix mapping and create a payment_method column on orders',
+    confirmed: true,
   },
   {
-    match: /frequency|impression frequency|how often (?:did|do) people see/i,
+    key: 'ad_frequency',
+    match: /\bfrequency\b|\bhow\s+often\s+(?:did|do)\s+people\s+see\b/i,
+    topic: /\bfrequency\b|\bimpressions?\b|\breach\b/i,
     column: 'meta_ads_daily.frequency',
+    state: 'missing-column',
     source: 'Meta Ads reports it per ad set',
     action: 'add frequency to the Meta Ads → Make field mapping and create a frequency column on meta_ads_daily',
+    confirmed: true,
   },
   {
-    match: /refund|chargeback|zwrot/i,
+    key: 'refunds',
+    match: /\brefunds?\b|\brefunded\b|\bchargebacks?\b|\bzwrot(?:y|ów|u)?\b/i,
+    topic: /\brefunds?\b|\brefunded\b|\bchargebacks?\b/i,
     column: 'orders.refund_status',
-    source: 'Wix holds refund state on the order',
+    state: 'missing-column',
+    source: 'Wix holds the refund state on the order',
     action: 'add refund status to the Make → Wix mapping and create a refund_status column on orders',
+    confirmed: false,   // no code or schema evidence that Wix refunds are tracked
   },
   {
-    match: /utm|which creative (?:drove|brought|generated).*(?:revenue|sale)|revenue (?:per|by|from each) creative|attribut/i,
+    key: 'utm_attribution',
+    match: /\butm\b|\brevenue\s+(?:per|by|from\s+each)\s+creative\b|\bwhich\s+creative\s+(?:drove|brought|generated)\b.*\b(?:revenue|sales?)\b/i,
+    topic: /\butm\b|\battribut\w*\b|\bcreatives?\b|\bcampaigns?\b/i,
     column: 'orders.utm_source',
+    // The column EXISTS on orders but nothing in this codebase reads or writes
+    // it, so per-creative revenue still cannot be attributed.
+    state: 'column-empty',
     source: 'Meta Ads passes it in the landing-page URL, but it is not collected by the Wix→Supabase sync',
-    action: 'capture the UTM parameters at checkout in Make and add utm_source / utm_campaign columns on orders',
+    action: 'capture the UTM parameters at checkout in Make so utm_source and utm_campaign on orders are actually populated',
+    confirmed: false,   // column exists; whether any row carries a value is unverified
   },
   {
-    match: /email (?:open|click|deliver)|open rate|mailing (?:stats|results)|newsletter/i,
+    key: 'email_engagement',
+    match: /\bemail\s+(?:opens?|clicks?|deliver\w*)\b|\bopen\s+rate\b|\bmailing\s+(?:stats|results)\b|\bnewsletter\b/i,
+    topic: /\bemails?\b|\bopens?\b|\bclicks?\b|\bmailing\b|\bnewsletter\b/i,
     column: 'email_recipient_events.event_type',
+    state: 'column-empty',
     source: 'the mailing provider holds it; it is not collected by the Wix→Supabase sync',
     action: 'connect the mailing provider webhook in Make so it writes open and click events into email_recipient_events',
+    confirmed: false,   // table and column exist; row count not readable with the anon key
   },
   {
-    match: /lifetime value|\bltv\b|\bclv\b|repeat (?:purchase|customer)|returning customer/i,
+    key: 'customer_lifetime',
+    match: /\blifetime\s+value\b|\bltv\b|\bclv\b|\brepeat\s+(?:purchase|customer)s?\b|\breturning\s+customers?\b/i,
+    topic: /\blifetime\b|\bltv\b|\bclv\b|\brepeat\b|\breturning\b|\bcustomers?\b/i,
     column: 'orders.customer_id',
+    // The column EXISTS but nothing reads it, so purchases still cannot be
+    // grouped per person.
+    state: 'column-empty',
     source: 'Wix issues a contact id per buyer',
-    action: 'add the Wix contact id to the Make mapping and create a customer_id column on orders so purchases can be grouped per person',
+    action: 'populate customer_id from the Wix contact id in the Make mapping so purchases can be grouped per person',
+    confirmed: false,   // column exists; population unverified
   },
   {
-    // Word-bounded: an unanchored /attend/ also matches "what needs attention?".
-    match: /\battend(?:ance|ed|ees|ing)?\b|\bshow.?up\b|frekwencj|who was (?:at|in) the webinar/i,
+    key: 'customer_demographics',
+    // Verified absent from orders: age, customer_age, city, customer_city,
+    // country, phone, first_name. Nothing about the buyer beyond their e-mail.
+    match: /\b(?:age|ages|wiek)\b|\bcity\b|\bcities\b|\bmiasto\b|\bdemograph\w*\b|\bwhere\s+(?:do|are)\s+(?:our\s+)?customers?\b|\bhow\s+old\b/i,
+    topic: /\bage[ds]?\b|\bcity\b|\bcities\b|\bdemograph\w*\b|\bcustomers?\b/i,
+    column: 'orders.city',
+    state: 'missing-column',
+    source: 'Wix holds the buyer contact record',
+    action: 'add the contact fields to the Make → Wix mapping and create city / customer_age columns on orders',
+    confirmed: true,
+  },
+  {
+    key: 'attendance',
+    // No bare "attend": "what should I attend to today?" is an agenda question,
+    // not a webinar-attendance one. Only the noun forms count.
+    match: /\battendance\b|\battendees?\b|\battended\b|\bshow.?up\b|\bfrekwencj\w*\b|\bwho\s+was\s+(?:at|in)\s+the\s+webinar\b/i,
+    topic: /\battend\w*\b|\bshow.?up\b|\bwebinars?\b|\bsessions?\b/i,
     column: 'webinar_attendance.attended',
+    state: 'frozen',
     source: 'ClickMeeting stopped feeding it on 2026-08-14',
     action: 'restore the ClickMeeting → Make → webinar_attendance sync if attendance is needed again',
+    confirmed: true,
   },
 ]
 
 /** Generic fallback when the question does not match a known gap. */
 const GENERIC_GAP: KnownGap = {
+  key: 'generic',
   match: /.^/,
+  topic: /.^/,
   column: 'orders',
+  state: 'missing-column',
   source: 'not collected by the Wix→Supabase sync',
-  action:
-    'name the exact field you need so it can be added to the Make mapping and given a column in Supabase',
-}
-
-function gapFor(question: string): KnownGap {
-  return KNOWN_GAPS.find((g) => g.match.test(question)) ?? GENERIC_GAP
+  action: 'name the exact field you need so it can be added to the Make mapping and given a column in Supabase',
+  confirmed: true,
 }
 
 /** The known gap this question asks about, if any. */
@@ -176,7 +238,7 @@ export function knownGapFor(question: string): KnownGap | null {
 export interface RefusalVerdict {
   isRefusal: boolean
   valid: boolean
-  /** Why it was rejected — blacklist rule names and/or 'missing-table-column' / 'missing-source'. */
+  /** Blacklist rule names and/or 'missing-table-column' / 'missing-source'. */
   reasons: string[]
 }
 
@@ -191,33 +253,59 @@ export function validateRefusal(text: string): RefusalVerdict {
   return { isRefusal: true, valid: reasons.length === 0, reasons }
 }
 
+/**
+ * Does this answer actually engage with the topic — either by naming the column,
+ * or by carrying a figure alongside the topic's own vocabulary?
+ *
+ * This is the conservative half of the off-topic check. Matching the question
+ * pattern alone is not enough to delete an answer: "which campaign pays for
+ * itself?" trips the payment vocabulary while being a perfectly answerable ROAS
+ * question, and the answer to it carries numbers next to campaign words.
+ */
+export function answerAddressesTopic(text: string, gap: KnownGap): boolean {
+  if (!text) return false
+  if (new RegExp(gap.column.replace(/\./g, '\\.'), 'i').test(text)) return true
+
+  const re = new RegExp(gap.topic.source, 'gi')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const start = Math.max(0, m.index - 60)
+    const end = Math.min(text.length, m.index + m[0].length + 60)
+    if (/\d/.test(text.slice(start, end))) return true
+    if (m.index === re.lastIndex) re.lastIndex++   // zero-length match guard
+  }
+  return false
+}
+
 /** The replacement refusal — Stanley's voice, and always complete. */
 export function buildRefusal(question: string): string {
-  const g = gapFor(question)
+  const g = KNOWN_GAPS.find((x) => x.match.test(question)) ?? GENERIC_GAP
+  const state =
+    g.state === 'missing-column'
+      ? `${g.column} does not exist`
+      : g.state === 'column-empty'
+        ? `${g.column} exists but nothing writes to it`
+        : `${g.column} stops on 2026-08-14`
   return (
-    `That field is not in the database, sir — ${g.column} does not exist. ` +
+    `That field is not in the database, sir — ${state}. ` +
     `${g.source[0].toUpperCase()}${g.source.slice(1)}. ` +
     `To have it on the dashboard, Fifi must ${g.action}.`
   )
 }
 
 /**
- * THE guard. Returns the text unchanged unless it must not ship, in which case
- * it is replaced outright — the bad wording is the thing being removed, so
- * annotating it would not help.
+ * THE guard. Returns the text unchanged unless it must not ship.
  *
  * Two ways an answer fails:
- *   1. The question asks for a field that does not exist, and the answer does
- *      not say so. The local fallback does this loudly: asked about payment
- *      methods it does not recognise the question and returns today's revenue
- *      instead — an answer to something else, which is worse than a refusal.
+ *   1. The question asks for a field that cannot answer it, AND the answer does
+ *      not engage with the topic at all — the local fallback does this, reporting
+ *      today's revenue when asked about payment methods. Both halves are
+ *      required: a question match on its own never deletes an answer.
  *   2. It refuses, but without naming a table.column and a real source.
  */
 export function enforceRefusal(text: string, question = ''): string {
   const gap = question ? knownGapFor(question) : null
-  if (gap && !new RegExp(gap.column.replace('.', '\\.'), 'i').test(text)) {
-    return buildRefusal(question)
-  }
+  if (gap && !answerAddressesTopic(text, gap)) return buildRefusal(question)
 
   const v = validateRefusal(text)
   if (!v.isRefusal || v.valid) return text
