@@ -27,3 +27,8 @@ npm-debug.log*
 
 # Local Netlify folder
 .netlify
+
+# local test harnesses
+_e2e.mjs
+_diag.mjs
+_fallback.mjs

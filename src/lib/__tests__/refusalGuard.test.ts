@@ -52,18 +52,23 @@ describe('invalid refusals — one per blacklist rule', () => {
 // ── refusals that must pass through untouched ───────────────────────────────
 
 describe('valid refusals — both elements present', () => {
-  const good = [
-    'Payment method is not in the database, sir — orders.payment_method does not exist. Wix records it at checkout and Przelewy24 settles the transaction.',
-    'I do not have meta_ads_daily.frequency, sir. Meta Ads reports it per ad set but the field is not mapped.',
-    'Revenue cannot be attributed per creative, sir — orders.utm_source does not exist and is not collected by the Wix→Supabase sync.',
+  // Each answer is paired with the question it actually answers; a refusal about
+  // frequency handed back for a payment question is correctly replaced.
+  const good: [string, string][] = [
+    [PAYMENT_Q,
+      'Payment method is not in the database, sir — orders.payment_method does not exist. Wix records it at checkout and Przelewy24 settles the transaction.'],
+    ['what was the frequency on our creatives?',
+      'I do not have meta_ads_daily.frequency, sir. Meta Ads reports it per ad set but the field is not mapped.'],
+    ['how much revenue came from each creative?',
+      'Revenue cannot be attributed per creative, sir — orders.utm_source does not exist and is not collected by the Wix→Supabase sync.'],
   ]
-  for (const [i, text] of good.entries()) {
+  for (const [i, [question, text]] of good.entries()) {
     it(`${i + 1}. passes and is returned byte-for-byte`, () => {
       const v = validateRefusal(text)
       expect(v.isRefusal).toBe(true)
       expect(v.reasons).toEqual([])
       expect(v.valid).toBe(true)
-      expect(enforceRefusal(text, PAYMENT_Q)).toBe(text)
+      expect(enforceRefusal(text, question)).toBe(text)
     })
   }
 })
@@ -114,6 +119,28 @@ describe('buildRefusal', () => {
     expect(buildRefusal('what was the frequency on our creatives?')).toContain('meta_ads_daily.frequency')
     expect(buildRefusal('what is the refund rate?')).toContain('orders.refund_status')
     expect(buildRefusal('what is our customer lifetime value?')).toContain('orders.customer_id')
+  })
+})
+
+describe('an answer that ignores an impossible question', () => {
+  // Verbatim from the live fallback: asked about payment methods, resolveIntent
+  // does not recognise the question and reports today's revenue instead.
+  const offTopic = 'Numbers are in. Interpretation included.\n\nToday: 5 Wix orders, 591.00 PLN revenue, 408.68 PLN Meta ad spend.\nReal CPA: 81.74 PLN.'
+
+  it('is replaced with the refusal — answering something else is worse', () => {
+    const out = enforceRefusal(offTopic, PAYMENT_Q)
+    expect(out).not.toBe(offTopic)
+    expect(out).toContain('orders.payment_method')
+    expect(validateRefusal(out).valid).toBe(true)
+  })
+
+  it('leaves the same text alone when the question is answerable', () => {
+    expect(enforceRefusal(offTopic, 'how are we doing today?')).toBe(offTopic)
+  })
+
+  it('does not mistake "what needs attention?" for an attendance question', () => {
+    const answer = 'Real CPA stands at 31.66 PLN today, sir, within range.'
+    expect(enforceRefusal(answer, 'what needs attention?')).toBe(answer)
   })
 })
 

@@ -145,7 +145,8 @@ const KNOWN_GAPS: KnownGap[] = [
     action: 'add the Wix contact id to the Make mapping and create a customer_id column on orders so purchases can be grouped per person',
   },
   {
-    match: /attend|show.?up|frekwencj|who was (?:at|in) the webinar/i,
+    // Word-bounded: an unanchored /attend/ also matches "what needs attention?".
+    match: /\battend(?:ance|ed|ees|ing)?\b|\bshow.?up\b|frekwencj|who was (?:at|in) the webinar/i,
     column: 'webinar_attendance.attended',
     source: 'ClickMeeting stopped feeding it on 2026-08-14',
     action: 'restore the ClickMeeting → Make → webinar_attendance sync if attendance is needed again',
@@ -163,6 +164,11 @@ const GENERIC_GAP: KnownGap = {
 
 function gapFor(question: string): KnownGap {
   return KNOWN_GAPS.find((g) => g.match.test(question)) ?? GENERIC_GAP
+}
+
+/** The known gap this question asks about, if any. */
+export function knownGapFor(question: string): KnownGap | null {
+  return KNOWN_GAPS.find((g) => g.match.test(question)) ?? null
 }
 
 // ── validation ──────────────────────────────────────────────────────────────
@@ -196,11 +202,23 @@ export function buildRefusal(question: string): string {
 }
 
 /**
- * THE guard. Returns the text unchanged unless it is an invalid refusal, in
- * which case it is replaced outright — an invalid refusal is never shipped and
- * never merely annotated, because the bad wording is the thing being removed.
+ * THE guard. Returns the text unchanged unless it must not ship, in which case
+ * it is replaced outright — the bad wording is the thing being removed, so
+ * annotating it would not help.
+ *
+ * Two ways an answer fails:
+ *   1. The question asks for a field that does not exist, and the answer does
+ *      not say so. The local fallback does this loudly: asked about payment
+ *      methods it does not recognise the question and returns today's revenue
+ *      instead — an answer to something else, which is worse than a refusal.
+ *   2. It refuses, but without naming a table.column and a real source.
  */
 export function enforceRefusal(text: string, question = ''): string {
+  const gap = question ? knownGapFor(question) : null
+  if (gap && !new RegExp(gap.column.replace('.', '\\.'), 'i').test(text)) {
+    return buildRefusal(question)
+  }
+
   const v = validateRefusal(text)
   if (!v.isRefusal || v.valid) return text
   return buildRefusal(question)
