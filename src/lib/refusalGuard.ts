@@ -191,15 +191,27 @@ export const KNOWN_GAPS: KnownGap[] = [
     confirmed: false,   // column exists; population unverified
   },
   {
-    key: 'customer_demographics',
-    // Verified absent from orders: age, customer_age, city, customer_city,
-    // country, phone, first_name. Nothing about the buyer beyond their e-mail.
-    match: /\b(?:age|ages|wiek)\b|\bcity\b|\bcities\b|\bmiasto\b|\bdemograph\w*\b|\bwhere\s+(?:do|are)\s+(?:our\s+)?customers?\b|\bhow\s+old\b/i,
-    topic: /\bage[ds]?\b|\bcity\b|\bcities\b|\bdemograph\w*\b|\bcustomers?\b/i,
+    // Age and city are separate gaps: one entry covering both named the wrong
+    // column ("average age" answered with orders.city).
+    key: 'customer_age',
+    match: /\b(?:ages?|wiek)\b|\bhow\s+old\b/i,
+    topic: /\bages?\b|\bold\b|\bcustomers?\b/i,
+    column: 'orders.customer_age',
+    state: 'missing-column',
+    source: 'Wix holds the buyer contact record',
+    action: 'add the birth-date field to the Make → Wix mapping and create a customer_age column on orders',
+    confirmed: true,
+  },
+  {
+    key: 'customer_city',
+    // Verified absent from orders: city, customer_city, country, phone,
+    // first_name. Nothing about the buyer beyond their e-mail.
+    match: /\bcit(?:y|ies)\b|\bmiasto\b|\bdemograph\w*\b|\bwhere\s+(?:do|are)\s+(?:our\s+)?customers?\b/i,
+    topic: /\bcit(?:y|ies)\b|\bdemograph\w*\b|\bcustomers?\b/i,
     column: 'orders.city',
     state: 'missing-column',
     source: 'Wix holds the buyer contact record',
-    action: 'add the contact fields to the Make → Wix mapping and create city / customer_age columns on orders',
+    action: 'add the address fields to the Make → Wix mapping and create a city column on orders',
     confirmed: true,
   },
   {

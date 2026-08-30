@@ -173,7 +173,7 @@ describe('questions with no data return a sourced refusal', () => {
     ['what payment methods did customers use?', 'orders.payment_method'],
     ['show me the utm source per order', 'orders.utm_source'],
     ['how many attended the webinar last week?', 'webinar_attendance.attended'],
-    ['what is the average age of our customers?', 'orders.city'],
+    ['what is the average age of our customers?', 'orders.customer_age'],
     ['which city do most customers come from?', 'orders.city'],
   ]
 
@@ -230,7 +230,7 @@ describe('buildRefusal', () => {
     const samples = [
       'what payment methods were used?', 'what was the frequency?', 'what is the refund rate?',
       'show me the utm per order', 'what was the email open rate?', 'what is our LTV?',
-      'which city do customers come from?', 'how many attended?', 'something unmapped entirely',
+      'which city do customers come from?', 'how old are our customers?', 'how many attended?', 'something unmapped entirely',
     ]
     // Every known gap must be exercised by at least one sample.
     for (const g of KNOWN_GAPS) {
