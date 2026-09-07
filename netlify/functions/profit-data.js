@@ -21,6 +21,7 @@ import {
   warsawToday,
 } from '../shared/productCatalog.js'
 import { readTable } from '../shared/supabaseRead.js'
+import { toWarsawDate } from '../shared/productCatalog.js'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -69,6 +70,24 @@ export const handler = async (event) => {
   // dropped from the classification, so a 99 PLN product + 20 PLN shipping is
   // classified as one 119 PLN Pakiet Pamięciowy, not as two unknown lines.
   const orders = aggregateOrders(rangeRows)
+
+  // How many of this range's orders fall on a DIFFERENT calendar day under the
+  // daily view's basis than under ours.
+  //
+  // v_daily_wix_meta_performance buckets with `order_created_at::date`, i.e. the
+  // UTC day; this endpoint buckets by the Warsaw day, which is the business's own
+  // calendar. Orders placed between 22:00 and 24:00 UTC (midnight to 02:00 in
+  // Warsaw) therefore land on different days in the two places. Nothing is lost
+  // — the totals over any two consecutive days are identical — but a single-day
+  // count can differ, so reconciliation has to know by how much it legitimately
+  // can. supabase/migrations/view_daily_performance_warsaw_day.sql removes the
+  // discrepancy at the source; it needs applying by hand in Supabase.
+  const dayBoundaryOrders = orders.filter(order => {
+    const ts = order.raw[0]?.order_created_at
+    if (!ts) return false
+    const utcDay = String(ts).slice(0, 10)
+    return utcDay !== toWarsawDate(ts)
+  }).length
 
   // ── Classify and accumulate ───────────────────────────────────────────────
   const productAccum = {}
@@ -250,6 +269,9 @@ export const handler = async (event) => {
       rangeFrom: from,
       rangeTo: to,
       ordersCount,
+      // Orders whose UTC day differs from their Warsaw day. This is the exact
+      // slack a single-day reconciliation against the daily view may show.
+      dayBoundaryOrders,
       blendedOrdersCount,
       blendedRevenue,
       orderRowsFetched: rangeRows.length,
