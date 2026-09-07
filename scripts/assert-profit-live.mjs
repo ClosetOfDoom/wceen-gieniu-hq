@@ -161,11 +161,15 @@ async function checkRange(label, from, to) {
        + 'truncated read or filter mismatch')
   }
 
-  // Revenue gets the same treatment, bounded by the value of the shifted
-  // orders rather than by a percentage.
+  // Revenue gets the same treatment, bounded by the value of the orders that
+  // could actually have shifted. The bound is the LARGEST order in the range,
+  // not the average: the order sitting on the boundary is a specific order, and
+  // an average bound rejected a real 119.00 PLN shift as a 118.65 discrepancy.
   const revGap = d.revenue - v.revenue
-  const perOrder = d.ordersCount > 0 ? d.revenue / d.ordersCount : 0
-  const revSlack = slack * perOrder + 0.01
+  const maxOrder = rows.length > 0
+    ? Math.max(...rows.map(r => Number(r.amount) || 0))
+    : (d.ordersCount > 0 ? d.revenue / d.ordersCount : 0)
+  const revSlack = slack * maxOrder + 0.01
   if (Math.abs(revGap) < 0.01) {
     pass(`RECONCILE ${label}: revenue matches the view exactly (${pln(d.revenue)})`)
   } else if (Math.abs(revGap) <= revSlack) {
