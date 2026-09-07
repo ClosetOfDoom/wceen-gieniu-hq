@@ -7,6 +7,9 @@
 
 import { classifyBySchedule } from './scheduleUtils.js'
 
+import { readTable } from '../shared/supabaseRead.js'
+import { fetchOrdersInRange } from '../shared/productCatalog.js'
+
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -186,31 +189,17 @@ function getWarsawRanges() {
 
 // ── Supabase REST helper ──────────────────────────────────────────────────────
 
-async function supabaseGet(supabaseUrl, serviceKey, table, filters = {}) {
-  const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
-  for (const [k, v] of Object.entries(filters)) {
-    if (Array.isArray(v)) {
-      for (const item of v) url.searchParams.append(k, item)
-    } else {
-      url.searchParams.set(k, String(v))
-    }
-  }
-  const res = await fetch(url.toString(), {
-    headers: {
-      'Authorization': `Bearer ${serviceKey}`,
-      'apikey':        serviceKey,
-      'Content-Type':  'application/json',
-      'Accept':        'application/json',
-    },
+// Every Supabase read in this file goes through readTable() in
+// ../shared/supabaseRead.js: it refuses to run without an explicit order column and
+// pages past PostgREST's silent 1000-row cap. `params` keeps its old shape
+// ({ select, order, limit, ...postgrestFilters }) so the call sites below did
+// not have to change.
+async function supabaseGet(supabaseUrl, serviceKey, table, params = {}) {
+  const { select = '*', order, limit, ...filters } = params
+  return readTable(supabaseUrl, serviceKey, table, {
+    select, order, limit: limit == null ? undefined : Number(limit), filters,
   })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`HTTP ${res.status} on ${table}: ${body.slice(0, 200)}`)
-  }
-  return res.json()
 }
-
-// ── Handler ───────────────────────────────────────────────────────────────────
 
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
@@ -352,11 +341,11 @@ export const handler = async (event) => {
   const orderTableCandidates = ['orders', 'wix_orders']
   for (const tableName of orderTableCandidates) {
     try {
-      const rawOrderData = await supabaseGet(supabaseUrl, serviceKey, tableName, {
-        select: '*',
-        limit:  200,
-      })
-      rawOrders = rawOrderData
+      // Was `{ select: '*', limit: 200 }` with NO order clause: PostgREST
+      // returned the 200 OLDEST rows, so the week's orders were never in the
+      // set and the product classification below ran on 2026-06 data. The
+      // range is now filtered server-side by the shared catalog helper.
+      rawOrders = await fetchOrdersInRange(supabaseUrl, serviceKey, tableName, weekStart, today)
       ordersTable = tableName
       debug.wixOrdersTableExists = true
       const sample = rawOrders[0] ?? {}
@@ -364,11 +353,6 @@ export const handler = async (event) => {
       debug.wixOrdersHasProductData = productFields.some(f => f in sample && sample[f] != null)
       const emailFields = ['buyer_email', 'email', 'customer_email', 'contact_email']
       debug.wixOrdersHasEmailData = emailFields.some(f => f in sample && sample[f] != null)
-      // Filter for this week client-side
-      rawOrders = rawOrders.filter(r => {
-        const d = (r.order_date ?? r.created_at ?? r.date ?? r.created ?? '').slice(0, 10)
-        return !d || d >= weekStart
-      })
       wixOrdersError = null
       debug.wixOrdersError = null
       break

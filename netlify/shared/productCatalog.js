@@ -24,6 +24,8 @@
 // contract, not an implementation detail of each caller.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { readTable } from './supabaseRead.js'
+
 // ── Catalog ──────────────────────────────────────────────────────────────────
 // `contributionMargin` is the AUTHORITATIVE margin at `catalogPrice`.
 // `null` means "not known" — never 0, never guessed. A product with a null
@@ -40,7 +42,7 @@ export const PRODUCTS = {
   },
   jezykozak_pack: {
     key: 'jezykozak_pack', displayName: 'Pakiet Językozaka', shortName: 'PJ',
-    scope: 'language', catalogPrice: 95, contributionMargin: null,
+    scope: 'language', catalogPrice: 95, contributionMargin: 88,
   },
   jzk_ai: {
     key: 'jzk_ai', displayName: 'Językozak AI', shortName: 'JZK AI',
@@ -50,14 +52,35 @@ export const PRODUCTS = {
     key: 'jsu_course', displayName: 'Kurs Jak się uczyć', shortName: 'JSU',
     scope: 'memory', catalogPrice: 549, contributionMargin: 500,
   },
-  cogni_year: {
-    key: 'cogni_year', displayName: 'Cogni (rocznie)', shortName: 'Cogni',
-    scope: 'cogni', catalogPrice: 499, contributionMargin: null,
+  // Cogni annual sells at two prices with two different margins, so it is two
+  // catalog entries. One entry cannot carry two margins without one of them
+  // being derived — i.e. invented.
+  cogni_promo: {
+    key: 'cogni_promo', displayName: 'Cogni rocznie (promo)', shortName: 'Cogni promo',
+    scope: 'cogni', catalogPrice: 399, contributionMargin: 355,
   },
+  cogni_regular: {
+    key: 'cogni_regular', displayName: 'Cogni rocznie', shortName: 'Cogni',
+    scope: 'cogni', catalogPrice: 499, contributionMargin: 450,
+  },
+  // WSZTP — Wakacyjna Szkoła Treningu Pamięci. Deposit 1250 / full 3450.
+  //
+  // Its margin is genuinely unknown, so it stays null. But it is ALSO excluded
+  // from every blended figure, and that is a separate decision from the missing
+  // margin: the camp is cut off from the ad funnel, so its orders are not what
+  // the Meta spend bought. One 3450 PLN order lands in a day whose ad spend is
+  // ~500 PLN and drags that day's blended CPA and ROAS somewhere fictional.
+  // Excluded from Est. Profit, Real CPA and Real ROAS; reported on its own line.
   wsztp: {
     key: 'wsztp', displayName: 'WSZTP', shortName: 'WSZTP',
     scope: 'memory', catalogPrice: 3450, contributionMargin: null,
+    excludeFromBlendedProfit: true,
   },
+}
+
+/** True for products deliberately kept out of every blended profit/CPA/ROAS figure. */
+export function isExcludedFromBlended(productKey) {
+  return PRODUCTS[productKey]?.excludeFromBlendedProfit === true
 }
 
 // Unit cost is DERIVED from the authoritative margin at the catalog price, so
@@ -73,7 +96,7 @@ export function unitCostOf(productKey) {
 // product names are edited freely by hand while the price is what was charged.
 //   99   = Pakiet Pamięciowy sold without the 20 PLN shipping line (form error)
 //   1250 = WSZTP deposit · 3450 = WSZTP in full
-//   399 / 499 = Cogni annual
+//   399  = Cogni annual on promo · 499 = Cogni annual at the regular price
 // 115 is deliberately ABSENT: both a memory row and a language row have sold at
 // 115 PLN, so the price carries no signal there and the name decides.
 export const PRICE_TO_PRODUCT = {
@@ -82,8 +105,8 @@ export const PRICE_TO_PRODUCT = {
   114:  'language_3t',
   119:  'memory_pack',
   347:  'jzk_ai',
-  399:  'cogni_year',
-  499:  'cogni_year',
+  399:  'cogni_promo',
+  499:  'cogni_regular',
   549:  'jsu_course',
   1250: 'wsztp',
   3450: 'wsztp',
@@ -123,7 +146,7 @@ export function isShippingLine(rawName) {
 const NAME_PATTERNS = [
   ['wsztp',          ['wsztp', 'wakacyjna', 'treningu pamieci', 'szko a treningu']],
   ['jsu_course',     ['kurs jak sie uczyc', 'kurs jak', 'jsu', 'nauka uczenia']],
-  ['cogni_year',     ['cogni']],
+  ['cogni_regular',  ['cogni']],
   ['jzk_ai',         ['jezykozak ai', 'jezykozak', 'jzk', 'nauka jezykow', 'nauka jezyk']],
   ['language_3t',    ['pakiet jezykowy', 'jezykowy', 'zadziwiajace techniki', 'techniki nauki jezyk', '3 zadziwiajace']],
   ['memory_pack',    ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']],
@@ -139,12 +162,16 @@ export function nameMatchKey(rawName) {
 }
 
 // ── Classification ───────────────────────────────────────────────────────────
-// Buckets:
-//   MAPPED         — product known AND margin known → counts toward profit
-//   UNKNOWN_MARGIN — product known, margin is null   → named, margin excluded
-//   AMBIGUOUS      — product known, quantity unclear → lower bound only
-//   UNMAPPED       — nothing matched                 → named nothing, excluded
+// Buckets, and what each one means for the blended figures:
+//   MAPPED         — product known, margin known      → counts toward profit
+//   EXCLUDED       — product known, deliberately OUT   → WSZTP; own line, no margin
+//   UNKNOWN_MARGIN — product known, margin unknown     → named, margin missing
+//   AMBIGUOUS      — product known, quantity unclear   → lower bound only
+//   UNMAPPED       — nothing matched at all            → nothing known
 //
+// EXCLUDED and UNMAPPED are NOT the same state and must never be shown as one
+// number. EXCLUDED is a decision we made on purpose (the camp is off the ad
+// funnel); UNMAPPED is a gap in the catalog that somebody has to go and close.
 // `matchedBy` and `failedField` are always populated so a hole can be explained
 // by the field it broke on rather than by a shrug.
 const QTY_TOLERANCE = 0.15   // within 15% of a whole multiple of the catalog price
@@ -163,6 +190,9 @@ export function classifyAmount(amount, rawName) {
     const conflict = nameKey && nameKey !== priceKey
       ? { priceProduct: priceKey, priceAmount: amt, nameProduct: nameKey }
       : null
+    if (p.excludeFromBlendedProfit) {
+      return { productKey: priceKey, scope: p.scope, bucket: 'EXCLUDED', qty: 1, margin: null, matchedBy: `price ${amt}`, conflict, failedField: null, excludedReason: 'off the ad funnel — kept out of blended profit, CPA and ROAS' }
+    }
     if (p.contributionMargin == null) {
       return { productKey: priceKey, scope: p.scope, bucket: 'UNKNOWN_MARGIN', qty: 1, margin: null, matchedBy: `price ${amt}`, conflict, failedField: 'contributionMargin (not in catalog)' }
     }
@@ -175,6 +205,9 @@ export function classifyAmount(amount, rawName) {
   // 2 — name-matched product at a non-catalog amount.
   if (nameKey) {
     const p = PRODUCTS[nameKey]
+    if (p.excludeFromBlendedProfit) {
+      return { productKey: nameKey, scope: p.scope, bucket: 'EXCLUDED', qty: 1, margin: null, matchedBy: 'name', conflict: null, failedField: null, excludedReason: 'off the ad funnel — kept out of blended profit, CPA and ROAS' }
+    }
     if (p.contributionMargin == null) {
       return { productKey: nameKey, scope: p.scope, bucket: 'UNKNOWN_MARGIN', qty: 1, margin: null, matchedBy: 'name', conflict: null, failedField: 'contributionMargin (not in catalog)' }
     }
@@ -301,80 +334,70 @@ export function classifyOrder(order) {
 }
 
 // ── Supabase reads ───────────────────────────────────────────────────────────
-
-async function pgGet(supabaseUrl, serviceKey, table, params) {
-  const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
-  for (const [k, v] of Object.entries(params)) {
-    if (Array.isArray(v)) { for (const item of v) url.searchParams.append(k, item) }
-    else { url.searchParams.set(k, String(v)) }
-  }
-  const res = await fetch(url.toString(), {
-    headers: {
-      'Authorization': `Bearer ${serviceKey}`,
-      'apikey':        serviceKey,
-      'Content-Type':  'application/json',
-      'Accept':        'application/json',
-    },
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`HTTP ${res.status} on ${table}: ${body.slice(0, 200)}`)
-  }
-  return { rows: await res.json() }
-}
-
-// PostgREST hard-caps a response at PAGE rows regardless of `limit`. Every read
-// here is therefore ordered AND paged; an unordered read is what caused the bug
-// this module exists to prevent.
-const PAGE = 1000
+// Every read goes through readTable() in ./supabaseRead.js, which refuses to run
+// without an explicit order column and pages past PostgREST's silent 1000-row
+// cap. See that file for why this is not optional.
 
 const padDays = (iso, days) =>
   new Date(Date.parse(`${iso}T12:00:00Z`) + days * 86400000).toISOString().slice(0, 10)
 
-/** Every page of an ordered, filtered read — never a single capped request. */
-async function fetchAllPages(supabaseUrl, serviceKey, table, params) {
-  const all = []
-  for (let offset = 0; ; offset += PAGE) {
-    const { rows } = await pgGet(supabaseUrl, serviceKey, table, {
-      ...params, limit: String(PAGE), offset: String(offset),
-    })
-    all.push(...rows)
-    if (rows.length < PAGE) break
-  }
-  return all
+/**
+ * Does this row belong in the counted set?
+ *
+ * v_daily_wix_meta_performance — the view the whole dashboard quotes for Wix
+ * orders and revenue — counts `orders` rows WHERE source = 'wix' AND
+ * lower(payment_status) = 'paid' AND external_order_id NOT ILIKE 'TEST-%' AND
+ * email NOT ILIKE '%test%'. profit-data has to apply the SAME predicate or its
+ * order count can never reconcile with the card next to it.
+ *
+ * Each condition is skipped when the column is absent from the row, so the
+ * `wix_orders` fallback table (which has a different shape) still works. That is
+ * a shape difference, not a filter that quietly lets junk in: a row missing
+ * `payment_status` cannot be judged on it.
+ */
+export function isCountableOrder(row) {
+  if ('source' in row && row.source != null && String(row.source).toLowerCase() !== 'wix') return false
+  if ('payment_status' in row && row.payment_status != null && String(row.payment_status).toLowerCase() !== 'paid') return false
+  const extId = row.external_order_id
+  if (extId != null && /^test-/i.test(String(extId))) return false
+  const email = String(row.email ?? row.buyer_email ?? '')
+  if (email && /test/i.test(email)) return false
+  return true
 }
 
 /**
- * Orders whose Warsaw calendar date falls in [from, to] inclusive.
+ * Orders whose Warsaw calendar date falls in [from, to] inclusive, filtered to
+ * the same set the daily view counts.
  *
- * The server-side filter is widened by a day on each side because
+ * The server-side date filter is widened by a day on each side because
  * order_created_at is a UTC timestamp while [from, to] is Warsaw-local; the
  * exact boundary is then applied in JS through toWarsawDate. Rows with a NULL
- * order_created_at are fetched separately so they can still be dated from their
+ * order_created_at are read separately so they can still be dated from their
  * fallback columns instead of silently disappearing.
  */
 export async function fetchOrdersInRange(supabaseUrl, serviceKey, table, from, to) {
-  const dated = await fetchAllPages(supabaseUrl, serviceKey, table, {
+  const dated = await readTable(supabaseUrl, serviceKey, table, {
     select: '*',
     order:  'order_created_at.desc',
-    // Repeated keys are ANDed by PostgREST.
-    order_created_at: [`gte.${padDays(from, -1)}`, `lte.${padDays(to, 1)}T23:59:59`],
+    filters: { order_created_at: [`gte.${padDays(from, -1)}`, `lte.${padDays(to, 1)}T23:59:59`] },
   })
-  const undated = await fetchAllPages(supabaseUrl, serviceKey, table, {
+  const undated = await readTable(supabaseUrl, serviceKey, table, {
     select: '*',
     order:  'external_order_id.asc',
-    order_created_at: 'is.null',
+    filters: { order_created_at: 'is.null' },
   })
   return [...dated, ...undated].filter(row => {
+    if (!isCountableOrder(row)) return false
     const d = extractOrderDate(row)
     return d >= from && d <= to
   })
 }
 
-/** Every order row in the table, newest first, across as many pages as it takes. */
+/** Every countable order row in the table, newest first, across every page. */
 export async function fetchAllOrders(supabaseUrl, serviceKey, table) {
-  return fetchAllPages(supabaseUrl, serviceKey, table, {
+  const rows = await readTable(supabaseUrl, serviceKey, table, {
     select: '*',
     order:  'order_created_at.desc.nullslast',
   })
+  return rows.filter(isCountableOrder)
 }

@@ -20,7 +20,7 @@ import {
   fetchOrdersInRange,
   maskEmail,
   warsawToday,
-} from './productCatalog.js'
+} from '../shared/productCatalog.js'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',

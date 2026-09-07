@@ -252,7 +252,7 @@ export function buildMemoryBundleAnswer(
   orders: OrdersData | null = null,
 ): string {
   // Product classification IS available: orders.product_name_raw plus the price
-  // table in netlify/functions/productCatalog.js. The honest gap message below
+  // table in netlify/shared/productCatalog.js. The honest gap message below
   // is kept for the case where the orders endpoint itself is down.
   if (!orders || !orders.ok) {
     const lines: string[] = ['Rozbicie na produkty — brak źródła', '']

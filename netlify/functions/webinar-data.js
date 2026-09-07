@@ -7,6 +7,8 @@
 
 import { classifyBySchedule } from './scheduleUtils.js'
 
+import { readTable } from '../shared/supabaseRead.js'
+
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -40,24 +42,16 @@ function extractRegistrationDate(emailFieldRaw, registeredAt, createdAt) {
 
 // ── Supabase REST query helper ────────────────────────────────────────────────
 
-async function queryTable(supabaseUrl, serviceKey, table, params) {
-  const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
-  for (const [k, v] of Object.entries(params)) {
-    url.searchParams.set(k, String(v))
-  }
-  const res = await fetch(url.toString(), {
-    headers: {
-      'Authorization': `Bearer ${serviceKey}`,
-      'apikey':        serviceKey,
-      'Content-Type':  'application/json',
-      'Accept':        'application/json',
-    },
+// Every Supabase read in this file goes through readTable() in
+// ../shared/supabaseRead.js: it refuses to run without an explicit order column and
+// pages past PostgREST's silent 1000-row cap. `params` keeps its old shape
+// ({ select, order, limit, ...postgrestFilters }) so the call sites below did
+// not have to change.
+async function queryTable(supabaseUrl, serviceKey, table, params = {}) {
+  const { select = '*', order, limit, ...filters } = params
+  return readTable(supabaseUrl, serviceKey, table, {
+    select, order, limit: limit == null ? undefined : Number(limit), filters,
   })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`HTTP ${res.status} on ${table}: ${body.slice(0, 200)}`)
-  }
-  return res.json()
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -102,8 +96,10 @@ export const handler = async (event) => {
     sessionsData = await queryTable(supabaseUrl, serviceKey, 'webinar_sessions', {
       select: '*',
       order:  'scheduled_at.desc',
-      limit:  1000,   // fetch ALL sessions — limit:50 dropped the 12 oldest, so the
-                      // panel's product_tag counts were short (35/13/2 vs 38/16/8).
+      // No limit: read every session, paged. limit:50 once dropped the 12 oldest
+      // (product_tag counts read 35/13/2 instead of 38/16/8), and limit:1000 sat
+      // exactly on PostgREST's cap, so "all sessions" would quietly have become
+      // "the first 1000" as the table grew.
     })
   } catch (e) {
     sessionsError = String(e?.message ?? e)
@@ -114,7 +110,7 @@ export const handler = async (event) => {
     participantsData = await queryTable(supabaseUrl, serviceKey, 'webinar_participants', {
       select: 'id,session_id,email,registered_at,attended,attend_duration_min,purchased_at,purchase_value,wix_order_id,created_at',
       order:  'created_at.desc',
-      limit:  1000,
+      // No limit — paged. This table grows with every registration.
     })
   } catch (e) {
     participantsError = String(e?.message ?? e)
@@ -131,7 +127,6 @@ export const handler = async (event) => {
     buyersData = await queryTable(supabaseUrl, serviceKey, 'v_webinar_buyers', {
       select: '*',
       order:  'order_created_at.desc',
-      limit:  5000,
     })
   } catch (e) {
     buyersError = String(e?.message ?? e)
@@ -146,7 +141,10 @@ export const handler = async (event) => {
   try {
     attendanceData = await queryTable(supabaseUrl, serviceKey, 'webinar_attendance', {
       select: '*',
-      limit:  5000,
+      // Was unordered with limit 5000: PostgREST returned 1000 rows in physical
+      // order, so attendance silently truncated as the table grew — on the panel
+      // whose whole point is that missing data must read as "brak danych".
+      order:  'session_started_at.desc.nullslast',
     })
   } catch (e) {
     attendanceError = String(e?.message ?? e)

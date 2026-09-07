@@ -1,4 +1,4 @@
-import { supabase } from '../services/supabase'
+import { supabase, pagedSelect } from '../services/supabase'
 import { normalizeParticipantFields } from './clickmeetingNormalize'
 import { normalizeProduct, type ProductTag, type ProductClassification } from './webinarProduct'
 
@@ -50,19 +50,21 @@ export async function fetchWebinarRawData(): Promise<WebinarRawData> {
       .select('id, session_name, product_tag, scheduled_at, ended_at, registered_count, attendee_count')
       .order('scheduled_at', { ascending: false })
       .limit(50),
-    supabase
-      .from('webinar_participants')
-      // registration_date is NOT a real column — it only exists inside JSON blobs in the email field
-      .select('id, session_id, email, registered_at, attended, attend_duration_min, purchased_at, purchase_value, wix_order_id, created_at')
-      .order('created_at', { ascending: false })
-      .limit(1000),
+    // limit(1000) was exactly PostgREST's cap, so "all participants" would have
+    // quietly become "the newest 1000" as registrations accumulated. Paged.
+    // registration_date is NOT a real column — it only exists inside JSON blobs
+    // in the email field.
+    pagedSelect<Record<string, unknown>>('webinar_participants', {
+      select: 'id, session_id, email, registered_at, attended, attend_duration_min, purchased_at, purchase_value, wix_order_id, created_at',
+      order:  { column: 'created_at', ascending: false },
+    }),
   ])
 
   if (sessResult.error) console.warn('webinar_sessions fetch error:', sessResult.error.message)
-  if (partResult.error) console.warn('webinar_participants fetch error:', partResult.error.message)
+  if (partResult.error) console.warn('webinar_participants fetch error:', partResult.error)
 
   const rawSessions = (sessResult.data ?? []) as Record<string, unknown>[]
-  const rawParts    = (partResult.data ?? []) as Record<string, unknown>[]
+  const rawParts    = partResult.rows
 
   // Normalize and classify sessions
   const sessions: RawSession[] = rawSessions.map(s => ({

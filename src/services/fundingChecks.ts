@@ -6,7 +6,7 @@
 // renders and simply grades every GO/MAYBE item as SPRAWDŹ TERAZ, which is the
 // truthful reading of "nobody has scheduled a check".
 
-import { supabase } from './supabase'
+import { supabase, pagedSelect } from './supabase'
 import type { CheckMap } from '../lib/fundingStatus'
 
 export interface FundingChecksResult {
@@ -17,10 +17,15 @@ export interface FundingChecksResult {
 
 export async function fetchFundingChecks(): Promise<FundingChecksResult> {
   try {
-    const { data, error } = await supabase.from('funding_checks').select('funding_id, check_by, note')
-    if (error) return { checks: {}, error: humanise(error.message, error.code) }
+    // Neither order nor limit was given, so PostgREST picked both — capped at
+    // 1000 rows in physical order. Small table today; ordered and paged now.
+    const { rows, error, code } = await pagedSelect<Record<string, unknown>>('funding_checks', {
+      select: 'funding_id, check_by, note',
+      order:  { column: 'funding_id', ascending: true },
+    })
+    if (error) return { checks: {}, error: humanise(error, code ?? undefined) }
     const checks: CheckMap = {}
-    for (const row of data ?? []) {
+    for (const row of rows) {
       checks[row.funding_id as string] = {
         checkBy: (row.check_by as string | null) ?? null,
         note: (row.note as string | null) ?? null,

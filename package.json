@@ -26,7 +26,11 @@
     "assert:gieniu-command": "node scripts/assert-gieniu-command.mjs",
     "assert:stt-language": "node scripts/assert-stt-language.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify": "npm run typecheck && npm run test && npm run assert:profit-metrics && npm run assert:data-sources && npm run assert:data-contract && npm run assert:price-classification && npm run assert:orders && npm run assert:data-source-reads",
+    "assert:data-source-reads": "node scripts/assert-supabase-reads.mjs",
+    "prebuild": "npm run verify",
+    "predeploy": "npm run verify && npm run assert:profit-live"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.4",

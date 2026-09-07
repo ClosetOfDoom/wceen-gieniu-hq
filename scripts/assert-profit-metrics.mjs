@@ -22,21 +22,23 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
 //    it was deleted, and section 1b exists so a second copy never comes back.
 //    The catalog is imported, not grepped, so these are the real values.
 {
-  const f = 'netlify/functions/productCatalog.js'
+  const f = 'netlify/shared/productCatalog.js'
   if (!exists(f)) {
     fail(`${f} is missing - it is the ONE source of prices, margins and scope`)
   } else {
-    const cat = await import(new URL('../netlify/functions/productCatalog.js', import.meta.url))
+    const cat = await import(new URL('../netlify/shared/productCatalog.js', import.meta.url))
     const { PRODUCTS, PRICE_TO_PRODUCT } = cat
 
     // Authoritative business table: price -> product, scope, contribution margin.
     const CATALOG = [
       [119,  'memory_pack',    'memory',   70],
       [114,  'language_3t',    'language', 55],
+      [95,   'jezykozak_pack', 'language', 88],
       [347,  'jzk_ai',         'language', 320],
       [549,  'jsu_course',     'memory',   500],
-      [95,   'jezykozak_pack', 'language', null],
-      [499,  'cogni_year',     'cogni',    null],
+      [399,  'cogni_promo',    'cogni',    355],
+      [499,  'cogni_regular',  'cogni',    450],
+      // WSZTP's margin is genuinely unknown AND it is excluded from blended.
       [1250, 'wsztp',          'memory',   null],
       [3450, 'wsztp',          'memory',   null],
     ]
@@ -83,24 +85,83 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
     } else {
       fail('catalog: orders reads must set order=order_created_at.desc - an unordered read returns the OLDEST 1000 rows')
     }
-    if (src.includes('const PAGE = 1000') && src.includes('offset:')) {
-      pass('catalog: orders reads page past the 1000-row PostgREST cap')
+    // Paging lives in the one shared reader, which the catalog delegates to.
+    const reader = read('netlify/shared/supabaseRead.js')
+    if (reader.includes('export const PAGE = 1000') && reader.includes('offset:')) {
+      pass('supabaseRead.js: reads page past the 1000-row PostgREST cap')
     } else {
-      fail('catalog: orders reads must page past the 1000-row cap')
+      fail('supabaseRead.js: reads must page past the 1000-row cap')
     }
+    if (reader.includes('is required. Without ORDER BY')) {
+      pass('supabaseRead.js: a read without an explicit order clause is REFUSED, not silently capped')
+    } else {
+      fail('supabaseRead.js: readTable must throw when no `order` is given')
+    }
+    if (src.includes("from './supabaseRead.js'")) {
+      pass('catalog: reads delegate to the one shared reader')
+    } else {
+      fail('catalog: must read through ./supabaseRead.js, not its own fetch')
+    }
+
+    // WSZTP: margin unknown AND excluded from every blended figure. Two
+    // different states that must not collapse into one.
+    if (PRODUCTS.wsztp.excludeFromBlendedProfit === true && PRODUCTS.wsztp.contributionMargin === null) {
+      pass('catalog: WSZTP is excludeFromBlendedProfit AND margin null')
+    } else {
+      fail('catalog: WSZTP must carry excludeFromBlendedProfit: true and contributionMargin: null')
+    }
+    for (const amount of [1250, 3450]) {
+      const d = cat.classifyAmount(amount, 'WSZTP 2026')
+      if (d.bucket === 'EXCLUDED' && d.margin === null && d.failedField === null) {
+        pass(`catalog: ${amount} PLN WSZTP -> EXCLUDED (not UNMAPPED, no failing field to fix)`)
+      } else {
+        fail(`catalog: ${amount} PLN WSZTP must be bucket EXCLUDED with margin null, got ${d.bucket} / ${d.margin}`)
+      }
+    }
+    const c95 = cat.classifyAmount(95, 'Pakiet Jezykozaka')
+    if (c95.bucket === 'MAPPED' && c95.margin === 88) {
+      pass('catalog: 95 PLN Pakiet Jezykozaka -> margin 88')
+    } else {
+      fail(`catalog: 95 PLN must be MAPPED with margin 88, got ${c95.bucket} / ${c95.margin}`)
+    }
+  }
+}
+
+// 1a. Every Supabase read in netlify/ goes through the one shared reader.
+{
+  const { readdirSync } = await import('fs')
+  const dir = join(rootDir, 'netlify/functions')
+  let offenders = []
+  for (const name of readdirSync(dir).filter(f => f.endsWith('.js'))) {
+    const c = read(`netlify/functions/${name}`)
+    if (c.includes('/rest/v1/')) offenders.push(name)
+  }
+  if (offenders.length === 0) {
+    pass('no function builds its own /rest/v1 request — every read goes through supabaseRead.js')
+  } else {
+    fail(`these functions still fetch /rest/v1 directly: ${offenders.join(', ')}`)
+  }
+  // A .d.ts in the functions directory is bundled AS A FUNCTION by Netlify and
+  // fails the build ("The constant PRODUCTS must be initialized"). Shared
+  // library code belongs in netlify/shared.
+  const stray = readdirSync(dir).filter(f => f.endsWith('.d.ts'))
+  if (stray.length === 0) {
+    pass('no .d.ts in netlify/functions (Netlify would try to bundle it as a function)')
+  } else {
+    fail(`.d.ts files in netlify/functions break the Netlify build: ${stray.join(', ')}`)
   }
 }
 
 // 1b. No second copy of the price/margin table may exist anywhere else.
 {
   if (exists('src/services/productMargins.ts')) {
-    fail('src/services/productMargins.ts is back — margins must live ONLY in netlify/functions/productCatalog.js')
+    fail('src/services/productMargins.ts is back — margins must live ONLY in netlify/shared/productCatalog.js')
   } else {
     pass('no duplicate margin table in src/services')
   }
   for (const f of ['netlify/functions/orders-data.js', 'netlify/functions/product-sales.js', 'netlify/functions/profit-data.js']) {
     const c = read(f)
-    if (c.includes("from './productCatalog.js'")) {
+    if (c.includes("from '../shared/productCatalog.js'")) {
       pass(`${f.split('/').pop()}: imports the shared catalog`)
     } else {
       fail(`${f}: must import from ./productCatalog.js instead of defining its own rules`)

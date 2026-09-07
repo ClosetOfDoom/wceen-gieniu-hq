@@ -5,7 +5,9 @@
 // Returns: { answerText, speechText, intent, confidence, dataSourcesUsed, warnings, llmUsed, llmProvider }
 
 // Funding radar snapshot (same data as src/data/funding.ts, copied from dashboard.html).
-const FUNDING_RADAR = require('./_funding.json')
+import { FUNDING_RADAR } from '../shared/funding.js'
+import { readTable } from '../shared/supabaseRead.js'
+import { fetchOrdersInRange } from '../shared/productCatalog.js'
 
 // Attendance and registration collection stopped here. Anything about who was
 // in the room is history, not a current figure.
@@ -1130,17 +1132,12 @@ function f2(n) { return n != null && !isNaN(n) ? (Math.round(n * 100) / 100).toF
 async function fetchAdRowsRange(supabaseUrl, serviceKey, fromDate, toDate) {
   if (!supabaseUrl || !serviceKey) return []
   try {
-    const url = new URL(`${supabaseUrl}/rest/v1/meta_ads_daily`)
-    url.searchParams.set('select', '*')
-    url.searchParams.append('date', `gte.${fromDate}`)
-    url.searchParams.append('date', `lte.${toDate}`)
-    url.searchParams.set('order', 'date.desc')
-    url.searchParams.set('limit', '5000')
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' },
+    // limit 5000 was a lie: PostgREST caps at 1000. A year-long range on this
+    // table is already more than that. readTable pages instead.
+    return await readTable(supabaseUrl, serviceKey, 'meta_ads_daily', {
+      order:   'date.desc',
+      filters: { date: [`gte.${fromDate}`, `lte.${toDate}`] },
     })
-    if (!res.ok) return []
-    return await res.json()
   } catch { return [] }
 }
 
@@ -1257,15 +1254,9 @@ function renderCreativeAnalytics(rows30, today) {
 async function fetchWebinarBuyers(supabaseUrl, serviceKey) {
   if (!supabaseUrl || !serviceKey) return []
   try {
-    const url = new URL(`${supabaseUrl}/rest/v1/v_webinar_buyers`)
-    url.searchParams.set('select', '*')
-    url.searchParams.set('order', 'order_created_at.desc')
-    url.searchParams.set('limit', '2000')
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' },
+    return await readTable(supabaseUrl, serviceKey, 'v_webinar_buyers', {
+      order: 'order_created_at.desc',
     })
-    if (!res.ok) return []
-    return await res.json()
   } catch { return [] }
 }
 
@@ -1338,16 +1329,15 @@ function renderWebinarBuyers(rows) {
 async function fetchWebinarRegistrantsData(supabaseUrl, serviceKey) {
   if (!supabaseUrl || !serviceKey) return { sessions: [], participants: [] }
   const q = async (table, params) => {
-    const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
-    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v))
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' } })
-    if (!res.ok) return []
-    return await res.json()
+    try { return await readTable(supabaseUrl, serviceKey, table, params) }
+    catch { return [] }
   }
   try {
+    // webinar_participants had no `order` at all and a limit of 5000 — physical
+    // row order, capped at 1000. Both reads are ordered and paged now.
     const [sessions, participants] = await Promise.all([
-      q('webinar_sessions', { select: 'id,session_name,scheduled_at,product_tag', order: 'scheduled_at.desc', limit: 1000 }),
-      q('webinar_participants', { select: 'id,session_id,email,registered_at', limit: 5000 }),
+      q('webinar_sessions', { select: 'id,session_name,scheduled_at,product_tag', order: 'scheduled_at.desc' }),
+      q('webinar_participants', { select: 'id,session_id,email,registered_at', order: 'registered_at.desc.nullslast' }),
     ])
     return { sessions: sessions ?? [], participants: participants ?? [] }
   } catch { return { sessions: [], participants: [] } }
@@ -1415,16 +1405,13 @@ async function fetchProductBuyers(supabaseUrl, serviceKey, days = 60) {
   try {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
     const from = new Date(Date.parse(today + 'T12:00:00Z') - (days - 1) * 86400000).toISOString()
-    const url = new URL(`${supabaseUrl}/rest/v1/orders`)
-    url.searchParams.set('select', 'email,amount,order_created_at,product_name_raw')
-    url.searchParams.set('order_created_at', `gte.${from}`)
-    url.searchParams.set('order', 'order_created_at.desc')
-    url.searchParams.set('limit', '5000')
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' },
+    // `orders` already holds more rows than PostgREST returns in one response,
+    // so limit 5000 silently meant "the newest 1000". readTable pages instead.
+    const rows = await readTable(supabaseUrl, serviceKey, 'orders', {
+      select:  'email,amount,order_created_at,product_name_raw',
+      order:   'order_created_at.desc',
+      filters: { order_created_at: `gte.${from}` },
     })
-    if (!res.ok) return { ok: false, rows: [] }
-    const rows = await res.json()
     // Monday of the current week, so the model can filter "this week" exactly.
     const wd = new Date(today + 'T12:00:00Z')
     wd.setUTCDate(wd.getUTCDate() - ((wd.getUTCDay() + 6) % 7))
@@ -1504,15 +1491,10 @@ function renderProductBuyers(data) {
 async function fetchWebinarFunnelView(supabaseUrl, serviceKey) {
   if (!supabaseUrl || !serviceKey) return []
   try {
-    const url = new URL(`${supabaseUrl}/rest/v1/v_webinar_funnel`)
-    url.searchParams.set('select', '*')
-    url.searchParams.set('order', 'session_started_at.desc')
-    url.searchParams.set('limit', '60')
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' },
+    return await readTable(supabaseUrl, serviceKey, 'v_webinar_funnel', {
+      order: 'session_started_at.desc',
+      limit: 60,
     })
-    if (!res.ok) return []
-    return await res.json()
   } catch {
     return []
   }
@@ -1584,13 +1566,10 @@ function renderWebinarFunnelView(rows) {
 async function fetchFundingChecks(supabaseUrl, serviceKey) {
   if (!supabaseUrl || !serviceKey) return {}
   try {
-    const url = new URL(`${supabaseUrl}/rest/v1/funding_checks`)
-    url.searchParams.set('select', 'funding_id,check_by')
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' },
+    const rows = await readTable(supabaseUrl, serviceKey, 'funding_checks', {
+      select: 'funding_id,check_by',
+      order:  'funding_id.asc',
     })
-    if (!res.ok) return {}
-    const rows = await res.json()
     const out = {}
     for (const r of rows || []) out[r.funding_id] = r.check_by ?? null
     return out
@@ -1965,20 +1944,12 @@ function parseLLMResponse(raw) {
 async function fetchTodayAdsServerSide(supabaseUrl, serviceKey, today) {
   if (!supabaseUrl || !serviceKey) return []
   try {
-    const url = new URL(`${supabaseUrl}/rest/v1/meta_ads_daily`)
-    url.searchParams.set('select', 'ad_name,campaign_name,spend,clicks,link_clicks,impressions,ctr,cpc,cpm,meta_purchases,meta_purchase_value')
-    url.searchParams.set('date', `eq.${today}`)
-    url.searchParams.set('order', 'spend.desc')
-    url.searchParams.set('limit', '20')
-    const res = await fetch(url.toString(), {
-      headers: {
-        'Authorization': `Bearer ${serviceKey}`,
-        'apikey':        serviceKey,
-        'Accept':        'application/json',
-      },
+    return await readTable(supabaseUrl, serviceKey, 'meta_ads_daily', {
+      select:  'ad_name,campaign_name,spend,clicks,link_clicks,impressions,ctr,cpc,cpm,meta_purchases,meta_purchase_value',
+      order:   'spend.desc',
+      limit:   20,
+      filters: { date: `eq.${today}` },
     })
-    if (!res.ok) return []
-    return await res.json()
   } catch { return [] }
 }
 
@@ -1992,7 +1963,7 @@ function success(body) {
   }
 }
 
-exports.handler = async (event) => {
+export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' }
   }

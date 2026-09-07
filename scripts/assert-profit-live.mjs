@@ -6,12 +6,23 @@
 // `orders` table. If profit-data's order count or revenue disagrees with the
 // view, the read is truncated or filtered wrong and this exits non-zero.
 //
-// This is the check that catches the class of bug where Est. Profit quietly
-// equals −(ad spend): the classifier looks fine in unit tests because it is
-// never handed any rows.
+// Checking only for "profit == −(ad spend)" is too narrow: that is one symptom
+// of one truncation. Three independent checks cover the CLASS of failure:
 //
-//   node scripts/assert-profit-live.mjs                 # today, yesterday, week
-//   node scripts/assert-profit-live.mjs 2026-09-07      # one specific day too
+//   STALENESS  the newest order in the table is not older than today − 2 days.
+//              A read that returns the OLDEST rows shows up here first.
+//   CAP        no endpoint returns EXACTLY 1000 rows — that is the signature of
+//              PostgREST's silent cap, not of a data set that happens to end.
+//   RECONCILE  the endpoint's order count and revenue equal the daily view's for
+//              the same range. The view aggregates the same table, so any gap
+//              is a truncated read or a wrong filter.
+//
+//   npm run assert:profit-live               # today, yesterday, week
+//   npm run assert:profit-live 2026-09-07    # plus one named day
+//
+// Runs in predeploy (npm run predeploy) as well as by hand. It needs the site
+// to be reachable; with STANLEY_SKIP_LIVE=1 it reports that it was skipped
+// rather than failing a build that has no network.
 //
 // Needs VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY (the view is anon-readable);
 // reads them from .env if they are not already in the environment.
@@ -119,15 +130,19 @@ async function checkRange(label, from, to) {
   // ── reconciliation ────────────────────────────────────────────────────────
   // The view counts count(*) on paid, non-test wix rows; profit-data groups rows
   // by order id. A gap here means a truncated read or a wrong filter.
+  // RECONCILE — the view aggregates the same `orders` table, so these must be
+  // equal. profit-data applies the view's own predicate (source / paid / not a
+  // test row) for exactly this reason. A gap is a truncated read or a bad filter.
   if (d.ordersCount === v.orders) {
-    pass(`${label}: order count matches the view (${d.ordersCount})`)
+    pass(`RECONCILE ${label}: order count matches the view (${d.ordersCount} = ${v.orders})`)
   } else {
-    fail(`${label}: profit-data has ${d.ordersCount} orders, view has ${v.orders} — truncated read or filter mismatch`)
+    fail(`RECONCILE ${label}: profit-data has ${d.ordersCount} orders, view has ${v.orders} `
+       + `(difference ${d.ordersCount - v.orders}) — truncated read or filter mismatch`)
   }
   if (Math.abs(d.revenue - v.revenue) < 0.01) {
-    pass(`${label}: revenue matches the view (${pln(d.revenue)})`)
+    pass(`RECONCILE ${label}: revenue matches the view (${pln(d.revenue)})`)
   } else {
-    fail(`${label}: profit-data revenue ${pln(d.revenue)} vs view ${pln(v.revenue)}`)
+    fail(`RECONCILE ${label}: profit-data revenue ${pln(d.revenue)} vs view ${pln(v.revenue)}`)
   }
   if (Math.abs(d.adSpend - v.spend) < 0.01) {
     pass(`${label}: ad spend matches the view (${pln(d.adSpend)})`)
@@ -159,9 +174,10 @@ async function checkRange(label, from, to) {
 
   // Every order is accounted for in exactly one bucket.
   const mapped = (d.productBreakdown ?? []).reduce((s, p) => s + p.orders, 0)
-  const accounted = mapped + (d.noMarginOrdersCount ?? 0)
+  const accounted = mapped + (d.noMarginOrdersCount ?? 0) + (d.excludedOrdersCount ?? 0)
   if (accounted === d.ordersCount) {
-    pass(`${label}: every order is in exactly one bucket (${mapped} mapped + ${d.noMarginOrdersCount ?? 0} no-margin)`)
+    pass(`${label}: every order is in exactly one bucket (${mapped} mapped + `
+       + `${d.noMarginOrdersCount ?? 0} no-margin + ${d.excludedOrdersCount ?? 0} excluded)`)
   } else {
     fail(`${label}: ${d.ordersCount} orders but ${accounted} accounted for — an order fell through the buckets`)
   }
@@ -170,7 +186,94 @@ async function checkRange(label, from, to) {
   if ((d.noMarginOrdersCount ?? 0) > 0 && (d.noMarginFields ?? []).length === 0) {
     fail(`${label}: ${d.noMarginOrdersCount} orders earned no margin but no failing field was reported`)
   }
+
+  // EXCLUDED (WSZTP) is a decision, not a gap: it must never be folded into the
+  // no-margin count, and every blended figure must leave its revenue out.
+  const excl = d.excludedOrdersCount ?? 0
+  if (excl > 0) {
+    console.log(`  WSZTP (poza blended) = ${excl} zam. · ${pln(d.excludedRevenue)}`)
+    if (Math.abs((d.blendedRevenue ?? 0) - (d.revenue - (d.excludedRevenue ?? 0))) < 0.01) {
+      pass(`${label}: blended revenue leaves out the ${pln(d.excludedRevenue)} of WSZTP`)
+    } else {
+      fail(`${label}: blendedRevenue ${pln(d.blendedRevenue)} ≠ revenue ${pln(d.revenue)} − excluded ${pln(d.excludedRevenue)}`)
+    }
+    if ((d.blendedOrdersCount ?? 0) === d.ordersCount - excl) {
+      pass(`${label}: blended order count leaves out the ${excl} WSZTP order(s)`)
+    } else {
+      fail(`${label}: blendedOrdersCount ${d.blendedOrdersCount} ≠ ${d.ordersCount} − ${excl}`)
+    }
+    if (d.realCpa != null && (d.blendedOrdersCount ?? 0) > 0
+        && Math.abs(d.realCpa - d.adSpend / d.blendedOrdersCount) > 0.01) {
+      fail(`${label}: realCpa ${d.realCpa} is not ad spend ÷ blended orders`)
+    }
+  }
   return d
+}
+
+// ── 1. STALENESS ───────────────────────────────────────────────────────
+// The newest order date the pipeline can SEE. An unordered, capped read makes
+// this stick at some date in the past while orders keep arriving — which is
+// exactly how the Est. Profit bug looked from outside (latest_order_date stuck
+// on 2026-08-31 for a week). Two days of slack absorbs a genuinely quiet
+// weekend without hiding a broken read.
+const STALENESS_MAX_DAYS = 2
+
+async function checkStaleness(today) {
+  console.log('\n═══ STALENESS ═══')
+  let od
+  try {
+    od = await getJson(`${SITE}/.netlify/functions/orders-data`, 'orders-data')
+  } catch (e) {
+    fail(`STALENESS: orders-data unreachable — ${String(e?.message ?? e)}`)
+    return
+  }
+  const latest = od?.totals?.latest_order_date ?? null
+  const cutoff = shiftDay(today, -STALENESS_MAX_DAYS)
+
+  if (!latest) {
+    fail(`STALENESS: orders-data reports no latest_order_date (error: ${od?.error ?? 'none given'})`)
+    return
+  }
+  console.log(`  newest order the pipeline can see: ${latest}   (cutoff ${cutoff})`)
+  if (latest >= cutoff) {
+    pass(`STALENESS: latest order ${latest} is within ${STALENESS_MAX_DAYS} days of ${today}`)
+  } else {
+    fail(`STALE: the newest order the pipeline can see is ${latest}, older than ${cutoff}. `
+       + 'Either ingestion stopped, or a read is returning the OLDEST rows again.')
+  }
+}
+
+// ── 2. CAP ────────────────────────────────────────────────────────────
+// Exactly 1000 rows is never a coincidence: that is where PostgREST caps a
+// response. Any row count that lands on it is truncated, whatever the endpoint
+// claims. A COUNT query may legitimately return 1000, so those are exempt.
+const CAP = 1000
+
+async function checkCap() {
+  console.log('\n═══ CAP ═══')
+  const weekStart = weekStartOf(warsawToday())
+  const probes = [
+    ['orders-data', `${SITE}/.netlify/functions/orders-data`,
+      d => [['totals.all_orders', d?.totals?.all_orders], ['totals.order_rows', d?.totals?.order_rows]]],
+    ['profit-data (week)', `${SITE}/.netlify/functions/profit-data?from=${weekStart}&to=${warsawToday()}`,
+      d => [['ordersCount', d?.ordersCount], ['orderRowsFetched', d?.orderRowsFetched]]],
+    ['product-sales (370d)', `${SITE}/.netlify/functions/product-sales?days=370`,
+      d => [['ordersScannedInRange', d?.ordersScannedInRange]]],
+  ]
+  for (const [label, url, extract] of probes) {
+    let d
+    try { d = await getJson(url, label) } catch (e) { fail(`CAP: ${label} — ${String(e?.message ?? e)}`); continue }
+    for (const [field, value] of extract(d)) {
+      if (value == null) continue
+      console.log(`  ${label} · ${field} = ${value}`)
+      if (value === CAP) {
+        fail(`CAP: ${label} returned EXACTLY ${CAP} rows for ${field} — that is PostgREST's cap, `
+           + 'so the read is truncated, not complete')
+      } else {
+        pass(`CAP: ${label} · ${field} = ${value} (not the ${CAP}-row cap)`)
+      }
+    }
+  }
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
@@ -179,11 +282,18 @@ if (!SUPA_URL || !SUPA_KEY) {
   process.exit(1)
 }
 
+if (process.env.STANLEY_SKIP_LIVE === '1') {
+  console.log('SKIPPED — STANLEY_SKIP_LIVE=1 (offline build, no network)')
+  process.exit(0)
+}
+
 const today = warsawToday()
 const extra = process.argv[2]
 
 console.log(`profit-live verification · site ${SITE} · Warsaw today ${today}`)
 
+await checkStaleness(today)
+await checkCap()
 await checkRange('TODAY',     today,               today)
 await checkRange('YESTERDAY', shiftDay(today, -1), shiftDay(today, -1))
 await checkRange('WEEK',      weekStartOf(today),  today)

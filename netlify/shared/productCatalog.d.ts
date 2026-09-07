@@ -3,8 +3,8 @@
 // anything that imports it from TypeScript (currently the unit tests).
 
 export type ProductKey =
-  | 'memory_pack' | 'language_3t' | 'jezykozak_pack'
-  | 'jzk_ai' | 'jsu_course' | 'cogni_year' | 'wsztp'
+  | 'memory_pack' | 'language_3t' | 'jezykozak_pack' | 'jzk_ai'
+  | 'jsu_course' | 'cogni_promo' | 'cogni_regular' | 'wsztp'
 
 export type ProductScope = 'memory' | 'language' | 'cogni'
 
@@ -16,6 +16,8 @@ export interface CatalogProduct {
   catalogPrice: number
   /** PLN per unit at catalogPrice. `null` = not known; never guessed, never 0. */
   contributionMargin: number | null
+  /** Kept out of blended profit / CPA / ROAS on purpose (WSZTP). */
+  excludeFromBlendedProfit?: boolean
 }
 
 export const PRODUCTS: Record<ProductKey, CatalogProduct>
@@ -23,11 +25,13 @@ export const PRICE_TO_PRODUCT: Record<number, ProductKey>
 export const SHIPPING_PATTERNS: string[]
 
 export function unitCostOf(productKey: ProductKey | string): number | null
+export function isExcludedFromBlended(productKey: ProductKey | string): boolean
+export function isCountableOrder(row: Record<string, unknown>): boolean
 export function normalizeText(s: unknown): string
 export function isShippingLine(rawName: unknown): boolean
 export function nameMatchKey(rawName: unknown): ProductKey | null
 
-export type Bucket = 'MAPPED' | 'UNKNOWN_MARGIN' | 'AMBIGUOUS' | 'UNMAPPED'
+export type Bucket = 'MAPPED' | 'EXCLUDED' | 'UNKNOWN_MARGIN' | 'AMBIGUOUS' | 'UNMAPPED'
 
 export interface Decision {
   productKey: ProductKey | null
@@ -39,8 +43,11 @@ export interface Decision {
   minMargin?: number
   matchedBy: string | null
   conflict: { priceProduct: ProductKey; priceAmount: number; nameProduct: ProductKey } | null
-  /** Which field the match broke on. Populated for every non-MAPPED bucket. */
+  /** Which field the match broke on. Null for MAPPED and for EXCLUDED — an
+   *  exclusion is a decision, so there is no field for anyone to go and fix. */
   failedField: string | null
+  /** Why the product is out of the blended figures. Only on EXCLUDED. */
+  excludedReason?: string
 }
 
 export function classifyAmount(amount: number, rawName?: unknown): Decision

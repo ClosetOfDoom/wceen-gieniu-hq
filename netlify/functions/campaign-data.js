@@ -3,39 +3,24 @@
 // Also checks v_daily_wix_meta_performance so the frontend can detect when
 // aggregate Meta spend exists but campaign-level rows are missing.
 
+import { readTable } from '../shared/supabaseRead.js'
+
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 }
 
-async function supabaseGet(supabaseUrl, serviceKey, table, filters = {}) {
-  const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
-  for (const [k, v] of Object.entries(filters)) {
-    if (Array.isArray(v)) {
-      for (const item of v) url.searchParams.append(k, item)
-    } else {
-      url.searchParams.set(k, String(v))
-    }
-  }
-  const res = await fetch(url.toString(), {
-    headers: {
-      'Authorization': `Bearer ${serviceKey}`,
-      'apikey':        serviceKey,
-      'Content-Type':  'application/json',
-      'Accept':        'application/json',
-    },
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`HTTP ${res.status} on ${table}: ${body.slice(0, 200)}`)
-  }
-  return res.json()
-}
-
+// One read path for the whole directory: ordered and paged, never a bare limit
+// that PostgREST can silently cap at 1000. See ../shared/supabaseRead.js for why.
+// `filters` keeps its old shape ({ select, order, limit, ...postgrestFilters })
+// so the call sites below did not have to change.
 async function tryGet(supabaseUrl, serviceKey, table, filters = {}) {
   try {
-    const data = await supabaseGet(supabaseUrl, serviceKey, table, filters)
+    const { select = '*', order, limit, ...filterRest } = filters
+    const data = await readTable(supabaseUrl, serviceKey, table, {
+      select, order, limit: limit == null ? undefined : Number(limit), filters: filterRest,
+    })
     return { ok: true, data, error: null }
   } catch (e) {
     return { ok: false, data: [], error: String(e?.message ?? e) }
@@ -81,7 +66,8 @@ export const handler = async (event) => {
       select: '*',
       date:   [`gte.${from}`, `lte.${to}`],
       order:  'date.desc',
-      limit:  '3000',
+      // No limit: a long range on this table already exceeds the 1000-row cap,
+      // and '3000' was a promise PostgREST would not keep. Paged instead.
     })
     const raw = rangeRes.data ?? []
     // Group per creative (campaign + ad) and sum the daily rows.

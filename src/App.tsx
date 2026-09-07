@@ -445,6 +445,8 @@ function RightPanel({
   digestDateLabel,
   digestUnmappedCount,
   digestUnmappedFields,
+  digestExcludedCount,
+  digestExcludedRevenue,
 }: {
   response: string
   chart?: InsightChartSpec
@@ -478,6 +480,8 @@ function RightPanel({
   digestDateLabel?: string
   digestUnmappedCount: number
   digestUnmappedFields: string[]
+  digestExcludedCount: number
+  digestExcludedRevenue: number
 }) {
   const [inputVal, setInputVal] = useState('')
 
@@ -526,6 +530,8 @@ function RightPanel({
           dateLabel={digestDateLabel}
           unmappedCount={digestUnmappedCount}
           unmappedFields={digestUnmappedFields}
+          excludedCount={digestExcludedCount}
+          excludedRevenue={digestExcludedRevenue}
         />
 
         {/* Response text — only ever a real answer. Idle and thinking states are
@@ -1435,7 +1441,12 @@ export default function App() {
 
   const isToday      = range === 'today'
   const perfIsStale  = isToday && !perf && trend.length > 0
-  const cpaHigh      = displayPerf?.real_cpa != null && displayPerf.real_cpa > 50
+  // Real CPA / ROAS come from profit-data, the only source that knows which
+  // orders are excluded from the blended set. The view's own real_cpa /
+  // real_roas count every order including WSZTP, so they are the fallback only.
+  const cpaBlended   = profitData?.ok ? (profitData.realCpa ?? null) : (displayPerf?.real_cpa ?? null)
+  const roasBlended  = profitData?.ok ? (profitData.realRoas ?? null) : (displayPerf?.real_roas ?? null)
+  const cpaHigh      = cpaBlended != null && cpaBlended > 50
   const jsuAlert     = !!jsuSummary && jsuSummary.bottleneck !== 'OK' && jsuSummary.bottleneck !== 'NO_DATA' && jsuSummary.bottleneck !== 'NO_SOURCES'
 
   // ── Goal progress (Command Center bars) — whole block follows the ONE range ───
@@ -1460,8 +1471,8 @@ export default function App() {
   const ppExpected  = PP_ORDERS_TARGET * rangePaceDays
   const ppGoal      = ppOrdersGoal(ppOrdersRange, ppExpected)
   const revGoal     = revenueGoal(rangeRevenue, rangePaceDays, goalDaysIn)
-  const cpaGoalRes  = cpaGoal(displayPerf?.real_cpa ?? null)
-  const roasGoalRes = roasGoal(displayPerf?.real_roas ?? null)
+  const cpaGoalRes  = cpaGoal(cpaBlended)
+  const roasGoalRes = roasGoal(roasBlended)
 
   // Profit KPI derived states — via mapProfitToSummary for canonical ProfitSummary shape
   const profitSummary     = profitData?.ok ? mapProfitToSummary(profitData) : null
@@ -1482,6 +1493,12 @@ export default function App() {
   // in the digest — or the card reads as complete when it is not.
   const noMarginCount     = profitData?.ok ? (profitData.noMarginOrdersCount ?? 0) : 0
   const noMarginFields    = profitData?.ok ? (profitData.noMarginFields ?? []) : []
+  // EXCLUDED is not UNMAPPED. WSZTP is out of the blended figures on purpose
+  // (the camp is off the ad funnel), so it gets its own line and is never part
+  // of the "bez mapowania" count that asks somebody to close a gap.
+  const excludedCount     = profitData?.ok ? (profitData.excludedOrdersCount ?? 0) : 0
+  const excludedRevenue   = profitData?.ok ? (profitData.excludedRevenue ?? 0) : 0
+  const excludedBreakdown = profitData?.ok ? (profitData.excludedBreakdown ?? []) : []
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -1547,14 +1564,29 @@ export default function App() {
                       positive={profitPositive}
                       warning={profitWarning}
                       danger={profitDanger}
-                      sublabel={noMarginCount > 0
-                        ? `Margin − ad spend · ${noMarginCount} bez mapowania`
-                        : 'Margin − ad spend'}
+                      sublabel={[
+                        'Margin − ad spend',
+                        noMarginCount > 0 ? `${noMarginCount} bez mapowania` : null,
+                        excludedCount > 0 ? `${excludedCount} WSZTP poza blended` : null,
+                      ].filter(Boolean).join(' · ')}
                       onClick={() => toggleMetric('est_profit')}
                       active={expandedMetric === 'est_profit'}
                     />
-                    <KPICard label="Real CPA" value={displayPerf?.real_cpa != null ? fmtPln(displayPerf.real_cpa) : '—'} warning={cpaHigh} sublabel="Ad spend ÷ zamówienia" onClick={() => toggleMetric('real_cpa')} active={expandedMetric === 'real_cpa'} />
-                    <KPICard label="Real ROAS" value={fmtRoas(displayPerf?.real_roas)} sublabel="Revenue ÷ ad spend" onClick={() => toggleMetric('real_roas')} active={expandedMetric === 'real_roas'} />
+                    <KPICard
+                      label="Real CPA"
+                      value={cpaBlended != null ? fmtPln(cpaBlended) : '—'}
+                      warning={cpaHigh}
+                      sublabel={excludedCount > 0 ? 'Ad spend ÷ zam. (bez WSZTP)' : 'Ad spend ÷ zamówienia'}
+                      onClick={() => toggleMetric('real_cpa')}
+                      active={expandedMetric === 'real_cpa'}
+                    />
+                    <KPICard
+                      label="Real ROAS"
+                      value={fmtRoas(roasBlended)}
+                      sublabel={excludedCount > 0 ? 'Revenue ÷ ad spend (bez WSZTP)' : 'Revenue ÷ ad spend'}
+                      onClick={() => toggleMetric('real_roas')}
+                      active={expandedMetric === 'real_roas'}
+                    />
                   </div>
 
                   {/* Goal progress bars — KPI realization vs business targets */}
@@ -1629,6 +1661,16 @@ export default function App() {
                       onClick={() => toggleMetric('unmapped_rev')}
                       active={expandedMetric === 'unmapped_rev'}
                     />
+                    {excludedCount > 0 && (
+                      <KPICard
+                        label="WSZTP (poza blended)"
+                        value={fmtPln(excludedRevenue)}
+                        dim
+                        sublabel={`${excludedCount} zam. · bez marży, poza CPA/ROAS`}
+                        onClick={() => toggleMetric('wsztp_excluded')}
+                        active={expandedMetric === 'wsztp_excluded'}
+                      />
+                    )}
                     <KPICard
                       label="Ambiguous Rev."
                       value={profitData?.ok ? fmtPln(ambiguousRev) : '—'}
@@ -1641,7 +1683,7 @@ export default function App() {
                       label="Unknown Margin"
                       value={profitData?.ok ? fmtPln(unknownMarginRev) : '—'}
                       warning={hasUnknownMargin}
-                      sublabel={hasUnknownMargin ? `WSZTP · ${profitData?.unknownMarginOrdersCount ?? 0} zam.` : 'None'}
+                      sublabel={hasUnknownMargin ? `${profitData?.unknownMarginOrdersCount ?? 0} zam. · marży brak w katalogu` : 'None'}
                       onClick={() => toggleMetric('unknown_margin_rev')}
                       active={expandedMetric === 'unknown_margin_rev'}
                     />
@@ -1701,7 +1743,19 @@ export default function App() {
                   )}
                   {hasUnknownMargin && (
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', padding: '6px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '3px' }}>
-                      ℹ {fmtPln(unknownMarginRev)} z {profitData?.unknownMarginOrdersCount ?? 0} zamówień WSZTP — znany produkt o <b>nieznanej marży</b> (nie „nierozpoznany"). W przychodzie, poza EST. PROFIT.
+                      ℹ {fmtPln(unknownMarginRev)} z {profitData?.unknownMarginOrdersCount ?? 0} zamówień — <b>znany produkt, marży nie ma w katalogu</b> (nie „nierozpoznany"). W przychodzie, poza EST. PROFIT. Dopisz marżę w productCatalog.js, żeby weszła.
+                    </div>
+                  )}
+                  {/* EXCLUDED is a decision, not a gap. Its own line, its own words —
+                      never added to the "bez mapowania" count that asks for action. */}
+                  {excludedCount > 0 && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted2)', padding: '6px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '3px', lineHeight: 1.7 }}>
+                      ⓘ <b>WSZTP (poza blended)</b> — {excludedCount} zam. · {fmtPln(excludedRevenue)}. Celowo poza EST. PROFIT, REAL CPA i REAL ROAS: obóz jest odcięty od lejka reklamowego, więc jedno zamówienie 3450 zł zniekształciłoby dzienny blended. To <b>nie</b> jest „bez mapowania" — nic tu nie brakuje.
+                      {excludedBreakdown.map(e => (
+                        <div key={e.productKey} style={{ marginLeft: 8 }}>
+                          • {e.displayName}: {e.orders} zam. · {fmtPln(e.revenue)} — marża nieustalona, {e.reason}
+                        </div>
+                      ))}
                     </div>
                   )}
                   {conflicts.length > 0 && (
@@ -1836,6 +1890,8 @@ export default function App() {
         digestDateLabel={digestToday?.date}
         digestUnmappedCount={noMarginCount}
         digestUnmappedFields={noMarginFields}
+        digestExcludedCount={excludedCount}
+        digestExcludedRevenue={excludedRevenue}
       />
 
       {/* Mobile bottom nav */}

@@ -79,7 +79,7 @@ if (exists('netlify/functions/campaign-data.js')) {
 //    which drifted from profit-data.js and produced two different PP counts.
 if (exists('netlify/functions/orders-data.js')) {
   const c = read('netlify/functions/orders-data.js')
-  if (c.includes("from './productCatalog.js'")) {
+  if (c.includes("from '../shared/productCatalog.js'")) {
     pass('orders-data.js classifies via the shared productCatalog.js')
   } else {
     fail('orders-data.js must import its classification from ./productCatalog.js')

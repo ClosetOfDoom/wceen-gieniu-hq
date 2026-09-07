@@ -4,6 +4,9 @@
 // and detect source mismatches (e.g. v_daily_wix_meta_performance has spend
 // but meta_ads_daily is empty or inaccessible via anon key).
 
+import { countTable, tryReadTable } from '../shared/supabaseRead.js'
+import { fetchOrdersInRange } from '../shared/productCatalog.js'
+
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -12,58 +15,17 @@ const CORS = {
 
 // ── Supabase REST helpers ─────────────────────────────────────────────────────
 
-async function supabaseGet(supabaseUrl, serviceKey, table, filters = {}) {
-  const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
-  for (const [k, v] of Object.entries(filters)) {
-    if (Array.isArray(v)) {
-      for (const item of v) url.searchParams.append(k, item)
-    } else {
-      url.searchParams.set(k, String(v))
-    }
-  }
-  const res = await fetch(url.toString(), {
-    headers: {
-      'Authorization': `Bearer ${serviceKey}`,
-      'apikey':        serviceKey,
-      'Content-Type':  'application/json',
-      'Accept':        'application/json',
-    },
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`HTTP ${res.status} on ${table}: ${body.slice(0, 200)}`)
-  }
-  return res.json()
+// Thin shims onto the shared reader so every call site below reads one way.
+// supabaseGet/supabaseCount/tryGet used to be defined here with their own fetch
+// logic — and tryGet's `limit` with no `order` is exactly what made this endpoint
+// report 0 orders today for weeks.
+const supabaseCount = async (url, key, table) => {
+  try { return { count: await countTable(url, key, table), error: null } }
+  catch (e) { return { count: null, error: String(e?.message ?? e) } }
 }
-
-async function supabaseCount(supabaseUrl, serviceKey, table) {
-  // Uses Prefer: count=exact with HEAD request — returns count from Content-Range header
-  const url = `${supabaseUrl}/rest/v1/${table}?select=*`
-  try {
-    const res = await fetch(url, {
-      method: 'HEAD',
-      headers: {
-        'Authorization': `Bearer ${serviceKey}`,
-        'apikey':        serviceKey,
-        'Prefer':        'count=exact',
-      },
-    })
-    if (!res.ok) return { count: null, error: `HTTP ${res.status}` }
-    const range = res.headers.get('content-range') ?? ''
-    const total = parseInt((range.split('/')[1] ?? '').trim(), 10)
-    return { count: isNaN(total) ? null : total, error: null }
-  } catch (e) {
-    return { count: null, error: String(e?.message ?? e) }
-  }
-}
-
-async function tryGet(supabaseUrl, serviceKey, table, filters = {}) {
-  try {
-    const data = await supabaseGet(supabaseUrl, serviceKey, table, filters)
-    return { ok: true, data, error: null }
-  } catch (e) {
-    return { ok: false, data: [], error: String(e?.message ?? e) }
-  }
+const tryGet = async (url, key, table, opts) => {
+  const r = await tryReadTable(url, key, table, opts)
+  return { ok: r.ok, data: r.rows, error: r.error }
 }
 
 // ── Warsaw helpers ────────────────────────────────────────────────────────────
@@ -129,10 +91,13 @@ export const handler = async (event) => {
   // ── 1. orders table ───────────────────────────────────────────────────────────
 
   const ordersCountRes = await supabaseCount(supabaseUrl, serviceKey, 'orders')
+  // `buyer_email` is NOT a column on `orders` — selecting it returned
+  // 400 42703 "column orders.buyer_email does not exist", so latest_5 and
+  // latest_order_date were empty on every call. Select what the table has.
   const ordersLatestRes = await tryGet(supabaseUrl, serviceKey, 'orders', {
-    select: 'id,external_order_id,buyer_email,email,amount,total,price,product_name_raw,order_created_at,created_at,order_date',
+    select: 'id,external_order_id,email,amount,total,price,product_name_raw,order_created_at,created_at,order_date',
     order:  'order_created_at.desc',
-    limit:  '10',
+    limit:  10,
   })
 
   let ordersLatest5 = []
@@ -145,7 +110,7 @@ export const handler = async (event) => {
   if (ordersLatestRes.ok && Array.isArray(ordersLatestRes.data)) {
     ordersLatest5 = ordersLatestRes.data.slice(0, 5).map(r => ({
       external_order_id: r.external_order_id ?? r.id ?? '—',
-      email_masked:      maskEmail(r.buyer_email ?? r.email ?? ''),
+      email_masked:      maskEmail(r.email ?? ''),
       product_name_raw:  r.product_name_raw ?? '—',
       amount:            Number(r.amount ?? r.total ?? r.price ?? 0),
       order_date:        extractOrderDate(r),
@@ -155,24 +120,22 @@ export const handler = async (event) => {
     }
   }
 
-  // Fetch more orders to compute today/week counts
-  const allOrdersRes = await tryGet(supabaseUrl, serviceKey, 'orders', {
-    select: 'amount,total,price,order_created_at,created_at,order_date',
-    limit:  '500',
-  })
-  if (allOrdersRes.ok && Array.isArray(allOrdersRes.data)) {
-    for (const r of allOrdersRes.data) {
+  // Today/week counts. This used to be `limit: 500` with NO order clause, so it
+  // received the 500 OLDEST rows and reported 0 orders today once the table grew
+  // past 500 — the same failure as the Est. Profit bug, on the panel whose whole
+  // job is to notice that failure. Now the range is filtered server-side and the
+  // read is ordered and paged, through the one shared helper.
+  let ordersRangeError = null
+  try {
+    const weekRows = await fetchOrdersInRange(supabaseUrl, serviceKey, 'orders', weekStart, today)
+    for (const r of weekRows) {
       const d   = extractOrderDate(r)
       const amt = Number(r.amount ?? r.total ?? r.price ?? 0)
-      if (d === today) {
-        ordersTodayCount++
-        ordersTodayRevenue += amt
-      }
-      if (d >= weekStart) {
-        ordersWeekCount++
-        ordersWeekRevenue += amt
-      }
+      if (d === today) { ordersTodayCount++; ordersTodayRevenue += amt }
+      if (d >= weekStart) { ordersWeekCount++; ordersWeekRevenue += amt }
     }
+  } catch (e) {
+    ordersRangeError = String(e?.message ?? e)
   }
 
   const ordersSection = {
@@ -184,7 +147,7 @@ export const handler = async (event) => {
     week_count:       ordersWeekCount,
     week_revenue:     ordersWeekRevenue,
     latest_5:         ordersLatest5,
-    error:            ordersLatestRes.error,
+    error:            ordersLatestRes.error ?? ordersRangeError,
   }
 
   // ── 2. webinar_sessions ───────────────────────────────────────────────────────
@@ -193,7 +156,7 @@ export const handler = async (event) => {
   const sessLatestRes = await tryGet(supabaseUrl, serviceKey, 'webinar_sessions', {
     select: 'id,session_name,scheduled_at',
     order:  'scheduled_at.desc',
-    limit:  '1',
+    limit:  1,
   })
   const sessLatest = sessLatestRes.data?.[0] ?? null
 
@@ -210,7 +173,7 @@ export const handler = async (event) => {
   const partLatestRes = await tryGet(supabaseUrl, serviceKey, 'webinar_participants', {
     select: 'id,created_at',
     order:  'created_at.desc',
-    limit:  '1',
+    limit:  1,
   })
   const partLatest = partLatestRes.data?.[0] ?? null
 
@@ -224,7 +187,7 @@ export const handler = async (event) => {
   const metaLatestRes = await tryGet(supabaseUrl, serviceKey, 'meta_ads_daily', {
     select: 'date,campaign_name,spend,inserted_at',
     order:  'date.desc',
-    limit:  '10',
+    limit:  10,
   })
 
   let metaLatestDate    = null
@@ -252,7 +215,7 @@ export const handler = async (event) => {
   const perfLatestRes = await tryGet(supabaseUrl, serviceKey, 'v_daily_wix_meta_performance', {
     select: 'date,meta_spend,wix_orders,wix_revenue',
     order:  'date.desc',
-    limit:  '7',
+    limit:  7,
   })
 
   let perfLatestDate  = null

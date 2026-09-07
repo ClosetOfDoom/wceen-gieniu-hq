@@ -19,7 +19,8 @@ import {
   fetchOrdersInRange,
   maskEmail,
   warsawToday,
-} from './productCatalog.js'
+} from '../shared/productCatalog.js'
+import { readTable } from '../shared/supabaseRead.js'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -28,27 +29,6 @@ const CORS = {
 }
 
 const JSON_HEADERS = { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
-
-async function supabaseGet(supabaseUrl, serviceKey, table, params = {}) {
-  const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
-  for (const [k, v] of Object.entries(params)) {
-    if (Array.isArray(v)) { for (const item of v) url.searchParams.append(k, item) }
-    else { url.searchParams.set(k, String(v)) }
-  }
-  const res = await fetch(url.toString(), {
-    headers: {
-      'Authorization': `Bearer ${serviceKey}`,
-      'apikey':        serviceKey,
-      'Content-Type':  'application/json',
-      'Accept':        'application/json',
-    },
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`HTTP ${res.status} on ${table}: ${body.slice(0, 200)}`)
-  }
-  return res.json()
-}
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
@@ -98,9 +78,12 @@ export const handler = async (event) => {
   let unknownMarginRevenue = 0, unknownMarginOrdersCount = 0 // product known, margin null
   let ambiguousRevenue = 0, ambiguousOrdersCount = 0
   let ambiguousMinMargin = 0
+  let excludedRevenue = 0, excludedOrdersCount = 0   // WSZTP — out on purpose
   const unmappedOrders = []
   const unknownMarginOrders = []
   const ambiguousOrders = []
+  const excludedOrders = []
+  const excludedAccum = {}
   const conflicts = []
   const debugOrders = []
 
@@ -136,6 +119,23 @@ export const handler = async (event) => {
       unknownOrdersCount++
       unmappedOrders.push({ ...dbgBase, failed_field: d.failedField })
       dbg({ qty: null, margin: 0 })
+      continue
+    }
+
+    // EXCLUDED — a known product deliberately kept out of every blended figure.
+    // It is NOT unmapped: nothing is missing from the catalog, so it must never
+    // be counted in the "N bez mapowania" figure that asks somebody to act.
+    if (d.bucket === 'EXCLUDED') {
+      excludedRevenue += order.revenue
+      excludedOrdersCount++
+      excludedOrders.push({ ...dbgBase, product: PRODUCTS[d.productKey].displayName, reason: d.excludedReason })
+      if (!excludedAccum[d.productKey]) {
+        const p = PRODUCTS[d.productKey]
+        excludedAccum[d.productKey] = { productKey: d.productKey, displayName: p.displayName, scope: p.scope, orders: 0, revenue: 0, reason: d.excludedReason }
+      }
+      excludedAccum[d.productKey].orders++
+      excludedAccum[d.productKey].revenue += order.revenue
+      dbg({ qty: d.qty, margin: 0 })
       continue
     }
 
@@ -184,10 +184,10 @@ export const handler = async (event) => {
   let adSpend = 0
   let adSpendSource = 'none'
   try {
-    const perfRows = await supabaseGet(supabaseUrl, serviceKey, 'v_daily_wix_meta_performance', {
-      select: 'date,meta_spend',
-      date:   [`gte.${from}`, `lte.${to}`],
-      limit:  '400',
+    const perfRows = await readTable(supabaseUrl, serviceKey, 'v_daily_wix_meta_performance', {
+      select:  'date,meta_spend',
+      order:   'date.asc',
+      filters: { date: [`gte.${from}`, `lte.${to}`] },
     })
     if (perfRows.length > 0) {
       adSpend = perfRows.reduce((s, r) => s + (Number(r.meta_spend) || 0), 0)
@@ -198,8 +198,10 @@ export const handler = async (event) => {
   }
   if (adSpendSource === 'none') {
     try {
-      const adsRows = await supabaseGet(supabaseUrl, serviceKey, 'meta_ads_daily', {
-        select: 'spend', date: [`gte.${from}`, `lte.${to}`], limit: '2000',
+      const adsRows = await readTable(supabaseUrl, serviceKey, 'meta_ads_daily', {
+        select:  'spend',
+        order:   'date.asc',
+        filters: { date: [`gte.${from}`, `lte.${to}`] },
       })
       if (adsRows.length > 0) {
         adSpend = adsRows.reduce((s, r) => s + (Number(r.spend) || 0), 0)
@@ -212,14 +214,26 @@ export const handler = async (event) => {
 
   // ── Profit ────────────────────────────────────────────────────────────────
   // Only margins that are actually known are counted. Orders without a margin
-  // are excluded and reported as a hole — never folded in at margin 0.
+  // are left out and reported as a hole — never folded in at margin 0.
+  //
+  // BLENDED vs TOTAL. `ordersCount` / `revenue` are everything that came in, so
+  // they still reconcile with the Wix cards. The blended figures — profit, CPA,
+  // ROAS, profit per order — run on the orders the ad spend could plausibly have
+  // bought, i.e. everything except the EXCLUDED ones (WSZTP). A single 3450 PLN
+  // camp deposit against ~500 PLN of daily spend would otherwise invent a ROAS.
   const ordersCount             = orders.length
+  const blendedOrdersCount      = ordersCount - excludedOrdersCount
+  const blendedRevenue          = totalRevenue - excludedRevenue
   const marginBeforeAds         = knownMargin
   const estimatedProfitAfterAds = knownMargin - adSpend
-  const estimatedProfitPerOrder = ordersCount > 0 ? estimatedProfitAfterAds / ordersCount : 0
+  const estimatedProfitPerOrder = blendedOrdersCount > 0 ? estimatedProfitAfterAds / blendedOrdersCount : 0
+  const realCpa                 = blendedOrdersCount > 0 ? adSpend / blendedOrdersCount : null
+  const realRoas                = adSpend > 0 ? blendedRevenue / adSpend : null
 
   // One number the UI and Stanley can both quote: how many of the range's
-  // orders contributed no margin, and which field the match broke on.
+  // orders contributed no margin BECAUSE SOMETHING IS MISSING, and which field
+  // the match broke on. Deliberate exclusions are counted separately — asking
+  // someone to "map" WSZTP would be asking them to undo a decision.
   const noMarginOrdersCount = unknownOrdersCount + unknownMarginOrdersCount + ambiguousOrdersCount
   const noMarginRevenue     = unknownRevenue + unknownMarginRevenue + ambiguousRevenue
   const noMarginFields      = [...new Set(
@@ -236,6 +250,8 @@ export const handler = async (event) => {
       rangeFrom: from,
       rangeTo: to,
       ordersCount,
+      blendedOrdersCount,
+      blendedRevenue,
       orderRowsFetched: rangeRows.length,
       revenue: totalRevenue,
       adSpend,
@@ -251,11 +267,17 @@ export const handler = async (event) => {
       noMarginOrdersCount,
       noMarginRevenue,
       noMarginFields,
+      excludedOrdersCount,
+      excludedRevenue,
+      excludedBreakdown: Object.values(excludedAccum),
+      excludedOrders,
       conflictsCount: conflicts.length,
       conflicts,
       marginBeforeAds,
       estimatedProfitAfterAds,
       estimatedProfitPerOrder,
+      realCpa,
+      realRoas,
       productBreakdown: Object.values(productAccum),
       scopeBreakdown: Object.values(scopeAccum),
       unmappedOrders,

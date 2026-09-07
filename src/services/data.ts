@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabase, pagedSelect } from './supabase'
 
 export interface DailyPerformance {
   date: string
@@ -149,19 +149,15 @@ export async function fetchTopAds(date?: string): Promise<MetaAdDaily[]> {
 // Raw per-ad rows across a Warsaw date range [from, to] inclusive — used for the
 // campaign inspector (grouped/aggregated client-side per the selected time range).
 export async function fetchAdRowsBetween(from: string, to: string): Promise<MetaAdDaily[]> {
-  const { data, error } = await supabase
-    .from('meta_ads_daily')
-    .select('*')
-    .gte('date', from)
-    .lte('date', to)
-    .order('spend', { ascending: false })
-    .limit(1000)
-
-  if (error) {
-    console.error('fetchAdRowsBetween error', error)
-    return []
-  }
-  return (data ?? []) as MetaAdDaily[]
+  // limit(1000) sat exactly on PostgREST's cap: a long range would silently
+  // return a subset and the inspector would aggregate part of the period as if
+  // it were all of it. Paged instead.
+  const { rows, error } = await pagedSelect<MetaAdDaily>('meta_ads_daily', {
+    order:  { column: 'spend', ascending: false },
+    filter: q => q.gte('date', from).lte('date', to),
+  })
+  if (error) console.error('fetchAdRowsBetween error', error)
+  return rows
 }
 
 export async function fetchAutomationRuns(limit = 5): Promise<AutomationRun[]> {
@@ -181,15 +177,17 @@ export async function fetchAutomationRuns(limit = 5): Promise<AutomationRun[]> {
 export async function fetchMetaStatsToday(): Promise<MetaStatsToday> {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
 
-  const [{ data: todayRows }, { data: latestRow }] = await Promise.all([
-    supabase.from('meta_ads_daily').select('meta_purchases,purchases').eq('date', today),
+  // The per-ad read had neither order nor limit, so PostgREST decided both.
+  const [{ rows: todayRows }, { data: latestRow }] = await Promise.all([
+    pagedSelect<MetaAdDaily>('meta_ads_daily', {
+      select: 'date,meta_purchases,purchases',
+      order:  { column: 'date', ascending: false },
+      filter: q => q.eq('date', today),
+    }),
     supabase.from('meta_ads_daily').select('date').order('date', { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  const meta_purchases = (todayRows ?? []).reduce((s, r) => {
-    const row = r as MetaAdDaily
-    return s + (row.meta_purchases ?? row.purchases ?? 0)
-  }, 0)
+  const meta_purchases = todayRows.reduce((s, r) => s + (r.meta_purchases ?? r.purchases ?? 0), 0)
   const latestDate = (latestRow as { date?: string } | null)?.date ?? ''
   const isStale = latestDate !== '' && latestDate < today
 

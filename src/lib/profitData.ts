@@ -5,7 +5,7 @@ import { bustUrl } from '../utils/cacheBust'
 // The canonical profit shape the UI reads. It used to live in a second module
 // (src/services/productMargins.ts) that carried its own copy of the price and
 // margin tables; that copy is gone — margins are defined once, in
-// netlify/functions/productCatalog.js, and arrive here over the wire.
+// netlify/shared/productCatalog.js, and arrive here over the wire.
 export interface ProfitSummary {
   marginBeforeAds: number
   estimatedProfit: number   // = marginBeforeAds − adSpend (NOT revenue − adSpend)
@@ -36,6 +36,16 @@ export interface ScopeBreakdownItem {
   marginTotal: number
 }
 
+/** A product deliberately kept out of the blended figures (WSZTP). */
+export interface ExcludedBreakdownItem {
+  productKey: string
+  displayName: string
+  scope: 'memory' | 'language' | 'cogni'
+  orders: number
+  revenue: number
+  reason: string
+}
+
 export interface ProfitData {
   ok: boolean
   timestamp: string
@@ -59,6 +69,18 @@ export interface ProfitData {
   noMarginRevenue?: number
   /** The field(s) the match broke on, e.g. "amount (137 PLN not in PRICE_TO_PRODUCT)". */
   noMarginFields?: string[]
+  // Deliberate exclusions (WSZTP) — a DIFFERENT state from unmapped. Nothing is
+  // missing from the catalog here, so these must never be counted in the
+  // "N bez mapowania" figure that asks somebody to go and fix something.
+  excludedOrdersCount?: number
+  excludedRevenue?: number
+  excludedBreakdown?: ExcludedBreakdownItem[]
+  // Blended = everything except the exclusions. Profit, CPA and ROAS run on
+  // these, so one 3450 PLN camp deposit cannot invent a day's ROAS.
+  blendedOrdersCount?: number
+  blendedRevenue?: number
+  realCpa?: number | null
+  realRoas?: number | null
   orderRowsFetched?: number
   conflictsCount?: number             // PRICE/NAME CONFLICT rows
   conflicts?: Array<{ amount: number; product_name_raw: string; order_date: string; price_product: string; price_amount: number; name_product: string }>
@@ -81,12 +103,14 @@ export function mapProfitToSummary(pd: ProfitData): ProfitSummary {
     marginBeforeAds: pd.marginBeforeAds,
     estimatedProfit: pd.estimatedProfitAfterAds,
     profitPerOrder:  pd.estimatedProfitPerOrder,
-    realCpa:         pd.ordersCount > 0 ? pd.adSpend / pd.ordersCount : null,
-    realRoas:        pd.adSpend > 0 ? pd.revenue / pd.adSpend : null,
+    // CPA and ROAS come from the endpoint, which computes them on the BLENDED
+    // set (exclusions removed). The local fallbacks are for an older payload.
+    realCpa:         pd.realCpa  ?? (pd.ordersCount > 0 ? pd.adSpend / pd.ordersCount : null),
+    realRoas:        pd.realRoas ?? (pd.adSpend > 0 ? pd.revenue / pd.adSpend : null),
     unmappedRevenue: pd.unknownRevenue,
     unmappedCount:   pd.unknownOrdersCount,
     adSpend:         pd.adSpend,
-    paidCount:       pd.ordersCount,
+    paidCount:       pd.blendedOrdersCount ?? pd.ordersCount,
   }
 }
 

@@ -10,6 +10,8 @@
 //
 //   GET /.netlify/functions/webinar-attendees?room=10138835&session=45109700
 
+import { readTable } from '../shared/supabaseRead.js'
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -25,25 +27,19 @@ function maskEmail(email) {
   return local.slice(0, 2) + '***@' + domain
 }
 
-async function queryTable(supabaseUrl, serviceKey, table, params) {
-  const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v))
-  const res = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${serviceKey}`,
-      apikey: serviceKey,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
+// Every Supabase read in this file goes through readTable() in
+// ../shared/supabaseRead.js: it refuses to run without an explicit order column and
+// pages past PostgREST's silent 1000-row cap. `params` keeps its old shape
+// ({ select, order, limit, ...postgrestFilters }) so the call sites below did
+// not have to change.
+async function queryTable(supabaseUrl, serviceKey, table, params = {}) {
+  const { select = '*', order, limit, ...filters } = params
+  return readTable(supabaseUrl, serviceKey, table, {
+    select, order, limit: limit == null ? undefined : Number(limit), filters,
   })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`HTTP ${res.status} on ${table}: ${body.slice(0, 200)}`)
-  }
-  return res.json()
 }
 
-exports.handler = async (event) => {
+export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
 
   const supabaseUrl = process.env.SUPABASE_URL
@@ -71,7 +67,7 @@ exports.handler = async (event) => {
       select: 'email,login,attended,joined_at,left_at,session_started_at,time_in_room_seconds',
       clickmeeting_room_id: `eq.${room}`,
       clickmeeting_session_id: `eq.${session}`,
-      limit: 2000,
+      order: 'joined_at.asc.nullslast',
     })
 
     // No row at all → we know nothing about this session, which is not the same
@@ -97,9 +93,8 @@ exports.handler = async (event) => {
       try {
         orders = await queryTable(supabaseUrl, serviceKey, 'orders', {
           select: 'email,amount,order_created_at,product_name_raw',
-          order_created_at: `gte.${sessionStartedAt}`,
-          and: `(order_created_at.lt.${endISO})`,
-          limit: 5000,
+          order_created_at: [`gte.${sessionStartedAt}`, `lt.${endISO}`],
+          order: 'order_created_at.asc',
         })
       } catch (e) {
         ordersError = String(e?.message ?? e)

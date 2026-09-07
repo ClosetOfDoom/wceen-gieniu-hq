@@ -21,6 +21,9 @@ interface Props {
   unmappedCount?: number
   /** The field(s) the product match broke on, straight from profit-data. */
   unmappedFields?: string[]
+  /** Orders deliberately kept out of the blended figures (WSZTP). Not a gap. */
+  excludedCount?: number
+  excludedRevenue?: number
 }
 
 const fmtInt = (n: number | null | undefined) =>
@@ -111,7 +114,11 @@ function Row({
   )
 }
 
-export function DayDigest({ today, yesterday, stale, dateLabel, unmappedCount = 0, unmappedFields = [] }: Props) {
+export function DayDigest({
+  today, yesterday, stale, dateLabel,
+  unmappedCount = 0, unmappedFields = [],
+  excludedCount = 0, excludedRevenue = 0,
+}: Props) {
   const hasAny = !!today
   const cmp = yesterday ? 'vs wczoraj' : 'brak danych z wczoraj'
 
@@ -193,6 +200,23 @@ export function DayDigest({ today, yesterday, stale, dateLabel, unmappedCount = 
                   </span>
                 </>
               )}
+            </div>
+          )}
+          {excludedCount > 0 && (
+            <div
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.62rem',
+                color: 'var(--muted2)',
+                marginTop: 7,
+                lineHeight: 1.6,
+              }}
+            >
+              {excludedCount} WSZTP {excludedCount === 1 ? 'order' : 'orders'} excluded from blended, sir
+              <br />
+              <span>
+                {fmtPln(excludedRevenue)} w przychodzie, poza zyskiem i CPA/ROAS — celowo, nie brak mapowania
+              </span>
             </div>
           )}
           {stale && dateLabel && (
