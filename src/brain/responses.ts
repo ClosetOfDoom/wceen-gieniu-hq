@@ -246,32 +246,65 @@ export function buildRedFlags(perf: DailyPerformance | null): string {
   return `${pickPhrase(OPENERS)}\n\n— RED FLAGS —\n\n${flags.map(f => `⚠ ${f}`).join('\n')}`
 }
 
-export function buildMemoryBundleAnswer(perf: DailyPerformance | null, _status: DataStatus): string {
-  const lines: string[] = ['— MEMORY BUNDLE ORDERS —', '']
-  if (perf) {
-    lines.push(`Today's Wix totals: ${perf.wix_orders ?? 0} orders | ${(perf.wix_revenue ?? 0).toFixed(2)} PLN revenue`)
-    lines.push('')
+export function buildMemoryBundleAnswer(
+  perf: DailyPerformance | null,
+  _status: DataStatus,
+  orders: OrdersData | null = null,
+): string {
+  // Product classification IS available: orders.product_name_raw plus the price
+  // table in netlify/functions/productCatalog.js. The honest gap message below
+  // is kept for the case where the orders endpoint itself is down.
+  if (!orders || !orders.ok) {
+    const lines: string[] = ['Rozbicie na produkty — brak źródła', '']
+    if (perf) {
+      lines.push(`Dziś: ${perf.wix_orders ?? 0} zamówień, ${fmtPln(perf.wix_revenue ?? 0)} przychodu (widok dzienny).`, '')
+    }
+    lines.push(
+      '⚠  Endpoint orders-data nie odpowiedział, więc nie mam rozbicia na produkty.',
+      '   Same liczby zbiorcze nie wystarczą — nie zgaduję, ile z nich to Pakiet Pamięciowy.',
+      '',
+      `Technical: ${PRODUCT_CLASSIFICATION_REASON}`,
+    )
+    return lines.join('\n')
   }
-  lines.push(
-    '⚠  Product classification is unavailable.',
+
+  const t = orders.today_classified
+  const total = orders.totals.today_orders
+  const lines = [
+    `Rozbicie na produkty — ${orders.today_warsaw}`,
     '',
-    'The orders database stores aggregate totals only — no product names, SKUs, or line items.',
-    'GIENIU cannot determine how many of those orders were memory bundles.',
-    '',
-    'Fix: extend the Make → Wix → Supabase scenario to save order line items',
-    '     (product_name, SKU, quantity) to a wix_order_items table.',
-    'See: docs/wix_orders_product_mapping_fix.md',
-    '',
-    `Technical: ${PRODUCT_CLASSIFICATION_REASON}`,
-  )
+    `Pakiet Pamięciowy:  ${t.memory_pack.count} zam. · ${fmtPln(t.memory_pack.revenue)}`,
+    `Językowe (JZK/3T):  ${t.jzk_language.count} zam. · ${fmtPln(t.jzk_language.revenue)}`,
+    `Kurs JSU:           ${t.jsu_course.count} zam. · ${fmtPln(t.jsu_course.revenue)}`,
+    `Bez mapowania:      ${t.unknown.count} zam.`,
+    '─'.repeat(42),
+    `Razem dziś:         ${total} zam. · ${fmtPln(orders.totals.today_revenue)}`,
+  ]
+  if (t.unknown.count > 0) {
+    lines.push('', `⚠  ${t.unknown.count} ${t.unknown.count === 1 ? 'order' : 'orders'} unmapped, margin excluded, sir — sprawdź product_name_raw i kwotę w latest_20_orders.`)
+  }
   return lines.join('\n')
 }
 
-export function buildMemoryBundleSpoken(perf: DailyPerformance | null): string {
-  const ordersClause = perf
-    ? `I can see ${perf.wix_orders ?? 0} Wix orders today totalling ${(perf.wix_revenue ?? 0).toFixed(0)} zloty, but`
-    : 'Lifidi,'
-  return `${ordersClause} I cannot classify them by product. The orders database stores only totals — no product names or line items. I genuinely do not know how many were memory bundles. Fix the Wix ingestion to save line items per order.`
+export function buildMemoryBundleSpoken(
+  perf: DailyPerformance | null,
+  orders: OrdersData | null = null,
+): string {
+  if (!orders || !orders.ok) {
+    const ordersClause = perf
+      ? `Widzę ${perf.wix_orders ?? 0} zamówień dziś na ${(perf.wix_revenue ?? 0).toFixed(0)} złotych, ale`
+      : 'Lifidi,'
+    return `${ordersClause} endpoint zamówień nie odpowiedział, więc nie mam rozbicia na produkty. Nie zgaduję, ile z nich to Pakiet Pamięciowy.`
+  }
+  const t = orders.today_classified
+  const parts = [
+    `Dziś ${t.memory_pack.count} Pakietów Pamięciowych, ${t.jzk_language.count} produktów językowych i ${t.jsu_course.count} kursów JSU.`,
+    `Razem ${orders.totals.today_orders} zamówień na ${orders.totals.today_revenue.toFixed(0)} złotych.`,
+  ]
+  if (t.unknown.count > 0) {
+    parts.push(`${t.unknown.count} zamówień bez mapowania — marża wykluczona.`)
+  }
+  return parts.join(' ')
 }
 
 export function buildCreativesReport(): string {
@@ -1964,6 +1997,23 @@ export function buildWebinarFunnelChart(s: JsuFunnelSummary | null): InsightChar
 
 import type { ProfitData } from '../lib/profitData'
 
+// Orders that earned no margin are never folded in at margin 0 — they are
+// named, counted, and the field the match broke on is quoted verbatim from
+// profit-data. A profit figure with a hidden hole is worse than no figure.
+function noMarginNote(d: ProfitData): string {
+  const count = d.noMarginOrdersCount ?? 0
+  if (count === 0) return ''
+  const fields = d.noMarginFields ?? []
+  return [
+    '',
+    `⚠  ${count} ${count === 1 ? 'order' : 'orders'} unmapped, margin excluded, sir.`,
+    `   Przychód bez marży: ${fmtPln(d.noMarginRevenue ?? d.unknownRevenue)}.`,
+    fields.length > 0
+      ? `   Nie dopasowano po: ${fields.join(' | ')}`
+      : '   Pole dopasowania nieraportowane przez backend.',
+  ].join('\n')
+}
+
 function profitVerdict(profit: number, ordersCount: number): string {
   if (ordersCount === 0) return 'Brak zamówień dziś.'
   if (profit >= 500)     return 'Dobry dzień — wyraźnie do przodu.'
@@ -1988,9 +2038,7 @@ export function buildProfitAnswer(d: ProfitData | null): GieniuResponse {
     return `  • ${p.displayName}: ${margin}`
   }).join('\n')
 
-  const unmappedNote = d.unknownRevenue > 0
-    ? `\n⚠ Niezidentyfikowany przychód: ${fmtPln(d.unknownRevenue)} (${d.unknownOrdersCount} zam.) — nie wliczony w marżę.`
-    : ''
+  const unmappedNote = noMarginNote(d)
 
   const display = [
     `Szacowany zysk — ${d.dateWarsaw}`,
@@ -2028,8 +2076,13 @@ export function buildProfitSpoken(d: ProfitData | null): string {
     `Meta wydała ${fmtPln(d.adSpend)}, więc szacowany zysk po reklamie to ${fmtPln(d.estimatedProfitAfterAds)}.`,
   ]
 
-  if (d.unknownRevenue > 0) {
-    parts.push(`Uwaga: ${fmtPln(d.unknownRevenue)} z niezidentyfikowanych produktów nie jest wliczone w marżę.`)
+  const noMargin = d.noMarginOrdersCount ?? 0
+  if (noMargin > 0) {
+    parts.push(
+      `${noMargin} ${noMargin === 1 ? 'order' : 'orders'} unmapped, margin excluded, sir.`,
+      `Nie dopasowałem po: ${(d.noMarginFields ?? ['brak informacji o polu']).join(', ')}.`,
+      `To ${fmtPln(d.noMarginRevenue ?? d.unknownRevenue)} przychodu bez marży — zysk jest policzony tylko z zamówień zmapowanych.`,
+    )
   }
 
   parts.push(profitVerdict(d.estimatedProfitAfterAds, d.ordersCount))

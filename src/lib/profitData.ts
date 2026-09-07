@@ -1,14 +1,38 @@
 // Frontend lib for profit-data backend endpoint.
 // Caches for 55 s — just under the 60 s auto-refresh interval.
-import type { ProfitSummary } from '../services/productMargins'
 import { bustUrl } from '../utils/cacheBust'
+
+// The canonical profit shape the UI reads. It used to live in a second module
+// (src/services/productMargins.ts) that carried its own copy of the price and
+// margin tables; that copy is gone — margins are defined once, in
+// netlify/functions/productCatalog.js, and arrive here over the wire.
+export interface ProfitSummary {
+  marginBeforeAds: number
+  estimatedProfit: number   // = marginBeforeAds − adSpend (NOT revenue − adSpend)
+  profitPerOrder:  number
+  realCpa:         number | null
+  realRoas:        number | null
+  unmappedRevenue: number
+  unmappedCount:   number
+  adSpend:         number
+  paidCount:       number
+}
 
 export interface ProductBreakdownItem {
   productKey: string
   displayName: string
+  scope?: 'memory' | 'language' | 'cogni'
   orders: number
+  units?: number
   revenue: number
   contributionMargin: number | null
+  marginTotal: number
+}
+
+export interface ScopeBreakdownItem {
+  scope: 'memory' | 'language' | 'cogni'
+  orders: number
+  revenue: number
   marginTotal: number
 }
 
@@ -28,12 +52,21 @@ export interface ProfitData {
   ambiguousRevenue?: number
   ambiguousOrdersCount?: number
   ambiguousMinMargin?: number
+  // Every order in the range that contributed NO margin — unmapped, plus known
+  // products whose margin is not in the catalog, plus ambiguous quantities.
+  // Est. Profit must never look complete while this is above zero.
+  noMarginOrdersCount?: number
+  noMarginRevenue?: number
+  /** The field(s) the match broke on, e.g. "amount (137 PLN not in PRICE_TO_PRODUCT)". */
+  noMarginFields?: string[]
+  orderRowsFetched?: number
   conflictsCount?: number             // PRICE/NAME CONFLICT rows
   conflicts?: Array<{ amount: number; product_name_raw: string; order_date: string; price_product: string; price_amount: number; name_product: string }>
   marginBeforeAds: number
   estimatedProfitAfterAds: number
   estimatedProfitPerOrder: number
   productBreakdown: ProductBreakdownItem[]
+  scopeBreakdown?: ScopeBreakdownItem[]
   unmappedOrders: unknown[]
   emailNormReclassified?: number
   sourceTable: string
@@ -42,7 +75,7 @@ export interface ProfitData {
 }
 
 // Maps a successful backend ProfitData response to the canonical ProfitSummary
-// shape from productMargins.ts so UI can use one unified interface.
+// shape so every profit surface in the UI reads one interface.
 export function mapProfitToSummary(pd: ProfitData): ProfitSummary {
   return {
     marginBeforeAds: pd.marginBeforeAds,

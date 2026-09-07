@@ -17,47 +17,98 @@ function pass(msg) { console.log('  pass', msg) }
 function read(rel) { return readFileSync(join(rootDir, rel), 'utf8') }
 function exists(rel) { return existsSync(join(rootDir, rel)) }
 
-// 1. productMargins.ts exists and has all products
+// 1. THE single product catalog holds every price, scope and margin.
+//    src/services/productMargins.ts used to carry a second copy of this table;
+//    it was deleted, and section 1b exists so a second copy never comes back.
+//    The catalog is imported, not grepped, so these are the real values.
 {
-  const f = 'src/services/productMargins.ts'
+  const f = 'netlify/functions/productCatalog.js'
   if (!exists(f)) {
-    fail(`${f} is missing`)
+    fail(`${f} is missing - it is the ONE source of prices, margins and scope`)
   } else {
+    const cat = await import(new URL('../netlify/functions/productCatalog.js', import.meta.url))
+    const { PRODUCTS, PRICE_TO_PRODUCT } = cat
+
+    // Authoritative business table: price -> product, scope, contribution margin.
+    const CATALOG = [
+      [119,  'memory_pack',    'memory',   70],
+      [114,  'language_3t',    'language', 55],
+      [347,  'jzk_ai',         'language', 320],
+      [549,  'jsu_course',     'memory',   500],
+      [95,   'jezykozak_pack', 'language', null],
+      [499,  'cogni_year',     'cogni',    null],
+      [1250, 'wsztp',          'memory',   null],
+      [3450, 'wsztp',          'memory',   null],
+    ]
+    for (const [price, key, scope, margin] of CATALOG) {
+      const p = PRODUCTS[key]
+      const ok = PRICE_TO_PRODUCT[price] === key && p && p.scope === scope && p.contributionMargin === margin
+      if (ok) pass(`catalog: ${price} PLN -> ${key}, scope ${scope}, margin ${margin === null ? 'null (not invented)' : margin}`)
+      else fail(`catalog: ${price} PLN must map to ${key}, scope ${scope}, margin ${margin} - got ${PRICE_TO_PRODUCT[price]} / ${p && p.scope} / ${p && p.contributionMargin}`)
+    }
+
+    // A 99 PLN Pakiet Pamieciowy (shipping line missing from the order) must earn
+    // the honest 50, not the full 70 and not zero.
+    const disc = cat.classifyAmount(99, 'Pamiec. Trening Interaktywny')
+    if (disc.productKey === 'memory_pack' && disc.margin === 50) {
+      pass('catalog: a 99 PLN PP earns 50, derived from the unit cost - not guessed')
+    } else {
+      fail(`catalog: 99 PLN PP must be memory_pack with margin 50, got ${disc.productKey} / ${disc.margin}`)
+    }
+
+    // An unknown amount must be UNMAPPED with the failing field named - never PP.
+    const unk = cat.classifyAmount(137, 'Zestaw niespodzianka')
+    if (unk.bucket === 'UNMAPPED' && unk.margin === null && unk.failedField) {
+      pass(`catalog: an unknown amount is UNMAPPED and names its failing field`)
+    } else {
+      fail('catalog: an unknown amount must be UNMAPPED, margin null, with failedField set')
+    }
+
+    // A 99 + 20 shipping split must classify as ONE Pakiet Pamieciowy.
+    const agg = cat.aggregateOrders([
+      { external_order_id: 'X1', order_created_at: '2026-09-07T09:00:00Z', amount: 99, product_name_raw: 'Pamiec. Trening Interaktywny: Ebook + Druk' },
+      { external_order_id: 'X1', order_created_at: '2026-09-07T09:00:00Z', amount: 20, product_name_raw: 'Wysylka + Ubezpieczenie + Paczka' },
+    ])
+    if (agg.length === 1 && agg[0].revenue === 119 && cat.classifyOrder(agg[0]).productKey === 'memory_pack') {
+      pass('catalog: 99 + 20 shipping in one order classifies as one Pakiet Pamieciowy at 119')
+    } else {
+      fail('catalog: line items must be grouped by order id with the shipping line dropped from classification')
+    }
+
+    // The bug this module was written to kill: an unordered, unpaged read that
+    // PostgREST silently caps at 1000 rows, returning the OLDEST rows.
+    const src = read(f)
+    if (/order:\s*'order_created_at\.desc/.test(src)) {
+      pass('catalog: every orders read is explicitly ORDERED (never physical row order)')
+    } else {
+      fail('catalog: orders reads must set order=order_created_at.desc - an unordered read returns the OLDEST 1000 rows')
+    }
+    if (src.includes('const PAGE = 1000') && src.includes('offset:')) {
+      pass('catalog: orders reads page past the 1000-row PostgREST cap')
+    } else {
+      fail('catalog: orders reads must page past the 1000-row cap')
+    }
+  }
+}
+
+// 1b. No second copy of the price/margin table may exist anywhere else.
+{
+  if (exists('src/services/productMargins.ts')) {
+    fail('src/services/productMargins.ts is back — margins must live ONLY in netlify/functions/productCatalog.js')
+  } else {
+    pass('no duplicate margin table in src/services')
+  }
+  for (const f of ['netlify/functions/orders-data.js', 'netlify/functions/product-sales.js', 'netlify/functions/profit-data.js']) {
     const c = read(f)
-    if (c.includes('memory_pack') && c.includes('contributionMargin:  70')) {
-      pass('productMargins.ts: memory_pack has contributionMargin 70')
+    if (c.includes("from './productCatalog.js'")) {
+      pass(`${f.split('/').pop()}: imports the shared catalog`)
     } else {
-      fail('productMargins.ts: memory_pack must have contributionMargin: 70')
+      fail(`${f}: must import from ./productCatalog.js instead of defining its own rules`)
     }
-    if (c.includes('language_pack') && c.includes('contributionMargin:  40')) {
-      pass('productMargins.ts: language_pack has contributionMargin 40')
+    if (/contributionMargin:\s*\d/.test(c) || /catalogPrice:\s*\d/.test(c)) {
+      fail(`${f}: defines its own price/margin numbers — those belong in productCatalog.js only`)
     } else {
-      fail('productMargins.ts: language_pack must have contributionMargin: 40')
-    }
-    if (c.includes('jsu_course') && c.includes('contributionMargin:') && c.includes('500')) {
-      pass('productMargins.ts: jsu_course has contributionMargin 500')
-    } else {
-      fail('productMargins.ts: jsu_course must have contributionMargin: 500 (JSU = price 549, margin 500)')
-    }
-    if (c.includes('jzk_ai') && c.includes('contributionMargin:') && c.includes('320')) {
-      pass('productMargins.ts: jzk_ai has contributionMargin 320')
-    } else {
-      fail('productMargins.ts: jzk_ai must have contributionMargin: 320 (Językozak = price 347, margin 320)')
-    }
-    if (c.includes('UNKNOWN_MARGIN') || c.includes('unknown')) {
-      pass('productMargins.ts: has UNKNOWN_MARGIN for unmapped products')
-    } else {
-      fail('productMargins.ts: must export UNKNOWN_MARGIN for unmapped products')
-    }
-    if (c.includes('getMarginByAmount') || c.includes('export function getMarginByAmount')) {
-      pass('productMargins.ts: exports getMarginByAmount()')
-    } else {
-      fail('productMargins.ts: must export getMarginByAmount()')
-    }
-    if (c.includes('needsMapping')) {
-      pass('productMargins.ts: ProductMarginRule has needsMapping field')
-    } else {
-      fail('productMargins.ts: ProductMarginRule must have needsMapping: boolean')
+      pass(`${f.split('/').pop()}: defines no prices or margins of its own`)
     }
   }
 }
@@ -79,21 +130,22 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
     } else {
       fail('profit-data.js must set Cache-Control: no-store to prevent stale profit figures')
     }
-    // memory_pack: 8 orders × 70 = 560; adSpend 432.97 → profit 127.03
-    if (c.includes('contributionMargin: 70') || (c.includes('amount: 119') && c.includes('70'))) {
-      pass('profit-data.js: memory_pack margin = 70 PLN')
+    // Margins are asserted against the catalog in section 1. Here we only check
+    // that profit-data delegates rather than carrying its own copy.
+    if (c.includes('classifyOrder') && c.includes('aggregateOrders')) {
+      pass('profit-data.js: classifies aggregated orders through the shared catalog')
     } else {
-      fail('profit-data.js: memory_pack (119 PLN) must have contributionMargin 70')
+      fail('profit-data.js: must classify via aggregateOrders + classifyOrder from productCatalog.js')
     }
-    if (c.includes('contributionMargin: 40') || (c.includes('amount: 114') && c.includes('40'))) {
-      pass('profit-data.js: language_pack margin = 40 PLN')
+    if (c.includes('noMarginOrdersCount') && c.includes('noMarginFields')) {
+      pass('profit-data.js: reports how many orders earned no margin, and on which field')
     } else {
-      fail('profit-data.js: language_pack (114 PLN) must have contributionMargin 40')
+      fail('profit-data.js: must return noMarginOrdersCount + noMarginFields — a profit figure may not hide its holes')
     }
-    if (c.includes('contributionMargin: 500') && c.includes('contributionMargin: 320')) {
-      pass('profit-data.js: jsu_course = 500 PLN margin, jzk_ai = 320 PLN margin')
+    if (!/margin\s*=\s*0/.test(c) && !/margin:\s*0/.test(c)) {
+      pass('profit-data.js: never assigns margin 0 to an unmapped order')
     } else {
-      fail('profit-data.js: jsu_course must have contributionMargin 500, jzk_ai must have 320')
+      fail('profit-data.js: an unmapped order must be excluded, not folded in at margin 0')
     }
     if (c.includes('unknownRevenue')) {
       pass('profit-data.js: returns unknownRevenue field for unmapped products')
@@ -303,10 +355,11 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
   } else {
     fail('KPICard.tsx: danger prop must render value in red (#ef4444 or CSS var)')
   }
-  if (c.includes('var(--teal)') && c.includes('positive')) {
-    pass('KPICard.tsx: positive variant renders in teal/green')
+  // The healthy variant moved from --teal to --emerald when the palette changed.
+  if ((c.includes('var(--emerald)') || c.includes('var(--teal)')) && c.includes('positive')) {
+    pass('KPICard.tsx: positive variant renders in green (emerald/teal)')
   } else {
-    fail('KPICard.tsx: positive prop must render value in teal/green')
+    fail('KPICard.tsx: positive prop must render value in green (var(--emerald) or var(--teal))')
   }
 }
 

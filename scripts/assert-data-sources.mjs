@@ -74,23 +74,30 @@ if (exists('netlify/functions/campaign-data.js')) {
   }
 }
 
-// 5. orders-data.js uses absolute price rules
+// 5. orders-data.js classifies through the shared catalog, not its own rules.
+//    It used to carry a private copy of the price table (amount === 549, etc.),
+//    which drifted from profit-data.js and produced two different PP counts.
 if (exists('netlify/functions/orders-data.js')) {
   const c = read('netlify/functions/orders-data.js')
-  if (c.includes('amount === 549') && c.includes('JSU_COURSE')) {
-    pass('orders-data.js classifies 549 PLN → JSU_COURSE')
+  if (c.includes("from './productCatalog.js'")) {
+    pass('orders-data.js classifies via the shared productCatalog.js')
   } else {
-    fail('orders-data.js missing 549 PLN = JSU absolute rule')
+    fail('orders-data.js must import its classification from ./productCatalog.js')
   }
-  if (c.includes('amount === 347') && c.includes('JZK_LANGUAGE')) {
-    pass('orders-data.js classifies 347 PLN → JZK_LANGUAGE')
+  if (!/amount === (549|347|119|114)/.test(c)) {
+    pass('orders-data.js holds no private price rules')
   } else {
-    fail('orders-data.js missing 347 PLN = JZK absolute rule')
+    fail('orders-data.js has its own price rules again — prices belong in productCatalog.js only')
   }
-  if (c.includes('amount === 119') && c.includes('MEMORY_PACK')) {
-    pass('orders-data.js classifies 119 PLN → MEMORY_PACK')
+  if (c.includes('aggregateOrders') && c.includes('classifyOrder')) {
+    pass('orders-data.js classifies aggregated orders, not raw rows')
   } else {
-    fail('orders-data.js missing 119 PLN = memory pack absolute rule')
+    fail('orders-data.js must classify via aggregateOrders + classifyOrder')
+  }
+  if (c.includes('fetchAllOrders')) {
+    pass('orders-data.js reads orders through the ordered, paged catalog fetch')
+  } else {
+    fail('orders-data.js must read orders via fetchAllOrders — a bare limit=N read is capped at 1000 OLDEST rows')
   }
   if (c.includes('maskEmail')) {
     pass('orders-data.js masks emails in output')

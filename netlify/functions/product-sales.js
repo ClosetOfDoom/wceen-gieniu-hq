@@ -1,14 +1,26 @@
 // Netlify Function: product-sales
 //
 // JSU (549 PLN) and Językozak AI (347 PLN) sales computed from the `orders`
-// table ALONE, using the canonical price table. No ClickMeeting, no
-// registrations, no attendance — those pipelines stopped and anything derived
-// from them would be a promise the data can no longer keep.
+// table ALONE. No ClickMeeting, no registrations, no attendance — those
+// pipelines stopped and anything derived from them would be a promise the data
+// can no longer keep.
 //
 // Buckets by Warsaw calendar day and by ISO week (Monday start), each with the
 // buyer list behind it. E-mails are masked, matching every other surface here.
 //
+// The price→product rules live in ./productCatalog.js, not here. This file only
+// selects which two of the catalog's products it reports on.
+//
 //   GET /.netlify/functions/product-sales?days=30
+
+import {
+  PRODUCTS,
+  aggregateOrders,
+  classifyOrder,
+  fetchOrdersInRange,
+  maskEmail,
+  warsawToday,
+} from './productCatalog.js'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -18,77 +30,19 @@ const CORS = {
   'Cache-Control': 'no-store',
 }
 
-// ── canonical price table ───────────────────────────────────────────────────
-// The single rule for this view. An order is JSU or JZK by PRICE; the raw
-// product name rides along so a mismatch is visible rather than silently
-// reclassified.
-const CANONICAL = {
-  549: { key: 'jsu', label: 'Kurs Jak się uczyć' },
-  347: { key: 'jzk', label: 'Językozak AI' },
-}
-
-async function supabaseGet(supabaseUrl, serviceKey, table, filters = {}) {
-  const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
-  for (const [k, v] of Object.entries(filters)) url.searchParams.set(k, String(v))
-  const res = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${serviceKey}`,
-      apikey: serviceKey,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`HTTP ${res.status} on ${table}: ${body.slice(0, 200)}`)
-  }
-  return res.json()
-}
-
-const warsawToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-
-// Warsaw calendar date for any timestamp — avoids the UTC off-by-one that drops
-// late-evening orders into the previous day.
-function toWarsawDate(val) {
-  if (val == null) return ''
-  const s = String(val)
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
-  try {
-    return new Date(s).toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-  } catch {
-    return s.slice(0, 10)
-  }
-}
+// The two products this view reports on, keyed by their catalog product key.
+const REPORTED = { jsu_course: 'jsu', jzk_ai: 'jzk' }
 
 /** Monday of the ISO week containing a YYYY-MM-DD date. */
 function weekStartOf(dateISO) {
   const d = new Date(dateISO + 'T12:00:00Z')
-  const diff = (d.getUTCDay() + 6) % 7
-  d.setUTCDate(d.getUTCDate() - diff)
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
   return d.toISOString().slice(0, 10)
-}
-
-function maskEmail(email) {
-  if (!email || !email.includes('@')) return '***@***'
-  const [local, domain] = email.split('@')
-  return `${local.slice(0, Math.min(2, local.length))}***@${domain}`
-}
-
-const extractEmail = (r) => r.buyer_email ?? r.email ?? r.customer_email ?? r.contact_email ?? ''
-const extractDate = (r) => r.order_created_at ?? r.order_date ?? r.created_at ?? r.date ?? ''
-const extractName = (r) => r.product_name_raw ?? r.product_name ?? r.item_name ?? null
-
-function extractAmount(r) {
-  for (const c of [r.amount, r.total, r.price, r.revenue, r.order_total]) {
-    const n = Number(c)
-    if (!isNaN(n) && n > 0) return n
-  }
-  return 0
 }
 
 const emptyBucket = () => ({ jsu: { count: 0, revenue: 0, buyers: [] }, jzk: { count: 0, revenue: 0, buyers: [] } })
 
-exports.handler = async (event) => {
+export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
 
   const supabaseUrl = process.env.SUPABASE_URL
@@ -110,11 +64,7 @@ exports.handler = async (event) => {
   let fetchError = null
   for (const table of ['orders', 'wix_orders']) {
     try {
-      rows = await supabaseGet(supabaseUrl, serviceKey, table, {
-        select: '*',
-        order: 'order_created_at.desc',
-        limit: 10000,
-      })
+      rows = await fetchOrdersInRange(supabaseUrl, serviceKey, table, fromISO, today)
       usedTable = table
       fetchError = null
       break
@@ -129,35 +79,31 @@ exports.handler = async (event) => {
   const byDay = new Map()
   const byWeek = new Map()
   const totals = emptyBucket()
-  let scanned = 0
+  const orders = aggregateOrders(rows)
 
-  for (const r of rows) {
-    const date = toWarsawDate(extractDate(r))
-    if (!date || date < fromISO || date > today) continue
-    scanned++
-
-    const amount = extractAmount(r)
-    const hit = CANONICAL[amount]
-    if (!hit) continue
+  for (const order of orders) {
+    const d = classifyOrder(order)
+    const key = REPORTED[d.productKey]
+    if (!key) continue
 
     const buyer = {
-      email: maskEmail(String(extractEmail(r)).trim().toLowerCase()),
-      amount,
-      date,
-      at: extractDate(r),
-      product_name_raw: extractName(r),
+      email: maskEmail(order.email),
+      amount: order.revenue,
+      date: order.orderDate,
+      at: order.raw[0]?.order_created_at ?? order.orderDate,
+      product_name_raw: order.productNameRaw,
     }
 
-    for (const [map, key] of [[byDay, date], [byWeek, weekStartOf(date)]]) {
-      if (!map.has(key)) map.set(key, emptyBucket())
-      const b = map.get(key)[hit.key]
+    for (const [map, mapKey] of [[byDay, order.orderDate], [byWeek, weekStartOf(order.orderDate)]]) {
+      if (!map.has(mapKey)) map.set(mapKey, emptyBucket())
+      const b = map.get(mapKey)[key]
       b.count++
-      b.revenue += amount
+      b.revenue += order.revenue
       b.buyers.push(buyer)
     }
-    totals[hit.key].count++
-    totals[hit.key].revenue += amount
-    totals[hit.key].buyers.push(buyer)
+    totals[key].count++
+    totals[key].revenue += order.revenue
+    totals[key].buyers.push(buyer)
   }
 
   const serialise = (map) =>
@@ -174,8 +120,11 @@ exports.handler = async (event) => {
       today_warsaw: today,
       from: fromISO,
       days,
-      ordersScannedInRange: scanned,
-      priceTable: { 549: 'Kurs Jak się uczyć (JSU)', 347: 'Językozak AI' },
+      ordersScannedInRange: orders.length,
+      priceTable: {
+        [PRODUCTS.jsu_course.catalogPrice]: `${PRODUCTS.jsu_course.displayName} (JSU)`,
+        [PRODUCTS.jzk_ai.catalogPrice]:     PRODUCTS.jzk_ai.displayName,
+      },
       totals,
       byDay: serialise(byDay),
       byWeek: serialise(byWeek),

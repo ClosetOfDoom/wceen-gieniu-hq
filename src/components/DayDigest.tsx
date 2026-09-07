@@ -17,6 +17,10 @@ interface Props {
   stale?: boolean
   /** Date of the row actually shown (YYYY-MM-DD). */
   dateLabel?: string
+  /** Orders today that earned no margin, so the profit figure is incomplete. */
+  unmappedCount?: number
+  /** The field(s) the product match broke on, straight from profit-data. */
+  unmappedFields?: string[]
 }
 
 const fmtInt = (n: number | null | undefined) =>
@@ -107,7 +111,7 @@ function Row({
   )
 }
 
-export function DayDigest({ today, yesterday, stale, dateLabel }: Props) {
+export function DayDigest({ today, yesterday, stale, dateLabel, unmappedCount = 0, unmappedFields = [] }: Props) {
   const hasAny = !!today
   const cmp = yesterday ? 'vs wczoraj' : 'brak danych z wczoraj'
 
@@ -170,6 +174,27 @@ export function DayDigest({ today, yesterday, stale, dateLabel }: Props) {
             value={fmtRoas(today?.real_roas)}
             d={delta(today?.real_roas, yesterday?.real_roas)}
           />
+          {unmappedCount > 0 && (
+            <div
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.62rem',
+                color: 'var(--orange)',
+                marginTop: 7,
+                lineHeight: 1.6,
+              }}
+            >
+              {unmappedCount} {unmappedCount === 1 ? 'order' : 'orders'} unmapped, margin excluded, sir
+              {unmappedFields.length > 0 && (
+                <>
+                  <br />
+                  <span style={{ color: 'var(--muted2)' }}>
+                    Nie dopasowano po: {unmappedFields.join(' · ')}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
           {stale && dateLabel && (
             <div
               style={{

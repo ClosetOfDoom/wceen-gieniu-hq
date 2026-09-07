@@ -443,6 +443,8 @@ function RightPanel({
   digestYesterday,
   digestStale,
   digestDateLabel,
+  digestUnmappedCount,
+  digestUnmappedFields,
 }: {
   response: string
   chart?: InsightChartSpec
@@ -474,6 +476,8 @@ function RightPanel({
   digestYesterday: DailyPerformance | null
   digestStale: boolean
   digestDateLabel?: string
+  digestUnmappedCount: number
+  digestUnmappedFields: string[]
 }) {
   const [inputVal, setInputVal] = useState('')
 
@@ -520,6 +524,8 @@ function RightPanel({
           yesterday={digestYesterday}
           stale={digestStale}
           dateLabel={digestDateLabel}
+          unmappedCount={digestUnmappedCount}
+          unmappedFields={digestUnmappedFields}
         />
 
         {/* Response text — only ever a real answer. Idle and thinking states are
@@ -1471,6 +1477,11 @@ export default function App() {
   const hasUnknownMargin  = unknownMarginRev > 0
   const conflicts         = profitData?.conflicts ?? []
   const profitMismatch    = profitData?.ok && profitData.ordersCount === 0 && (ordersData?.totals.today_orders ?? 0) > 0
+  // Orders in the range that earned NO margin. Est. Profit is a sum over the
+  // mapped orders only, so this number has to travel with it — on the card and
+  // in the digest — or the card reads as complete when it is not.
+  const noMarginCount     = profitData?.ok ? (profitData.noMarginOrdersCount ?? 0) : 0
+  const noMarginFields    = profitData?.ok ? (profitData.noMarginFields ?? []) : []
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -1536,7 +1547,9 @@ export default function App() {
                       positive={profitPositive}
                       warning={profitWarning}
                       danger={profitDanger}
-                      sublabel="Margin − ad spend"
+                      sublabel={noMarginCount > 0
+                        ? `Margin − ad spend · ${noMarginCount} bez mapowania`
+                        : 'Margin − ad spend'}
                       onClick={() => toggleMetric('est_profit')}
                       active={expandedMetric === 'est_profit'}
                     />
@@ -1821,6 +1834,8 @@ export default function App() {
         digestYesterday={digestYesterday}
         digestStale={digestStale}
         digestDateLabel={digestToday?.date}
+        digestUnmappedCount={noMarginCount}
+        digestUnmappedFields={noMarginFields}
       />
 
       {/* Mobile bottom nav */}

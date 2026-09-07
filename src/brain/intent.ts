@@ -312,7 +312,7 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
     'ile memory', 'ile jzk', 'ile jsu', 'ile kursu', 'ile produktow'
   )) {
     detectedIntent = 'memory_product_scope'
-    result = w(buildMemoryBundleAnswer(perf, status), buildMemoryBundleSpoken(perf))
+    result = w(buildMemoryBundleAnswer(perf, status, ordersData), buildMemoryBundleSpoken(perf, ordersData))
   }
 
   // ── Revenue / orders ─────────────────────────────────────────────────────────

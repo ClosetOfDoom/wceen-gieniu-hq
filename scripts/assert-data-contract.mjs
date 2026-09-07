@@ -45,16 +45,16 @@ if (!existsSync(classifierPath)) {
   }
 }
 
-// 2. dataAudit.ts exists and checks wix_orders
+// 2. dataAudit.ts exists and checks the orders table (named `orders`, not `wix_orders`)
 const auditPath = join(rootDir, 'src/lib/dataAudit.ts')
 if (!existsSync(auditPath)) {
   fail('src/lib/dataAudit.ts does not exist')
 } else {
   const c = readFileSync(auditPath, 'utf8')
-  if (c.includes("from('wix_orders')")) {
-    pass('dataAudit.ts queries wix_orders table')
+  if (c.includes("from('orders')") || c.includes("from('wix_orders')")) {
+    pass('dataAudit.ts queries the orders table')
   } else {
-    fail('dataAudit.ts does not query wix_orders')
+    fail('dataAudit.ts does not query the orders table')
   }
   if (c.includes('classificationAvailable') && c.includes('hasProductName')) {
     pass('dataAudit.ts reports classificationAvailable and hasProductName')
@@ -68,7 +68,11 @@ if (!existsSync(auditPath)) {
   }
 }
 
-// 3. responses.ts has buildMemoryBundleAnswer with honest "cannot classify" message
+// 3. buildMemoryBundleAnswer reports REAL per-product counts and never passes
+//    all-order totals off as a product count. Classification is available now
+//    (orders.product_name_raw + the price table in productCatalog.js), so the old
+//    blanket "unavailable" answer would itself be the dishonest one — but the
+//    honest gap message must survive for when the orders endpoint is down.
 const responsesPath = join(rootDir, 'src/brain/responses.ts')
 if (!existsSync(responsesPath)) {
   fail('src/brain/responses.ts does not exist')
@@ -79,10 +83,21 @@ if (!existsSync(responsesPath)) {
   } else {
     fail('responses.ts missing buildMemoryBundleAnswer or buildMemoryBundleSpoken')
   }
-  if (c.includes('Product classification is unavailable') || c.includes('cannot classify')) {
-    pass('responses.ts buildMemoryBundleAnswer tells user product classification is unavailable')
+  const mb = c.slice(c.indexOf('export function buildMemoryBundleAnswer'), c.indexOf('export function buildCreativesReport'))
+  if (mb.includes('today_classified') && mb.includes('memory_pack')) {
+    pass('responses.ts buildMemoryBundleAnswer reports real per-product counts from today_classified')
   } else {
-    fail('responses.ts buildMemoryBundleAnswer does not mention classification unavailability — may fake metrics')
+    fail('responses.ts buildMemoryBundleAnswer must read orders.today_classified — never all-order totals as a product count')
+  }
+  if (mb.includes('!orders || !orders.ok') && mb.includes('nie mam rozbicia na produkty')) {
+    pass('responses.ts buildMemoryBundleAnswer still refuses to guess when the orders source is down')
+  } else {
+    fail('responses.ts buildMemoryBundleAnswer must keep an honest gap message for when orders-data is unavailable')
+  }
+  if (mb.includes('unmapped, margin excluded')) {
+    pass('responses.ts buildMemoryBundleAnswer names unmapped orders out loud')
+  } else {
+    fail('responses.ts buildMemoryBundleAnswer must state how many orders are unmapped')
   }
   // Must NOT use all-order totals as memory-bundle answer (no fake metrics)
   if (c.includes('wix_orders_product_mapping_fix') || c.includes('line items')) {
