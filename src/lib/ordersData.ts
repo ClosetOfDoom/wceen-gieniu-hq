@@ -23,6 +23,9 @@ export interface OrdersData {
   source_table: string
   totals: {
     all_orders: number
+    /** Raw order ROWS read before grouping by order id — equals all_orders while
+     *  the table stores one row per order. A gap means line items arrived. */
+    order_rows?: number
     latest_order_date: string | null
     today_orders: number
     today_revenue: number

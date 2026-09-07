@@ -78,7 +78,3 @@ export function fetchOrdersInRange(
 export function fetchAllOrders(
   supabaseUrl: string, serviceKey: string, table: string,
 ): Promise<Array<Record<string, unknown>>>
-export function countRows(supabaseUrl: string, serviceKey: string, table: string): Promise<number | null>
-export function fetchLatestOrders(
-  supabaseUrl: string, serviceKey: string, table: string, limit?: number,
-): Promise<Array<Record<string, unknown>>>

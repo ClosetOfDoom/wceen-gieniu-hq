@@ -302,7 +302,7 @@ export function classifyOrder(order) {
 
 // ── Supabase reads ───────────────────────────────────────────────────────────
 
-async function pgGet(supabaseUrl, serviceKey, table, params, extraHeaders = {}) {
+async function pgGet(supabaseUrl, serviceKey, table, params) {
   const url = new URL(`${supabaseUrl}/rest/v1/${table}`)
   for (const [k, v] of Object.entries(params)) {
     if (Array.isArray(v)) { for (const item of v) url.searchParams.append(k, item) }
@@ -314,14 +314,13 @@ async function pgGet(supabaseUrl, serviceKey, table, params, extraHeaders = {}) 
       'apikey':        serviceKey,
       'Content-Type':  'application/json',
       'Accept':        'application/json',
-      ...extraHeaders,
     },
   })
   if (!res.ok) {
     const body = await res.text().catch(() => '')
     throw new Error(`HTTP ${res.status} on ${table}: ${body.slice(0, 200)}`)
   }
-  return { rows: await res.json(), contentRange: res.headers.get('content-range') }
+  return { rows: await res.json() }
 }
 
 // PostgREST hard-caps a response at PAGE rows regardless of `limit`. Every read
@@ -378,26 +377,4 @@ export async function fetchAllOrders(supabaseUrl, serviceKey, table) {
     select: '*',
     order:  'order_created_at.desc.nullslast',
   })
-}
-
-/** Exact row count of a table, without pulling the rows. */
-export async function countRows(supabaseUrl, serviceKey, table) {
-  const { contentRange } = await pgGet(
-    supabaseUrl, serviceKey, table,
-    { select: 'external_order_id', limit: '1' },
-    { 'Prefer': 'count=exact', 'Range': '0-0' },
-  )
-  const total = String(contentRange ?? '').split('/')[1]
-  const n = Number(total)
-  return Number.isFinite(n) ? n : null
-}
-
-/** The single newest order row (ordered, so it is genuinely the newest). */
-export async function fetchLatestOrders(supabaseUrl, serviceKey, table, limit = 20) {
-  const { rows } = await pgGet(supabaseUrl, serviceKey, table, {
-    select: '*',
-    order:  'order_created_at.desc',
-    limit:  String(Math.min(limit, PAGE)),
-  })
-  return rows
 }
