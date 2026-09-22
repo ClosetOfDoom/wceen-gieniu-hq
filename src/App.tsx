@@ -22,7 +22,7 @@ import { StanleyOwl } from './components/StanleyOwl'
 import { CampaignInspector } from './components/CampaignInspector'
 import { GoalBar } from './components/GoalBar'
 import {
-  ppOrdersGoal, revenueGoal, cpaGoal, roasGoal,
+  ppOrdersGoal, revenueGoal, cpaGoal, roasGoal, MONTHLY_REVENUE_TARGET,
   daysInMonthOf, PP_ORDERS_TARGET,
 } from './lib/goalProgress'
 import { warsawHoursSinceMidnight } from './utils/warsawDate'
@@ -68,6 +68,10 @@ import { KpiDetailChart } from './components/KpiDetailChart'
 import { FundingPanel } from './components/FundingPanel'
 import { KPI_METRICS } from './lib/kpiMetrics'
 import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from './lib/timeRange'
+import { buildReport } from './lib/exportReport'
+import { aggregatePerf, resolveRangePerf } from './lib/rangePerf'
+import { copyText } from './utils/clipboard'
+import { fmtPln, fmtNum, fmtRoas, fmtPct } from './utils/format'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -75,53 +79,6 @@ import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from './lib/t
 // ── Time range (panel-wide) — aggregation helpers over the daily performance view ─
 
 // Sum a numeric field across rows (nulls treated as 0).
-function sumField(rows: DailyPerformance[], f: keyof DailyPerformance): number {
-  return rows.reduce((s, r) => s + (Number(r[f] ?? 0) || 0), 0)
-}
-
-// Aggregate up to 7 recent days into one DailyPerformance-shaped total.
-function aggregatePerf(rows: DailyPerformance[]): DailyPerformance | null {
-  if (rows.length === 0) return null
-  const orders  = sumField(rows, 'wix_orders')
-  const revenue = sumField(rows, 'wix_revenue')
-  const spend   = sumField(rows, 'meta_spend')
-  const sorted  = [...rows].sort((a, b) => a.date.localeCompare(b.date))
-  return {
-    date: `${sorted[0].date} → ${sorted[sorted.length - 1].date}`,
-    wix_orders: orders,
-    wix_revenue: revenue,
-    meta_spend: spend,
-    real_cpa:  orders > 0 ? spend / orders : null,
-    real_roas: spend > 0 ? revenue / spend : null,
-    impressions: sumField(rows, 'impressions'),
-    clicks:      sumField(rows, 'clicks'),
-    link_clicks: sumField(rows, 'link_clicks'),
-    ads_count:   0,
-    meta_purchases:      sumField(rows, 'meta_purchases'),
-    meta_purchase_value: sumField(rows, 'meta_purchase_value'),
-  }
-}
-
-// Resolve the performance row for the selected range from today's row + the recent
-// daily rows (all Warsaw-tz). Filters by the SAME rangeDates() bounds the campaign
-// data uses, so Command Center KPIs and the Campaigns panel can never drift apart.
-function resolveRangePerf(
-  range: TimeRange,
-  today: DailyPerformance | null,
-  rows: DailyPerformance[],
-): DailyPerformance | null {
-  const { from, to } = rangeDates(range)
-  if (range === 'today') {
-    // Fall back to the latest available day (stale note shown separately).
-    return today ?? (rows.length > 0 ? rows[0] : null)
-  }
-  if (range === 'yesterday') {
-    return rows.find(r => r.date === from) ?? null
-  }
-  // week / month — aggregate every day inside [from, to]
-  return aggregatePerf(rows.filter(r => r.date >= from && r.date <= to))
-}
-
 // Detect queries about today's performance — only these trigger day reactions
 function isDayResultQuery(q: string): boolean {
   return /\b(today|dzisiaj|morning brief|brief|how are we doing|wyniki|roas dnia|jak idzie|jak posz|podsumowanie|results|how did we do|daily|dziś)\b/i.test(q)
@@ -137,24 +94,8 @@ type NavSection =
   | 'automation'
   | 'diagnostics'
 
-// ── Format helpers ────────────────────────────────────────────────────────────
-
-function fmtPln(n: number | null | undefined): string {
-  if (n == null) return '—'
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' PLN'
-}
-function fmtNum(n: number | null | undefined): string {
-  if (n == null) return '—'
-  return n.toLocaleString('en-US')
-}
-function fmtRoas(n: number | null | undefined): string {
-  if (n == null) return '—'
-  return n.toFixed(2) + 'x'
-}
-function fmtPct(n: number | null | undefined, decimals = 2): string {
-  if (n == null) return '—'
-  return n.toFixed(decimals) + '%'
-}
+// Format helpers live in src/utils/format.ts so the clipboard export prints the
+// SAME strings these cards print — see the note in that file.
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
@@ -271,7 +212,7 @@ function MobileNav({ active, onNavigate, jsuAlert }: {
 
 function TopBar({
   status, loading, lastRefresh, isStale, onRefresh, theme, onToggleTheme,
-  ambientOn, onToggleAmbient,
+  ambientOn, onToggleAmbient, onCopyReport, copyState, rangeLabel,
 }: {
   status: DataStatus
   loading: boolean
@@ -282,6 +223,9 @@ function TopBar({
   onToggleTheme: () => void
   ambientOn: boolean
   onToggleAmbient: () => void
+  onCopyReport: () => void
+  copyState: 'idle' | 'copied' | 'error'
+  rangeLabel: string
 }) {
   const [now, setNow] = useState(new Date())
   useEffect(() => {
@@ -332,6 +276,15 @@ function TopBar({
           )}
           <button className="btn-sm" onClick={onRefresh} disabled={loading}>
             {loading ? '…' : '↻ Refresh'}
+          </button>
+          <button
+            className="btn-sm"
+            onClick={onCopyReport}
+            disabled={loading}
+            title={`Skopiuj pełny raport Markdown dla zakresu ${rangeLabel} — do wklejenia w zewnętrznej analizie`}
+            style={copyState === 'error' ? { borderColor: 'var(--orange)', color: 'var(--orange)' } : undefined}
+          >
+            {copyState === 'copied' ? '✓ SKOPIOWANO' : copyState === 'error' ? '⚠ BŁĄD KOPIOWANIA' : '⧉ COPY'}
           </button>
           <button
             className="btn-sm"
@@ -779,13 +732,19 @@ export default function App() {
   // Per-range campaign rows for the campaign inspector dropdown.
   const [campaignRows, setCampaignRows] = useState<MetaAdDaily[]>([])
   const [campaignRowsLoading, setCampaignRowsLoading] = useState(true)
+  // Kept so the exported report can say WHY there are no campaign rows rather
+  // than printing an empty section that reads like "no spend".
+  const [campaignFetchError, setCampaignFetchError] = useState<string | null>(null)
   useEffect(() => {
     setCampaignRowsLoading(true)
     fetchCampaignRows(rangeDates(range))
-      .then(r => setCampaignRows(r.rows))
-      .catch(() => setCampaignRows([]))
+      .then(r => { setCampaignRows(r.rows); setCampaignFetchError(r.fetchError ?? null) })
+      .catch(e => { setCampaignRows([]); setCampaignFetchError(String(e?.message ?? e)) })
       .finally(() => setCampaignRowsLoading(false))
   }, [range])
+
+  // COPY button feedback: 'copied' / 'error' for 2 s, then back to idle.
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle')
 
   // Revenue Trend chart data: the range's daily rows + the previous period of the
   // SAME length (comparison line), both from the daily-performance view.
@@ -1500,6 +1459,48 @@ export default function App() {
   const excludedRevenue   = profitData?.ok ? (profitData.excludedRevenue ?? 0) : 0
   const excludedBreakdown = profitData?.ok ? (profitData.excludedBreakdown ?? []) : []
 
+  // ── Clipboard export ─────────────────────────────────────────────────────────
+  // The report is assembled from the variables already computed above for the
+  // KPI cards — displayPerf, profitData, cpaBlended, campaignRows, the goal
+  // results. It issues no queries of its own, so the exported figures and the
+  // rendered figures are the same values, not two derivations of them.
+  const handleCopyReport = useCallback(async () => {
+    const markdown = buildReport({
+      range,
+      from: rangeFrom,
+      to: rangeTo,
+      rangeSub,
+      buildHash: __BUILD_HASH__,
+      generatedAt: new Date().toISOString(),
+      perf: displayPerf,
+      prevPerf: aggregatePerf(prevTrendRows),
+      dailyRows: trendRows,
+      profit: profitData,
+      cpa: cpaBlended,
+      roas: roasBlended,
+      campaignRows,
+      campaignError: campaignFetchError,
+      goals: {
+        pp: ppGoal,
+        revenue: revGoal,
+        cpa: cpaGoalRes,
+        roas: roasGoalRes,
+        ppOrders: ppOrdersRange,
+        ppTarget: Math.max(1, Math.round(ppExpected)),
+        revenueTarget: MONTHLY_REVENUE_TARGET * (rangePaceDays / goalDaysIn),
+      },
+    })
+    const res = await copyText(markdown)
+    setCopyState(res.ok ? 'copied' : 'error')
+    if (!res.ok) console.error('COPY failed:', res.error)
+    setTimeout(() => setCopyState('idle'), 2000)
+  }, [
+    range, rangeFrom, rangeTo, rangeSub, displayPerf, prevTrendRows, trendRows,
+    profitData, cpaBlended, roasBlended, campaignRows, campaignFetchError,
+    ppGoal, revGoal, cpaGoalRes, roasGoalRes, ppOrdersRange, ppExpected,
+    rangePaceDays, goalDaysIn,
+  ])
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -1520,6 +1521,9 @@ export default function App() {
           lastRefresh={lastRefresh}
           isStale={metaStats.isStale}
           onRefresh={() => { loadData(); loadAds(); loadRuns(); loadJsuFunnel(); loadOrdersData(); loadProfitData(); loadMonthTrend() }}
+          onCopyReport={handleCopyReport}
+          copyState={copyState}
+          rangeLabel={RANGE_LABELS[range]}
           theme={theme}
           onToggleTheme={handleToggleTheme}
           ambientOn={ambientOn}

@@ -22,6 +22,8 @@ export interface ProductBreakdownItem {
   productKey: string
   displayName: string
   scope?: 'memory' | 'language' | 'cogni'
+  /** Catalog price per unit, straight from productCatalog.js. */
+  catalogPrice?: number
   orders: number
   units?: number
   revenue: number
@@ -74,6 +76,8 @@ export interface ProfitData {
   // "N bez mapowania" figure that asks somebody to go and fix something.
   excludedOrdersCount?: number
   excludedRevenue?: number
+  /** Orders whose UTC day differs from their Warsaw day (daily-view mismatch). */
+  dayBoundaryOrders?: number
   excludedBreakdown?: ExcludedBreakdownItem[]
   // Blended = everything except the exclusions. Profit, CPA and ROAS run on
   // these, so one 3450 PLN camp deposit cannot invent a day's ROAS.

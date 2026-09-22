@@ -181,6 +181,9 @@ export const handler = async (event) => {
       const p = PRODUCTS[d.productKey]
       productAccum[d.productKey] = {
         productKey: d.productKey, displayName: p.displayName, scope: p.scope,
+        // The catalog price travels with the breakdown so the exported report
+        // can print it without importing the catalog into the browser bundle.
+        catalogPrice: p.catalogPrice,
         orders: 0, units: 0, revenue: 0,
         contributionMargin: p.contributionMargin, marginTotal: 0,
       }

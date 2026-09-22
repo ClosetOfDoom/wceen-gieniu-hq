@@ -22,6 +22,7 @@
     "assert:tts-fallback": "node scripts/assert-tts-fallback.mjs",
     "assert:profit-metrics": "node scripts/assert-profit-metrics.mjs",
     "assert:profit-live": "node scripts/assert-profit-live.mjs",
+    "report": "node scripts/print-report.mjs",
     "assert:voice-language": "node scripts/assert-browser-tts-language.mjs",
     "assert:gieniu-command": "node scripts/assert-gieniu-command.mjs",
     "assert:stt-language": "node scripts/assert-stt-language.mjs",
