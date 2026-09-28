@@ -14,8 +14,9 @@
 //   CAP        no endpoint returns EXACTLY 1000 rows — that is the signature of
 //              PostgREST's silent cap, not of a data set that happens to end.
 //   RECONCILE  the endpoint's order count and revenue equal the daily view's for
-//              the same range. The view aggregates the same table, so any gap
-//              is a truncated read or a wrong filter.
+//              the same range, give or take the orders sitting on the Warsaw/UTC
+//              day boundary — a count this measures on both sides rather than
+//              assuming. Anything beyond that is a truncated read or a wrong filter.
 //
 //   npm run assert:profit-live               # today, yesterday, week
 //   npm run assert:profit-live 2026-09-07    # plus one named day
@@ -80,6 +81,20 @@ async function viewRange(from, to) {
   }
 }
 
+/**
+ * How many orders on a given Warsaw day carry the PREVIOUS day's UTC date.
+ * These are the orders the daily view files one day early, so they are the
+ * measured slack between a Warsaw-day count and the view's UTC-day count.
+ */
+async function dayBoundaryCount(day) {
+  try {
+    const d = await getJson(`${SITE}/.netlify/functions/profit-data?date=${day}`, 'profit-data')
+    return d?.ok ? (d.dayBoundaryOrders ?? 0) : 0
+  } catch {
+    return 0
+  }
+}
+
 const profitData = (from, to) =>
   getJson(`${SITE}/.netlify/functions/profit-data?from=${from}&to=${to}&debug=1`, 'profit-data')
 
@@ -138,22 +153,31 @@ async function checkRange(label, from, to) {
   // supabase/migrations/view_daily_performance_warsaw_day.sql removes the
   // difference at the source. Until it is applied by hand in Supabase, a
   // single-day check tolerates the boundary and says so.
+  // Slack has TWO measured halves, not one measured half plus a guess:
+  //   · orders inside this range whose UTC day is the day before  → the view
+  //     counts them one day EARLIER than we do (we have them, it does not)
+  //   · orders on the day AFTER this range with the same property → the view
+  //     counts them INSIDE this range (it has them, we do not)
+  // Counting only the first half reported a real boundary shift as a truncated
+  // read: on 2026-09-27 the range held 0 boundary orders while the three that
+  // moved belonged to the 28th.
   const boundary = d.dayBoundaryOrders ?? 0
-  // Orders can shift INTO the range as well as out of it, so the window is
-  // the measured count plus one day's worth at the far edge.
-  const slack = boundary + 1
+  const boundaryNextDay = await dayBoundaryCount(shiftDay(to, 1))
+  const slack = boundary + boundaryNextDay
   const orderGap = d.ordersCount - v.orders
 
   if (orderGap === 0) {
     pass(`RECONCILE ${label}: order count matches the view exactly (${d.ordersCount})`)
   } else if (Math.abs(orderGap) <= slack) {
-    pass(`RECONCILE ${label}: ${d.ordersCount} vs view ${v.orders} (gap ${orderGap}) — within the `
-       + `UTC-vs-Warsaw day boundary (${boundary} order(s) in the 22:00-24:00 UTC window). `
-       + 'Apply view_daily_performance_warsaw_day.sql to make this exact.')
+    pass(`RECONCILE ${label}: ${d.ordersCount} vs view ${v.orders} (gap ${orderGap}) — the `
+       + `UTC-vs-Warsaw day boundary explains it: ${boundary} order(s) in range and `
+       + `${boundaryNextDay} on the next day were placed 00:00-01:59 Polish time, so their `
+       + 'UTC date is the day before. Apply supabase/migrations/20260928_warsaw_business_day.sql '
+       + 'to make this exact.')
   } else {
     fail(`RECONCILE ${label}: profit-data has ${d.ordersCount} orders, view has ${v.orders} `
-       + `(gap ${orderGap}), more than the ${slack} the day boundary can explain — `
-       + 'truncated read or filter mismatch')
+       + `(gap ${orderGap}), more than the ${slack} the day boundary can explain `
+       + `(${boundary} in range + ${boundaryNextDay} next day) — truncated read or filter mismatch`)
   }
 
   // Revenue gets the same treatment, bounded by the value of the orders that
@@ -164,6 +188,9 @@ async function checkRange(label, from, to) {
   const maxOrder = rows.length > 0
     ? Math.max(...rows.map(r => Number(r.amount) || 0))
     : (d.ordersCount > 0 ? d.revenue / d.ordersCount : 0)
+  // Bounded by the largest order in the range, not the average: the order on the
+  // boundary is a specific order, and an average bound once rejected a real
+  // 119.00 PLN shift as a 0.35 PLN discrepancy.
   const revSlack = slack * maxOrder + 0.01
   if (Math.abs(revGap) < 0.01) {
     pass(`RECONCILE ${label}: revenue matches the view exactly (${pln(d.revenue)})`)
