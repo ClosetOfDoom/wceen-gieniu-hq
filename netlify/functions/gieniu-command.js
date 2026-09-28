@@ -8,6 +8,7 @@
 import { FUNDING_RADAR } from '../shared/funding.js'
 import { readTable } from '../shared/supabaseRead.js'
 import { fetchOrdersInRange } from '../shared/productCatalog.js'
+import { businessDay, businessToday, businessDaysAgo, businessWeekStart } from '../shared/businessDay.js'
 
 // Attendance and registration collection stopped here. Anything about who was
 // in the room is history, not a current figure.
@@ -652,11 +653,7 @@ function buildRedFlagsAnswer(ctx) {
 
 // ── Helpers for historical builders ───────────────────────────────────────────
 
-function prevDay(dateStr) {
-  const d = new Date(dateStr + 'T12:00:00Z')
-  d.setUTCDate(d.getUTCDate() - 1)
-  return d.toISOString().slice(0, 10)
-}
+const prevDay = (dateStr) => businessDaysAgo(1, dateStr)
 
 function sign(n) { return n >= 0 ? '+' : '' }
 
@@ -764,13 +761,8 @@ function buildWeekSummaryAnswer(ctx) {
     const msg = 'No historical data available.'
     return { text: msg, speech: msg, sources: [], warnings: ['no recentTrend'] }
   }
-  const today     = ctx.dataHealth?.today ?? (trend[0]?.date ?? '')
-  const todayD    = new Date(today + 'T12:00:00Z')
-  const dow       = todayD.getUTCDay()
-  const daysBack  = dow === 0 ? 6 : dow - 1
-  const weekStart = new Date(todayD)
-  weekStart.setUTCDate(todayD.getUTCDate() - daysBack)
-  const weekStartStr = weekStart.toISOString().slice(0, 10)
+  const today        = ctx.dataHealth?.today ?? (trend[0]?.date ?? '')
+  const weekStartStr = businessWeekStart(today)
 
   const rows = trend.filter(r => r.date >= weekStartStr).sort((a, b) => a.date < b.date ? -1 : 1)
   if (rows.length === 0) {
@@ -1112,14 +1104,8 @@ function buildContextText(context, serverAds = [], creativeAnalyticsText = '') {
 
 // ── Per-creative analytics (meta_ads_daily, service-role) ─────────────────────
 
-function warsawTodayStr() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-}
-function daysAgoStr(base, n) {
-  const d = new Date(base + 'T12:00:00Z')
-  d.setUTCDate(d.getUTCDate() - n)
-  return d.toISOString().slice(0, 10)
-}
+const warsawTodayStr = businessToday
+const daysAgoStr = (base, n) => businessDaysAgo(n, base)
 function scopeOf(campaignName) {
   const n = String(campaignName || '').trim()
   if (/^pp[-\s]/i.test(n)) return 'memory'
@@ -1403,7 +1389,7 @@ function renderWebinarRegistrants(sessions, participants, buyers) {
 async function fetchProductBuyers(supabaseUrl, serviceKey, days = 60) {
   if (!supabaseUrl || !serviceKey) return { ok: false, rows: [] }
   try {
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+    const today = businessToday()
     const from = new Date(Date.parse(today + 'T12:00:00Z') - (days - 1) * 86400000).toISOString()
     // `orders` already holds more rows than PostgREST returns in one response,
     // so limit 5000 silently meant "the newest 1000". readTable pages instead.
@@ -1448,7 +1434,7 @@ function renderProductBuyers(data) {
     const amt = Number(r.amount)
     const k = PRICES[amt]
     if (!k) continue
-    const date = new Date(r.order_created_at).toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+    const date = businessDay(r.order_created_at)
     sales.push({
       k,
       email: maskEmail2(r.email),
@@ -1989,8 +1975,7 @@ export const handler = async (event) => {
 
   // Fetch today's per-ad data server-side (service-role bypasses RLS).
   // This runs in parallel with intent detection — result arrives before LLM call.
-  const today = ctx.dataHealth?.today
-    ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const today = ctx.dataHealth?.today ?? businessToday()
   const serverAdsPromise = fetchTodayAdsServerSide(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY,

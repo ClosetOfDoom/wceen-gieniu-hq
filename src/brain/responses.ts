@@ -1,3 +1,4 @@
+import { businessToday } from '../lib/businessDay'
 import type { DailyPerformance, DataStatus, MetaAdDaily, MetaStatsToday } from '../services/data'
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import { pct } from '../services/webinarFunnel'
@@ -1122,7 +1123,7 @@ export function buildAdsDiagnosis(
   const totalPurchases = ads.reduce((s, a) => s + adPurchases(a), 0)
 
   const adsDate = ads[0]?.date ?? ''
-  const today   = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const today   = businessToday()
   const isStaleAds = adsDate !== '' && adsDate < today
 
   const lines: string[] = [opener, '', `— ADS DIAGNOSIS — ${isStaleAds ? adsDate + ' (latest available)' : 'TODAY'} —`, '']
@@ -1316,7 +1317,7 @@ export function buildAdsDiagnosisSpoken(
   if (ads.length === 0) return 'No Meta campaign rows found for today yet. The Make scenario may not have synced campaigns. Check the Automation panel. The Campaigns page shows the latest available date.'
 
   const adsDate    = ads[0]?.date ?? ''
-  const today      = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const today      = businessToday()
   const isStaleAds = adsDate !== '' && adsDate < today
 
   const totalSpend    = ads.reduce((s, a) => s + (a.spend ?? 0), 0)

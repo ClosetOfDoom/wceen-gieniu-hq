@@ -1,3 +1,4 @@
+import { businessToday } from '../lib/businessDay'
 import { useState, useEffect } from 'react'
 import type { DailyPerformance, MetaAdDaily, AutomationRun } from '../services/data'
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
@@ -54,7 +55,7 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
     fetchDataHealth().then(h => { setDataHealth(h); setHealthLoading(false) }).catch(() => setHealthLoading(false))
   }, [])
 
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const today = businessToday()
   const latestMetaDate = ads[0]?.date ?? trend.find(r => r.meta_spend > 0)?.date ?? '—'
   const latestWixDate  = trend[0]?.date ?? '—'
   const metaFresh      = latestMetaDate === today

@@ -1,3 +1,4 @@
+import { businessToday } from '../lib/businessDay'
 import { useEffect, useMemo, useState } from 'react'
 import { FUNDING, FUNDING_PATHS, type FundingItem, type FundingVerdict, type FundingPathKey } from '../data/funding'
 import {
@@ -22,7 +23,7 @@ const VERDICT_COLOR: Record<FundingVerdict, string> = {
   GO: 'var(--emerald)', MAYBE: 'var(--amber)', SKIP: 'var(--muted)',
 }
 
-const warsawTodayISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+const warsawTodayISO = businessToday
 
 type SortKey = 'urgency' | 'amount' | 'deadline'
 

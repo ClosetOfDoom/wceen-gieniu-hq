@@ -29,6 +29,7 @@
 
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
+import { businessToday, businessDaysAgo, businessWeekStart } from '../netlify/shared/businessDay.js'
 
 const root = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const rootDir = process.platform === 'win32' ? root.replace(/^\//, '') : root
@@ -54,16 +55,10 @@ const fail = (m) => { console.error('  FAIL', m); errors++ }
 const pass = (m) => console.log('  pass', m)
 
 const pln = (n) => Number(n ?? 0).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const warsawToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-const shiftDay = (iso, days) =>
-  new Date(Date.parse(`${iso}T12:00:00Z`) + days * 86400000).toISOString().slice(0, 10)
+const warsawToday = businessToday
+const shiftDay = (iso, days) => businessDaysAgo(-days, iso)
 
-/** Monday of the ISO week containing a YYYY-MM-DD date. */
-function weekStartOf(iso) {
-  const d = new Date(iso + 'T12:00:00Z')
-  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
-  return d.toISOString().slice(0, 10)
-}
+const weekStartOf = businessWeekStart
 
 async function getJson(url, label) {
   const res = await fetch(url, { headers: { Accept: 'application/json', 'Cache-Control': 'no-store' } })

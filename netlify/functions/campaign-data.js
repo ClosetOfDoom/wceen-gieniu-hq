@@ -4,6 +4,7 @@
 // aggregate Meta spend exists but campaign-level rows are missing.
 
 import { readTable } from '../shared/supabaseRead.js'
+import { businessToday } from '../shared/businessDay.js'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -52,7 +53,7 @@ export const handler = async (event) => {
     }
   }
 
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const today = businessToday()
 
   // ── Range mode: /campaign-data?from=YYYY-MM-DD&to=YYYY-MM-DD ───────────────
   // Aggregates meta_ads_daily per creative across the [from,to] window so the

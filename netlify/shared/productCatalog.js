@@ -25,6 +25,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { readTable } from './supabaseRead.js'
+import { businessDay, businessToday, businessDaysAgo } from './businessDay.js'
 
 // ── Catalog ──────────────────────────────────────────────────────────────────
 // `contributionMargin` is the AUTHORITATIVE margin at `catalogPrice`.
@@ -240,16 +241,11 @@ export function classifyAmount(amount, rawName) {
 
 // ── Row field extraction ─────────────────────────────────────────────────────
 
-export function toWarsawDate(val) {
-  if (val == null) return ''
-  const s = String(val)
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
-  try { return new Date(s).toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' }) }
-  catch { return s.slice(0, 10) }
-}
+// The business day is defined once, in ./businessDay.js. This name is kept
+// because the whole module and its callers speak of order dates this way.
+export const toWarsawDate = businessDay
 
-export const warsawToday = () =>
-  new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+export const warsawToday = businessToday
 
 export const extractOrderDate = (row) =>
   toWarsawDate(row.order_created_at ?? row.order_date ?? row.created_at ?? row.date ?? row.created ?? '')
@@ -338,8 +334,7 @@ export function classifyOrder(order) {
 // without an explicit order column and pages past PostgREST's silent 1000-row
 // cap. See that file for why this is not optional.
 
-const padDays = (iso, days) =>
-  new Date(Date.parse(`${iso}T12:00:00Z`) + days * 86400000).toISOString().slice(0, 10)
+const padDays = (iso, days) => businessDaysAgo(-days, iso)
 
 /**
  * Does this row belong in the counted set?

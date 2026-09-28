@@ -1,3 +1,4 @@
+import { businessToday } from './businessDay'
 import type { MetaAdDaily } from '../services/data'
 import { bustUrl } from '../utils/cacheBust'
 
@@ -126,7 +127,7 @@ export function buildCampaignDiagnosis(
   requestedDate: string,
   usedDate: string,
 ): CampaignDiagnosis {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const today = businessToday()
   const isStale = usedDate !== '' && usedDate < (requestedDate || today)
 
   const totalSpend     = allRows.reduce((s, r) => s + (r.spend ?? 0), 0)
@@ -265,7 +266,7 @@ export interface CampaignFetchResult {
 // Pass { from, to } (Warsaw YYYY-MM-DD) to aggregate a range per creative; omit
 // for the legacy today/latest single-day behaviour.
 export async function fetchCampaignRows(range?: { from: string; to: string }): Promise<CampaignFetchResult> {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const today = businessToday()
   const empty: CampaignFetchResult = {
     rows: [], usedDate: '', requestedDate: today,
     aggregateMetaSpendExists: false, aggregateLatestDate: null,

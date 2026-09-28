@@ -8,6 +8,7 @@
 import { classifyBySchedule } from './scheduleUtils.js'
 
 import { readTable } from '../shared/supabaseRead.js'
+import { businessToday, businessYesterday, businessWeekStart, businessDaysAgo } from '../shared/businessDay.js'
 import { fetchOrdersInRange } from '../shared/productCatalog.js'
 
 const CORS = {
@@ -160,21 +161,16 @@ function extractOrderEmail(row) {
 // ── Date ranges (Warsaw) ──────────────────────────────────────────────────────
 
 function getWarsawRanges() {
-  const now = new Date()
-  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-  const [year, month, day] = todayStr.split('-').map(Number)
-
-  const yesterdayD = new Date(year, month - 1, day - 1)
-  const yesterdayStr = yesterdayD.toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-
-  const todayDow     = new Date(year, month - 1, day).getDay() // 0=Sun,1=Mon
-  const daysToMon    = todayDow === 0 ? 6 : todayDow - 1
-  const weekStartD   = new Date(year, month - 1, day - daysToMon)
-  const weekStartStr = weekStartD.toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-
-  // Exclusive upper bound for Supabase gte/lt filters
-  const tomorrowD   = new Date(year, month - 1, day + 1)
-  const tomorrowStr = tomorrowD.toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  // These used to build Date objects with `new Date(year, month - 1, day - 1)`,
+  // which constructs in the SERVER's timezone and only then formatted in Warsaw.
+  // It happened to agree while Netlify runs in UTC and Warsaw is ahead of it;
+  // it is not a property anyone should be relying on. The business day is
+  // defined once, in ../shared/businessDay.js.
+  const todayStr     = businessToday()
+  const yesterdayStr = businessYesterday(todayStr)
+  const weekStartStr = businessWeekStart(todayStr)
+  // Exclusive upper bound for Supabase gte/lt filters.
+  const tomorrowStr  = businessDaysAgo(-1, todayStr)
 
   return {
     today:          todayStr,

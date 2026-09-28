@@ -1,3 +1,4 @@
+import { businessToday } from '../lib/businessDay'
 import { supabase, pagedSelect } from './supabase'
 
 export interface DailyPerformance {
@@ -65,7 +66,7 @@ export function computeStatus(row: DailyPerformance | null): DataStatus {
 }
 
 export async function fetchTodayPerformance(): Promise<DailyPerformance | null> {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const today = businessToday()
   const { data, error } = await supabase
     .from('v_daily_wix_meta_performance')
     .select('*')
@@ -112,7 +113,7 @@ export async function fetchPerformanceBetween(from: string, to: string): Promise
 }
 
 export async function fetchTopAds(date?: string): Promise<MetaAdDaily[]> {
-  const targetDate = date ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const targetDate = date ?? businessToday()
   const { data, error } = await supabase
     .from('meta_ads_daily')
     .select('*')
@@ -175,7 +176,7 @@ export async function fetchAutomationRuns(limit = 5): Promise<AutomationRun[]> {
 }
 
 export async function fetchMetaStatsToday(): Promise<MetaStatsToday> {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const today = businessToday()
 
   // The per-ad read had neither order nor limit, so PostgREST decided both.
   const [{ rows: todayRows }, { data: latestRow }] = await Promise.all([

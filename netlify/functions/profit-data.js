@@ -22,6 +22,7 @@ import {
 } from '../shared/productCatalog.js'
 import { readTable } from '../shared/supabaseRead.js'
 import { toWarsawDate } from '../shared/productCatalog.js'
+import { businessWallClock } from '../shared/businessDay.js'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -74,20 +75,22 @@ export const handler = async (event) => {
   // How many of this range's orders fall on a DIFFERENT calendar day under the
   // daily view's basis than under ours.
   //
-  // v_daily_wix_meta_performance buckets with `order_created_at::date`, i.e. the
-  // UTC day; this endpoint buckets by the Warsaw day, which is the business's own
-  // calendar. Orders placed between 22:00 and 24:00 UTC (midnight to 02:00 in
-  // Warsaw) therefore land on different days in the two places. Nothing is lost
-  // — the totals over any two consecutive days are identical — but a single-day
-  // count can differ, so reconciliation has to know by how much it legitimately
-  // can. supabase/migrations/view_daily_performance_warsaw_day.sql removes the
+  // The business day is Europe/Warsaw. Orders placed 00:00-01:59 Polish time in
+  // summer (00:00-00:59 in winter) carry the PREVIOUS day's UTC date, because
+  // order_created_at is a timestamptz stored in UTC.
+  //
+  // v_daily_wix_meta_performance still buckets with `order_created_at::date`,
+  // i.e. the UTC day, so a single-day count there can differ from this one.
+  // Nothing is lost — the totals over any two consecutive days are identical —
+  // but reconciliation has to know by how much it legitimately can.
+  // supabase/migrations/20260928_warsaw_business_day.sql removes the
   // discrepancy at the source; it needs applying by hand in Supabase.
-  const dayBoundaryOrders = orders.filter(order => {
+  const isDayBoundary = (order) => {
     const ts = order.raw[0]?.order_created_at
     if (!ts) return false
-    const utcDay = String(ts).slice(0, 10)
-    return utcDay !== toWarsawDate(ts)
-  }).length
+    return String(ts).slice(0, 10) !== toWarsawDate(ts)
+  }
+  const dayBoundaryOrders = orders.filter(isDayBoundary).length
 
   // ── Classify and accumulate ───────────────────────────────────────────────
   const productAccum = {}
@@ -118,6 +121,13 @@ export const handler = async (event) => {
       line_count:       order.lineCount,
       product_name_raw: order.productNameRaw ?? '—',
       order_date:       order.orderDate,
+      // The raw timestamptz, the UTC day it falls on, and the Warsaw wall clock.
+      // Without these a night order cannot be told apart from a daytime one, and
+      // the day-boundary count cannot be checked against the orders it counted.
+      order_created_at: order.raw[0]?.order_created_at ?? null,
+      utc_date:         String(order.raw[0]?.order_created_at ?? '').slice(0, 10) || null,
+      warsaw_time:      businessWallClock(order.raw[0]?.order_created_at),
+      day_boundary:     isDayBoundary(order),
     }
 
     if (d.conflict) {

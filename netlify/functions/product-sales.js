@@ -19,8 +19,8 @@ import {
   classifyOrder,
   fetchOrdersInRange,
   maskEmail,
-  warsawToday,
 } from '../shared/productCatalog.js'
+import { businessToday, businessWeekStart, businessDaysAgo } from '../shared/businessDay.js'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -33,12 +33,8 @@ const CORS = {
 // The two products this view reports on, keyed by their catalog product key.
 const REPORTED = { jsu_course: 'jsu', jzk_ai: 'jzk' }
 
-/** Monday of the ISO week containing a YYYY-MM-DD date. */
-function weekStartOf(dateISO) {
-  const d = new Date(dateISO + 'T12:00:00Z')
-  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
-  return d.toISOString().slice(0, 10)
-}
+// weekStartOf / warsawToday / the day window all come from ../shared/businessDay.js.
+
 
 const emptyBucket = () => ({ jsu: { count: 0, revenue: 0, buyers: [] }, jzk: { count: 0, revenue: 0, buyers: [] } })
 
@@ -56,8 +52,8 @@ export const handler = async (event) => {
   }
 
   const days = Math.min(370, Math.max(1, parseInt((event.queryStringParameters || {}).days ?? '30', 10) || 30))
-  const today = warsawToday()
-  const fromISO = new Date(Date.parse(today + 'T12:00:00Z') - (days - 1) * 86400000).toISOString().slice(0, 10)
+  const today = businessToday()
+  const fromISO = businessDaysAgo(days - 1, today)
 
   let rows = []
   let usedTable = 'none'
@@ -94,7 +90,7 @@ export const handler = async (event) => {
       product_name_raw: order.productNameRaw,
     }
 
-    for (const [map, mapKey] of [[byDay, order.orderDate], [byWeek, weekStartOf(order.orderDate)]]) {
+    for (const [map, mapKey] of [[byDay, order.orderDate], [byWeek, businessWeekStart(order.orderDate)]]) {
       if (!map.has(mapKey)) map.set(mapKey, emptyBucket())
       const b = map.get(mapKey)[key]
       b.count++

@@ -13,8 +13,8 @@ import {
   classifyOrder,
   fetchAllOrders,
   maskEmail,
-  warsawToday,
 } from '../shared/productCatalog.js'
+import { businessToday, businessWeekStart } from '../shared/businessDay.js'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -24,12 +24,8 @@ const CORS = {
 
 const JSON_HEADERS = { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
 
-function warsawWeekStart() {
-  const d = new Date(warsawToday() + 'T12:00:00Z')
-  const monday = new Date(d)
-  monday.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
-  return monday.toISOString().slice(0, 10)
-}
+// The week start comes from ../shared/businessDay.js.
+
 
 // The frontend contract (src/lib/ordersData.ts) has four buckets. They are
 // derived from the catalog, not from a second set of rules:
@@ -64,8 +60,8 @@ export const handler = async (event) => {
     return { statusCode: 500, headers: JSON_HEADERS, body: JSON.stringify({ ok: false, error: `Server env missing: ${missing}` }) }
   }
 
-  const today     = warsawToday()
-  const weekStart = warsawWeekStart()
+  const today     = businessToday()
+  const weekStart = businessWeekStart()
 
   let rows = []
   let usedTable = 'none'

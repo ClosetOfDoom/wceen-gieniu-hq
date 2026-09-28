@@ -6,6 +6,7 @@
 
 import { countTable, tryReadTable } from '../shared/supabaseRead.js'
 import { fetchOrdersInRange } from '../shared/productCatalog.js'
+import { businessToday, businessWeekStart } from '../shared/businessDay.js'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -30,19 +31,7 @@ const tryGet = async (url, key, table, opts) => {
 
 // ── Warsaw helpers ────────────────────────────────────────────────────────────
 
-function warsawToday() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-}
-
-function warsawWeekStart() {
-  const today = warsawToday()
-  const d = new Date(today + 'T12:00:00Z')
-  const dow = d.getUTCDay()
-  const diff = (dow + 6) % 7  // days since Monday
-  const monday = new Date(d)
-  monday.setUTCDate(d.getUTCDate() - diff)
-  return monday.toISOString().slice(0, 10)
-}
+// warsawToday / warsawWeekStart now come from ../shared/businessDay.js.
 
 function extractOrderDate(row) {
   return (
@@ -85,8 +74,8 @@ export const handler = async (event) => {
     }
   }
 
-  const today     = warsawToday()
-  const weekStart = warsawWeekStart()
+  const today     = businessToday()
+  const weekStart = businessWeekStart()
 
   // ── 1. orders table ───────────────────────────────────────────────────────────
 

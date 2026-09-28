@@ -25,7 +25,7 @@ import {
   ppOrdersGoal, revenueGoal, cpaGoal, roasGoal, MONTHLY_REVENUE_TARGET,
   daysInMonthOf, PP_ORDERS_TARGET,
 } from './lib/goalProgress'
-import { warsawHoursSinceMidnight } from './utils/warsawDate'
+import { businessHoursSinceMidnight, businessToday } from './lib/businessDay'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday, fetchPerformanceBetween,
@@ -1064,7 +1064,7 @@ export default function App() {
   // ── Context snapshot for gieniu-command API ───────────────────────────────────
 
   function buildCommandContext(): GieniuCommandContext {
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+    const today = businessToday()
     const latestMetaDate = ads[0]?.date ?? trend.find(r => r.meta_spend > 0)?.date ?? '—'
     const latestWixDate  = trend[0]?.date ?? '—'
     return {
@@ -1388,7 +1388,7 @@ export default function App() {
   const activeMetric = expandedMetric ? (KPI_METRICS[expandedMetric] ?? null) : null
   const toggleMetric = (id: string) => setExpandedMetric(m => (m === id ? null : id))
   // ── Chat-panel day digest — today vs yesterday, no Wake tap required ────────
-  const digestTodayISO = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  const digestTodayISO = businessToday()
   const digestYestISO  = new Date(Date.parse(digestTodayISO + 'T12:00:00Z') - 86400000)
     .toISOString().slice(0, 10)
   const digestRows     = monthTrend.length > 0 ? monthTrend : trend
@@ -1409,7 +1409,7 @@ export default function App() {
   const jsuAlert     = !!jsuSummary && jsuSummary.bottleneck !== 'OK' && jsuSummary.bottleneck !== 'NO_DATA' && jsuSummary.bottleneck !== 'NO_SOURCES'
 
   // ── Goal progress (Command Center bars) — whole block follows the ONE range ───
-  const goalToday   = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' }) // YYYY-MM-DD
+  const goalToday   = businessToday()
   const goalYyyymm  = goalToday.slice(0, 7)
   const goalDayNum  = parseInt(goalToday.slice(8, 10), 10)
   const goalDaysIn  = daysInMonthOf(goalYyyymm)
@@ -1417,7 +1417,7 @@ export default function App() {
   //   TODAY = hours elapsed / 24 (a 24 h target must be prorated mid-day)
   //   YESTERDAY = 1 full day · WEEK = 7 full days · MONTH = days elapsed (month-to-date)
   const rangeWord   = range === 'today' ? 'TODAY' : range === 'yesterday' ? 'YESTERDAY' : range === 'week' ? 'THIS WEEK' : 'THIS MONTH'
-  const rangePaceDays = range === 'today' ? warsawHoursSinceMidnight() / 24
+  const rangePaceDays = range === 'today' ? businessHoursSinceMidnight() / 24
                       : range === 'yesterday' ? 1
                       : range === 'week' ? 7
                       : goalDayNum

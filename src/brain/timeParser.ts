@@ -1,32 +1,32 @@
-// All dates in Europe/Warsaw business timezone, returned as YYYY-MM-DD strings.
+// Date helpers for Stanley's answers. Every date is a Europe/Warsaw business
+// day, 'YYYY-MM-DD' — see netlify/shared/businessDay.js for why that is the one
+// definition and why no offset is ever hardcoded.
+//
+// These used to compute the day themselves. yesterdayWaw() in particular did
+// `d.setDate(d.getDate() - 1)`, which steps a day in the MACHINE's timezone —
+// the user's laptop, in a browser — and only then formatted in Warsaw. Near
+// midnight, or on a machine set to another zone, that lands on the wrong day.
+
+import {
+  businessToday, businessYesterday, businessWeekStart, businessDaysAgo,
+} from '../lib/businessDay'
 
 export function todayWaw(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  return businessToday()
 }
 
 export function yesterdayWaw(): string {
-  const d = new Date()
-  d.setDate(d.getDate() - 1)
-  return d.toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+  return businessYesterday()
 }
 
 export function thisWeekStartWaw(): string {
-  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
-  const d = new Date(todayStr)              // parsed as UTC midnight — safe for day arithmetic
-  const dow = d.getUTCDay()                 // 0=Sun, 1=Mon … 6=Sat
-  const daysBack = dow === 0 ? 6 : dow - 1 // days since Monday
-  d.setUTCDate(d.getUTCDate() - daysBack)
-  return d.toLocaleDateString('en-CA', { timeZone: 'UTC' })
+  return businessWeekStart()
 }
 
 export function lastWeekStartWaw(): string {
-  const thisMon = new Date(thisWeekStartWaw())
-  thisMon.setUTCDate(thisMon.getUTCDate() - 7)
-  return thisMon.toLocaleDateString('en-CA', { timeZone: 'UTC' })
+  return businessDaysAgo(7, thisWeekStartWaw())
 }
 
 export function lastWeekEndWaw(): string {
-  const thisMon = new Date(thisWeekStartWaw())
-  thisMon.setUTCDate(thisMon.getUTCDate() - 1)
-  return thisMon.toLocaleDateString('en-CA', { timeZone: 'UTC' })
+  return businessDaysAgo(1, thisWeekStartWaw())
 }

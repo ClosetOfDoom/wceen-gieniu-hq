@@ -22,6 +22,7 @@ import {
   PP_ORDERS_TARGET, MONTHLY_REVENUE_TARGET, daysInMonthOf,
 } from '../src/lib/goalProgress'
 import { fmtPln, fmtNum, fmtRoas } from '../src/utils/format'
+import { businessToday, businessHoursSinceMidnight } from '../src/lib/businessDay'
 import type { DailyPerformance, MetaAdDaily } from '../src/services/data'
 import type { ProfitData } from '../src/lib/profitData'
 
@@ -29,17 +30,9 @@ const SITE = process.env.STANLEY_SITE_URL ?? 'https://elegant-kelpie-6fdfc8.netl
 const SUPA_URL = process.env.VITE_SUPABASE_URL!
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY!
 
-const warsawToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' })
+const warsawToday = businessToday
 
-/** Hours elapsed today in Warsaw — App.tsx paces the TODAY targets by this. */
-function warsawHoursSinceMidnight(): number {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Warsaw', hour: '2-digit', minute: '2-digit', hour12: false,
-  }).formatToParts(new Date())
-  const h = Number(parts.find(p => p.type === 'hour')?.value ?? 0)
-  const m = Number(parts.find(p => p.type === 'minute')?.value ?? 0)
-  return h + m / 60
-}
+const warsawHoursSinceMidnight = businessHoursSinceMidnight
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)

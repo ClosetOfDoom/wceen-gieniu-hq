@@ -259,7 +259,7 @@ describe('known gaps', () => {
 
   it('flags the UTC-vs-Warsaw day boundary so the report and the view can be compared', () => {
     const r = buildReport(input({ profit: profit({ dayBoundaryOrders: 2 }) }))
-    expect(r).toContain('- 2 zamówień w oknie 22:00–24:00 UTC')
+    expect(r).toContain('- 2 zamówień z 00:00–01:59 czasu PL')
   })
 })
 

@@ -321,8 +321,10 @@ function gapsSection(i: ReportInput): string {
     }
     const boundary = i.profit.dayBoundaryOrders ?? 0
     if (boundary > 0) {
-      gaps.push(`- ${int(boundary)} zamówień w oknie 22:00–24:00 UTC: widok dzienny liczy je `
-        + `o dzień wcześniej niż ten raport (widok tnie dobę po UTC, raport po Warszawie)`)
+      gaps.push(`- ${int(boundary)} zamówień z 00:00–01:59 czasu PL (latem; zimą do 00:59): `
+        + 'mają w UTC datę dnia poprzedniego, więc widok dzienny liczy je o dzień wcześniej '
+        + 'niż ten raport. Doba = Europe/Warsaw; widok tnie po UTC do czasu wgrania '
+        + 'supabase/migrations/20260928_warsaw_business_day.sql')
     }
   } else {
     gaps.push('- profit-data niedostępne: brak marży, zysku, produktów i wykluczeń')
