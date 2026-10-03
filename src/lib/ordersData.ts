@@ -2,6 +2,7 @@
 // Canonical orders source: service role, absolute price classification.
 // Used by GIENIU intent handlers for "ile dziś zamówień" and similar queries.
 import { bustUrl } from '../utils/cacheBust'
+import type { DaySeriesEntry } from './alerts'
 
 export interface OrderRow {
   external_order_id: string
@@ -13,6 +14,13 @@ export interface OrderRow {
   product_label: string
   classification_reason: string
   classification_warning: string | null
+}
+
+/** One FULL Warsaw day, with the hour profile the in-progress day is compared against. */
+export interface DailySeriesDay extends DaySeriesEntry {
+  revenue: number
+  /** Orders per Warsaw hour, 24 entries. */
+  hourly: number[]
 }
 
 export interface OrdersData {
@@ -46,6 +54,19 @@ export interface OrdersData {
     unknown:      { count: number }
   }
   latest_20_orders: OrderRow[]
+  /**
+   * FULL Warsaw days only, oldest first — the series every alarm rule runs on.
+   * Built in orders-data.js straight from `orders`, because the daily view
+   * still buckets by the UTC day and has no row at all for a day the sync
+   * never delivered. `missing` marks exactly that case, and is never a zero.
+   */
+  dailySeries?: DailySeriesDay[]
+  /** The in-progress day. Kept out of dailySeries so no alarm can fire on it. */
+  todayHourly?: { date: string; orders: number; revenue: number; hourly: number[] }
+  /** First day `orders` has any row for — days before it are prehistory. */
+  recordStartsOn?: string | null
+  /** Orders at or below this amount are test orders and are not counted. */
+  orderMinAmount?: number
   error?: string
 }
 

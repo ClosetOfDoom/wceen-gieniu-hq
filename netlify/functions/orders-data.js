@@ -14,7 +14,10 @@ import {
   fetchAllOrders,
   maskEmail,
 } from '../shared/productCatalog.js'
-import { businessToday, businessWeekStart } from '../shared/businessDay.js'
+import {
+  businessToday, businessWeekStart, businessDay, businessDaysAgo, businessDaysBetween,
+} from '../shared/businessDay.js'
+import { ALERT_RULES, countsAsOrder } from '../shared/alertRules.js'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -26,6 +29,82 @@ const JSON_HEADERS = { ...CORS, 'Content-Type': 'application/json', 'Cache-Contr
 
 // The week start comes from ../shared/businessDay.js.
 
+
+/**
+ * The alarm rules need WHOLE Warsaw days, and they need to tell a day with no
+ * sales apart from a day the sync never delivered. Neither can be read off the
+ * daily view: it buckets by the UTC day, and it has no row at all for a day it
+ * never received.
+ *
+ * So the series is built here, from `orders`, through the one day helper:
+ *   · `hourly[24]` per day, so the in-progress day can be compared against the
+ *     same hour on past days instead of against a straight line
+ *   · `missing` for a day with no rows AT ALL, which is a suspected stuck sync
+ *     and never a zero
+ *
+ * `today` is returned alongside but kept OUT of `series` — no alarm may fire on
+ * a day that has not finished.
+ */
+function buildDailySeries(orders, today, windowDays) {
+  const from = businessDaysAgo(windowDays, today)
+  const counted = orders.filter(o => countsAsOrder(o.revenue))
+
+  const hourlyByDay = new Map()
+  const revenueByDay = new Map()
+  for (const o of counted) {
+    const ts = o.raw[0]?.order_created_at
+    const date = ts ? businessDay(ts) : o.orderDate
+    if (!date || date < from || date > today) continue
+    if (!hourlyByDay.has(date)) hourlyByDay.set(date, new Array(24).fill(0))
+    revenueByDay.set(date, (revenueByDay.get(date) ?? 0) + o.revenue)
+    // Hour of the Warsaw wall clock, read from the same helper as the date.
+    const hour = ts
+      ? Number(new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Europe/Warsaw', hour: '2-digit', hour12: false,
+        }).format(new Date(ts))) % 24
+      : 0
+    hourlyByDay.get(date)[hour]++
+  }
+
+  // A day is `missing` only if NOTHING at all landed on it — including the test
+  // orders we filtered out, which still prove the sync ran.
+  const anyRowOnDay = new Set()
+  for (const o of orders) {
+    const ts = o.raw[0]?.order_created_at
+    const d = ts ? businessDay(ts) : o.orderDate
+    if (d) anyRowOnDay.add(d)
+  }
+
+  const series = []
+  for (const date of businessDaysBetween(from, businessDaysAgo(1, today))) {
+    const hourly = hourlyByDay.get(date) ?? null
+    series.push({
+      date,
+      orders: hourly ? hourly.reduce((s, n) => s + n, 0) : 0,
+      // Revenue on the SAME Warsaw-day basis as the count, so a 7-day ROAS is
+      // not half from this calendar and half from the view's UTC one.
+      revenue: revenueByDay.get(date) ?? 0,
+      missing: !anyRowOnDay.has(date),
+      hourly: hourly ?? new Array(24).fill(0),
+    })
+  }
+
+  const todayHourly = hourlyByDay.get(today) ?? new Array(24).fill(0)
+  // The first day the table has ANY row for. Days before it are prehistory,
+  // not a stuck sync — without this the panel reds every day that predates
+  // `orders` itself.
+  const recordStartsOn = [...anyRowOnDay].sort()[0] ?? null
+  return {
+    recordStartsOn,
+    series,
+    today: {
+      date: today,
+      orders: todayHourly.reduce((s, n) => s + n, 0),
+      revenue: revenueByDay.get(today) ?? 0,
+      hourly: todayHourly,
+    },
+  }
+}
 
 // The frontend contract (src/lib/ordersData.ts) has four buckets. They are
 // derived from the catalog, not from a second set of rules:
@@ -93,6 +172,10 @@ export const handler = async (event) => {
   const orders = aggregateOrders(rows)
   orders.sort((a, b) => b.orderDate.localeCompare(a.orderDate))
 
+  // Enough history for the 7-day window, its 3-day streak check, and the
+  // 120-day comparison the in-progress day is placed against.
+  const dayWindow = buildDailySeries(orders, today, ALERT_RULES.TODAY_PERCENTILE_WINDOW_DAYS + 10)
+
   const zero = () => ({ count: 0, revenue: 0 })
   const all   = { JSU_COURSE: zero(), JZK_LANGUAGE: zero(), MEMORY_PACK: zero(), UNKNOWN: zero() }
   const daily = { JSU_COURSE: zero(), JZK_LANGUAGE: zero(), MEMORY_PACK: zero(), UNKNOWN: zero() }
@@ -154,6 +237,12 @@ export const handler = async (event) => {
       today_warsaw: today,
       week_start:   weekStart,
       source_table: usedTable,
+      // Whole Warsaw days for the alarm rules — see buildDailySeries above.
+      // `series` holds FULL days only; `today` is separate and never alarms.
+      dailySeries:  dayWindow.series,
+      recordStartsOn: dayWindow.recordStartsOn,
+      todayHourly:  dayWindow.today,
+      orderMinAmount: ALERT_RULES.ORDER_MIN_AMOUNT_PLN,
       totals: {
         all_orders:        orders.length,
         order_rows:        rows.length,

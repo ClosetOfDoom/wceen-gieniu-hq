@@ -22,7 +22,7 @@ import {
   PP_ORDERS_TARGET, MONTHLY_REVENUE_TARGET, daysInMonthOf,
 } from '../src/lib/goalProgress'
 import { fmtPln, fmtNum, fmtRoas } from '../src/utils/format'
-import { businessToday, businessHoursSinceMidnight } from '../src/lib/businessDay'
+import { businessToday } from '../src/lib/businessDay'
 import type { DailyPerformance, MetaAdDaily } from '../src/services/data'
 import type { ProfitData } from '../src/lib/profitData'
 
@@ -32,7 +32,6 @@ const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY!
 
 const warsawToday = businessToday
 
-const warsawHoursSinceMidnight = businessHoursSinceMidnight
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
@@ -82,18 +81,20 @@ export async function runForRange(range: TimeRange): Promise<{ report: string; c
   // Goal pacing, exactly as App.tsx paces it.
   const goalDaysIn = daysInMonthOf(today.slice(0, 7))
   const goalDayNum = parseInt(today.slice(8, 10), 10)
-  const rangePaceDays = range === 'today' ? warsawHoursSinceMidnight() / 24
+  // Matches App.tsx: the in-progress day counts as one whole day of target.
+  // The old hours/24 proration is gone — see netlify/shared/alertRules.js.
+  const rangeTargetDays = range === 'today' ? 1
     : range === 'yesterday' ? 1
     : range === 'week' ? 7
     : goalDayNum
   const ppOrdersRange = profit?.ok
     ? (profit.productBreakdown?.find(p => p.productKey === 'memory_pack')?.orders ?? 0)
     : null
-  const ppExpected = PP_ORDERS_TARGET * rangePaceDays
+  const ppExpected = PP_ORDERS_TARGET * rangeTargetDays
   const rangeRevenue = displayPerf?.wix_revenue ?? 0
 
   const ppGoal = ppOrdersGoal(ppOrdersRange, ppExpected)
-  const revGoal = revenueGoal(rangeRevenue, rangePaceDays, goalDaysIn)
+  const revGoal = revenueGoal(rangeRevenue, rangeTargetDays, goalDaysIn)
   const cpaGoalRes = cpaGoal(cpaBlended)
   const roasGoalRes = roasGoal(roasBlended)
 
@@ -114,7 +115,7 @@ export async function runForRange(range: TimeRange): Promise<{ report: string; c
       pp: ppGoal, revenue: revGoal, cpa: cpaGoalRes, roas: roasGoalRes,
       ppOrders: ppOrdersRange,
       ppTarget: Math.max(1, Math.round(ppExpected)),
-      revenueTarget: MONTHLY_REVENUE_TARGET * (rangePaceDays / goalDaysIn),
+      revenueTarget: MONTHLY_REVENUE_TARGET * (rangeTargetDays / goalDaysIn),
     },
   })
 

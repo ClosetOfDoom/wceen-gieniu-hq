@@ -44,10 +44,10 @@ const profit = (over: Partial<ProfitData> = {}): ProfitData => ({
 })
 
 const GOALS: ReportInput['goals'] = {
-  pp:      { pct: 100, status: 'green', note: 'on pace — 10/10 ✓' },
-  revenue: { pct: 90,  status: 'amber', note: '1 000 PLN oczek. · slightly behind' },
-  cpa:     { pct: 100, status: 'green', note: 'in range — target <40' },
-  roas:    { pct: 99,  status: 'green', note: 'healthy — ≥2.0x' },
+  pp:      { pct: 100, status: 'green',   note: 'cel osiągnięty — 10/10' },
+  revenue: { pct: 90,  status: 'neutral', note: '1,000 PLN oczek. · 90% prorata' },
+  cpa:     { pct: 100, status: 'green',   note: 'CPA 40.00 zł z 7 pełnych dób' },
+  roas:    { pct: 99,  status: 'green',   note: 'ROAS 2.98x z 7 pełnych dób' },
   ppOrders: 10,
   ppTarget: 10,
   revenueTarget: 1000,
@@ -235,10 +235,12 @@ describe('summary and goals', () => {
 
   it('states every goal with its value, target and status', () => {
     const r = buildReport(input())
-    expect(r).toContain('- PP orders: 10 / 10 (green — on pace — 10/10 ✓)')
-    expect(r).toContain('- przychód: 1,190.00 PLN / 1,000.00 PLN (amber')
-    expect(r).toContain('- CPA: 40.00 PLN (green')
-    expect(r).toContain('- ROAS: 2.98x (green')
+    expect(r).toContain('- PP orders: 10 / 10 — cel osiągnięty — 10/10')
+    expect(r).toContain('- przychód: 1,190.00 PLN / 1,000.00 PLN — ')
+    expect(r).toContain('- CPA: 40.00 PLN — ')
+    expect(r).toContain('- ROAS: 2.98x — ')
+    // The goals block must not carry a verdict at all any more.
+    expect(r.split('## ALARMY')[0]).not.toMatch(/on pace|behind pace|abnormally low/i)
   })
 })
 

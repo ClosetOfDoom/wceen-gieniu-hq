@@ -1,9 +1,11 @@
 // GoalBar — visual KPI-vs-target progress bar in the forest palette.
-// Green = on target, amber = watch, red = attention. Colour is driven by an
-// explicit `status` computed against business thresholds (not by fill %), so an
-// inverted metric like CPA (lower = better) still colours correctly.
+//
+// 'neutral' is the default for a progress bar: the target is simply not reached
+// yet, which is not a fault and must not look like one. Only an ALARM verdict
+// (netlify/shared/alertRules.js) may hand this component red or amber. Green
+// means the target IS met, or the 7-full-day rule found nothing wrong.
 
-export type GoalStatus = 'green' | 'amber' | 'red'
+export type GoalStatus = 'green' | 'amber' | 'red' | 'neutral'
 
 interface GoalBarProps {
   label: string        // e.g. "PP — zamówienia dziś"
@@ -14,9 +16,11 @@ interface GoalBarProps {
 }
 
 const COLOR: Record<GoalStatus, string> = {
-  green: 'var(--emerald)',
-  amber: 'var(--amber)',
-  red:   'var(--red)',
+  green:   'var(--emerald)',
+  amber:   'var(--amber)',
+  red:     'var(--red)',
+  // Progress that simply has not got there yet — the bar fills, calmly.
+  neutral: 'var(--muted)',
 }
 
 export function GoalBar({ label, valueText, pct, status, note }: GoalBarProps) {

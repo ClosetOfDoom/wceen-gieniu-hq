@@ -17,6 +17,7 @@ import type { TimeRange } from './timeRange'
 import { RANGE_LABELS } from './timeRange'
 import { classifyCampaignScope } from './campaignDiagnosis'
 import { fmtPln, fmtNum, fmtRoas } from '../utils/format'
+import type { AlertResult, TodayContext } from './alerts'
 
 export interface ReportGoals {
   pp: GoalResult
@@ -60,6 +61,10 @@ export interface ReportInput {
   campaignError?: string | null
 
   goals: ReportGoals
+  /** Every alarm verdict, from the one rules module. */
+  alerts?: AlertResult[]
+  /** Where the in-progress day sits. Context only — never an alarm. */
+  todayContext?: TodayContext | null
 }
 
 // ── formatting ───────────────────────────────────────────────────────────────
@@ -275,17 +280,48 @@ function campaignsSection(i: ReportInput): string {
   ].join('\n')
 }
 
+// Progress only. No verdicts, no colours, no "behind pace" — a target one is
+// part-way through is not a finding. Findings live in alarmsSection below.
 function goalsSection(i: ReportInput): string {
   const g = i.goals
   const ppValue = g.ppOrders == null ? 'BRAK' : int(g.ppOrders)
   return [
     '## REALIZACJA CELÓW',
     '',
-    `- PP orders: ${ppValue} / ${int(g.ppTarget)} (${g.pp.status} — ${g.pp.note})`,
-    `- przychód: ${money(i.perf?.wix_revenue)} / ${money(g.revenueTarget)} (${g.revenue.status} — ${g.revenue.note})`,
-    `- CPA: ${money(i.cpa)} (${g.cpa.status} — ${g.cpa.note})`,
-    `- ROAS: ${roasFmt(i.roas)} (${g.roas.status} — ${g.roas.note})`,
+    '_Postęp względem celu. To NIE są alarmy — niepełny pasek nie znaczy, że coś jest nie tak._',
+    '',
+    `- PP orders: ${ppValue} / ${int(g.ppTarget)} — ${g.pp.note}`,
+    `- przychód: ${money(i.perf?.wix_revenue)} / ${money(g.revenueTarget)} — ${g.revenue.note}`,
+    `- CPA: ${money(i.cpa)} — ${g.cpa.note}`,
+    `- ROAS: ${roasFmt(i.roas)} — ${g.roas.note}`,
   ].join('\n')
+}
+
+/** Anomalies, and only anomalies. Every one measured over whole Warsaw days. */
+function alarmsSection(i: ReportInput): string {
+  const head = ['## ALARMY', '']
+  const all = i.alerts ?? []
+  if (all.length === 0) {
+    return [...head, 'BRAK DANYCH: orders-data.dailySeries — reguły alarmowe nie zostały policzone'].join('\n')
+  }
+
+  const active = all.filter(a => a.severity === 'red' || a.severity === 'amber')
+  const refusals = all.filter(a => a.values?.refusal)
+
+  const lines = active.length === 0
+    ? ['brak aktywnych alarmów']
+    : active.map(a => `- **${a.severity === 'red' ? 'CZERWONY' : 'ŻÓŁTY'}** · ${a.rule} — ${a.message}`)
+
+  const ctx = i.todayContext
+    ? ['', `DZIŚ (informacyjnie, nigdy kolor alarmu): ${i.todayContext.note}`]
+    : []
+
+  const cannotRun = refusals.length > 0
+    ? ['', 'Reguły, których dane nie pozwalają policzyć:',
+       ...refusals.map(a => `- ${a.rule} — ${a.message}`)]
+    : []
+
+  return [...head, ...lines, ...ctx, ...cannotRun].join('\n')
 }
 
 function gapsSection(i: ReportInput): string {
@@ -359,6 +395,7 @@ export function buildReport(i: ReportInput): string {
     '', productsSection(i),
     '', campaignsSection(i),
     '', goalsSection(i),
+    '', alarmsSection(i),
     '', gapsSection(i),
   )
 

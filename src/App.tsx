@@ -26,6 +26,7 @@ import {
   daysInMonthOf, PP_ORDERS_TARGET,
 } from './lib/goalProgress'
 import { businessHoursSinceMidnight, businessToday } from './lib/businessDay'
+import { evaluateAlerts, todayContext } from './lib/alerts'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday, fetchPerformanceBetween,
@@ -1405,7 +1406,7 @@ export default function App() {
   // real_roas count every order including WSZTP, so they are the fallback only.
   const cpaBlended   = profitData?.ok ? (profitData.realCpa ?? null) : (displayPerf?.real_cpa ?? null)
   const roasBlended  = profitData?.ok ? (profitData.realRoas ?? null) : (displayPerf?.real_roas ?? null)
-  const cpaHigh      = cpaBlended != null && cpaBlended > 50
+  // The Real CPA card's warning tint follows the 7-full-day alarm, set below.
   const jsuAlert     = !!jsuSummary && jsuSummary.bottleneck !== 'OK' && jsuSummary.bottleneck !== 'NO_DATA' && jsuSummary.bottleneck !== 'NO_SOURCES'
 
   // ── Goal progress (Command Center bars) — whole block follows the ONE range ───
@@ -1413,25 +1414,78 @@ export default function App() {
   const goalYyyymm  = goalToday.slice(0, 7)
   const goalDayNum  = parseInt(goalToday.slice(8, 10), 10)
   const goalDaysIn  = daysInMonthOf(goalYyyymm)
-  // Range word for dynamic headers + the range's day-equivalent used to pace targets.
-  //   TODAY = hours elapsed / 24 (a 24 h target must be prorated mid-day)
-  //   YESTERDAY = 1 full day · WEEK = 7 full days · MONTH = days elapsed (month-to-date)
+  // Range word for dynamic headers + how many days of target the range covers.
+  //
+  // TODAY used to be prorated by hours elapsed (hours/24) and the result
+  // COLOURED, so a normal morning printed "abnormally low". The in-progress day
+  // now counts as one whole day of target — the bar simply is not full yet,
+  // which is the truth — and anomalies are left to the alarm rules.
   const rangeWord   = range === 'today' ? 'TODAY' : range === 'yesterday' ? 'YESTERDAY' : range === 'week' ? 'THIS WEEK' : 'THIS MONTH'
-  const rangePaceDays = range === 'today' ? businessHoursSinceMidnight() / 24
+  const rangeTargetDays = range === 'today' ? 1
+                        : range === 'yesterday' ? 1
+                        : range === 'week' ? 7
+                        : goalDayNum
+  /** FULL Warsaw days the range covers — 0 for TODAY. Gates every alarm colour. */
+  const rangeFullDays = range === 'today' ? 0
                       : range === 'yesterday' ? 1
                       : range === 'week' ? 7
-                      : goalDayNum
+                      : Math.max(0, goalDayNum - 1)
   // PP orders for the selected range come from profit-data's product breakdown
   // (memory_pack = Pakiet Pamięciowy), which is scoped to the same range as everything else.
   const ppOrdersRange = profitData?.ok
     ? (profitData.productBreakdown?.find(p => p.productKey === 'memory_pack')?.orders ?? 0)
     : null
   const rangeRevenue  = displayPerf?.wix_revenue ?? 0
-  const ppExpected  = PP_ORDERS_TARGET * rangePaceDays
+  const ppExpected  = PP_ORDERS_TARGET * rangeTargetDays
   const ppGoal      = ppOrdersGoal(ppOrdersRange, ppExpected)
-  const revGoal     = revenueGoal(rangeRevenue, rangePaceDays, goalDaysIn)
-  const cpaGoalRes  = cpaGoal(cpaBlended)
-  const roasGoalRes = roasGoal(roasBlended)
+  const revGoal     = revenueGoal(rangeRevenue, rangeTargetDays, goalDaysIn)
+  // ── Alarms ─────────────────────────────────────────────────────────────────
+  // Every alarm runs on WHOLE Warsaw days taken from `orders`
+  // (orders-data.dailySeries) — never on the daily view, which still buckets by
+  // UTC, and never on the in-progress day. CPA and ROAS take their colour from
+  // the 7-full-day figure rather than from whatever range is on screen: a
+  // single day's CPA is noise.
+  const dailySeries = ordersData?.dailySeries ?? []
+  const last7 = dailySeries.slice(-7)
+  const sevenComplete = last7.length === 7 && !last7.some(d => d.missing)
+
+  // Spend comes from meta_ads_daily.date, which Meta reports in the ad
+  // account's own timezone and which this fix deliberately leaves alone.
+  const spendOn = (date: string) => rangeRows.find(r => r.date === date)?.meta_spend ?? null
+  const spend7 = sevenComplete
+    ? last7.reduce<number | null>((t, d) => {
+        const sp = spendOn(d.date)
+        return t == null || sp == null ? null : t + sp
+      }, 0)
+    : null
+  const orders7  = sevenComplete ? last7.reduce((t, d) => t + d.orders, 0) : 0
+  const revenue7 = sevenComplete ? last7.reduce((t, d) => t + (d.revenue ?? 0), 0) : 0
+  const cpaRolling7  = spend7 != null && orders7 > 0 ? spend7 / orders7 : null
+  const roasRolling7 = spend7 != null && spend7 > 0 ? revenue7 / spend7 : null
+
+  const alerts = evaluateAlerts({
+    series: dailySeries,
+    cpa: cpaBlended, cpaRolling7,
+    roas: roasBlended, roasRolling7,
+    fullDays: rangeFullDays,
+    adDays: campaignRows.filter(r => last7.some(d => d.date === r.date)),
+    recordStartsOn: ordersData?.recordStartsOn ?? null,
+  })
+  const alertBy = (rule: string) => alerts.all.find(a => a.rule === rule)
+
+  // Where the in-progress day sits against the same hour on past days. Context,
+  // never a colour — this is what replaced "18 × hours/24".
+  const nowHour = Math.floor(businessHoursSinceMidnight())
+  const todayCtx = ordersData?.todayHourly
+    ? todayContext(
+        ordersData.todayHourly.hourly.slice(0, nowHour + 1).reduce((a, b) => a + b, 0),
+        nowHour,
+        dailySeries,
+      )
+    : null
+
+  const cpaGoalRes  = cpaGoal(cpaBlended, undefined, alertBy('CPA'))
+  const roasGoalRes = roasGoal(roasBlended, alertBy('ROAS'))
 
   // Profit KPI derived states — via mapProfitToSummary for canonical ProfitSummary shape
   const profitSummary     = profitData?.ok ? mapProfitToSummary(profitData) : null
@@ -1480,6 +1534,8 @@ export default function App() {
       roas: roasBlended,
       campaignRows,
       campaignError: campaignFetchError,
+      alerts: alerts.all,
+      todayContext: todayCtx,
       goals: {
         pp: ppGoal,
         revenue: revGoal,
@@ -1487,7 +1543,7 @@ export default function App() {
         roas: roasGoalRes,
         ppOrders: ppOrdersRange,
         ppTarget: Math.max(1, Math.round(ppExpected)),
-        revenueTarget: MONTHLY_REVENUE_TARGET * (rangePaceDays / goalDaysIn),
+        revenueTarget: MONTHLY_REVENUE_TARGET * (rangeTargetDays / goalDaysIn),
       },
     })
     const res = await copyText(markdown)
@@ -1498,7 +1554,7 @@ export default function App() {
     range, rangeFrom, rangeTo, rangeSub, displayPerf, prevTrendRows, trendRows,
     profitData, cpaBlended, roasBlended, campaignRows, campaignFetchError,
     ppGoal, revGoal, cpaGoalRes, roasGoalRes, ppOrdersRange, ppExpected,
-    rangePaceDays, goalDaysIn,
+    rangeTargetDays, goalDaysIn, alerts, todayCtx,
   ])
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -1579,7 +1635,7 @@ export default function App() {
                     <KPICard
                       label="Real CPA"
                       value={cpaBlended != null ? fmtPln(cpaBlended) : '—'}
-                      warning={cpaHigh}
+                      warning={alertBy('CPA')?.severity === 'red' || alertBy('CPA')?.severity === 'amber'}
                       sublabel={excludedCount > 0 ? 'Ad spend ÷ zam. (bez WSZTP)' : 'Ad spend ÷ zamówienia'}
                       onClick={() => toggleMetric('real_cpa')}
                       active={expandedMetric === 'real_cpa'}
@@ -1627,8 +1683,59 @@ export default function App() {
                       />
                     </div>
                     <div style={{ marginTop: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted2)' }}>
-                      Cały blok podąża za wybranym zakresem ({rangeWord}). PP = Pakiet Pamięciowy — cel 18/pełny dzień; dla DZIŚ pacowany godzinami (18 × godziny/24), pozostałe zakresy pełne dni. Revenue vs cel 30 000 PLN/mies., prorata do długości zakresu. CPA/ROAS z zakresu, blended (wszystkie produkty).
+                      Cały blok podąża za wybranym zakresem ({rangeWord}). To są CELE — postęp, nie alarmy; pasek niepełny nie znaczy, że coś jest nie tak. PP = Pakiet Pamięciowy, cel 18/pełną dobę. Revenue vs cel 30 000 PLN/mies., prorata do długości zakresu. CPA i ROAS kolorowane WYŁĄCZNIE z 7 ostatnich pełnych dób — krótszy zakres pokazuje liczbę bez oceny. Anomalie są w sekcji ALARMY niżej.
                     </div>
+                  </div>
+
+                  {/* ── ALARMY ────────────────────────────────────────────
+                      The only block allowed to be red. Everything here is
+                      measured over WHOLE Warsaw days; the in-progress day
+                      appears as context only. */}
+                  <div className="panel-illuminate card">
+                    <div className="section-title section-title-gold" style={{ marginBottom: '12px' }}>
+                      Alarmy · pełne doby
+                    </div>
+
+                    {alerts.active.length === 0 ? (
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--emerald)' }}>
+                        Brak aktywnych alarmów.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {alerts.active.map((a, i) => (
+                          <div
+                            key={`${a.rule}-${i}`}
+                            style={{
+                              fontFamily: 'var(--font-mono)', fontSize: '0.76rem', lineHeight: 1.6,
+                              padding: '8px 12px', borderRadius: '3px',
+                              color: a.severity === 'red' ? 'var(--red)' : 'var(--amber)',
+                              background: a.severity === 'red' ? 'rgba(239,68,68,0.07)' : 'rgba(251,191,36,0.07)',
+                              border: `1px solid ${a.severity === 'red' ? 'rgba(239,68,68,0.25)' : 'rgba(251,191,36,0.25)'}`,
+                            }}
+                          >
+                            <b>{a.rule}</b> — {a.message}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* The in-progress day: where it sits, with no verdict. */}
+                    {todayCtx && (
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--muted2)', marginTop: '12px', lineHeight: 1.6 }}>
+                        DZIŚ (informacyjnie, bez oceny): {todayCtx.note}
+                      </div>
+                    )}
+
+                    {/* Rules that cannot run, named rather than silently absent. */}
+                    {alerts.refusals.length > 0 && (
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', marginTop: '10px', lineHeight: 1.6 }}>
+                        {alerts.refusals.map((a, i) => (
+                          <div key={`ref-${i}`} style={{ marginTop: i ? 6 : 0 }}>
+                            <b>{a.rule}</b> — {a.message}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Row 2: margin/profit detail — now range-aware (profit endpoint

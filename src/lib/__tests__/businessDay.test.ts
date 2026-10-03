@@ -133,6 +133,25 @@ describe('today', () => {
   })
 })
 
+describe('the two order-boundary cases the alarm rules depend on', () => {
+  it('TEST 7: an order at 00:30 Polish time on 28.09 belongs to 28.09', () => {
+    // 00:30 CEST = 22:30 UTC the previous day. This is the exact shape of the
+    // three orders that the daily view filed on the 27th.
+    expect(businessDay('2026-09-27T22:30:00Z')).toBe('2026-09-28')
+    expect(businessWallClock('2026-09-27T22:30:00Z')).toBe('2026-09-28 00:30:00')
+  })
+
+  it('TEST 8: an order at 02:30 Polish time on the clock-change day lands right', () => {
+    // 2026-10-25 is the CEST→CET switch: 03:00 CEST becomes 02:00 CET, so
+    // 02:30 local happens TWICE — once at 00:30 UTC and once at 01:30 UTC.
+    // Both are the 25th, and both must say so.
+    expect(businessDay('2026-10-25T00:30:00Z')).toBe('2026-10-25')  // 02:30 CEST
+    expect(businessDay('2026-10-25T01:30:00Z')).toBe('2026-10-25')  // 02:30 CET
+    expect(businessWallClock('2026-10-25T00:30:00Z')).toBe('2026-10-25 02:30:00')
+    expect(businessWallClock('2026-10-25T01:30:00Z')).toBe('2026-10-25 02:30:00')
+  })
+})
+
 describe('no fixed offset anywhere', () => {
   it('a +2h assumption would fail these, so the implementation cannot contain one', () => {
     // If the code did `ts + 2h` it would answer 2026-10-26 here. It answers
