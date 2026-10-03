@@ -409,14 +409,22 @@ function buildMorningBriefAnswer(ctx) {
 
   // Red flags
   const redFlags = []
-  if (cpa != null && cpa > 50) redFlags.push(`Real CPA ${fmt(cpa)} PLN — exceeds the 50 PLN alert threshold`)
+  // CPA and ROAS flags come from the alarm rules, which only colour on seven
+  // full Warsaw days. Reading today's figure here meant one quiet morning
+  // produced "exceeds the 50 PLN alert threshold" on a day that had barely
+  // started. ctx.alerts is computed in src/lib/alerts.ts.
+  for (const a of ctx.alerts ?? []) {
+    if ((a.rule === 'CPA' || a.rule === 'ROAS') && (a.severity === 'red' || a.severity === 'amber')) {
+      redFlags.push(a.message)
+    }
+  }
   if (spend > 0 && orders === 0) redFlags.push('Meta spend active, zero Wix orders')
-  if (roas != null && roas < 2 && spend > 50) redFlags.push(`ROAS ${fmt(roas)}x — below breakeven`)
   if (memCount > 0 && jsuCount === 0 && memCount >= 3) redFlags.push(`${memCount} PP buyers with zero JSU conversions. Check upsell sequence.`)
 
   // Recommendation
   let rec
-  if (cpa != null && cpa > 50) {
+  const cpaAlarm = (ctx.alerts ?? []).find(a => a.rule === 'CPA' && a.severity === 'red')
+  if (cpaAlarm) {
     rec = 'I would venture to suggest, sir: review high-CPA campaigns and consider pausing the weakest creatives.'
   } else if (spend > 0 && orders === 0) {
     rec = 'I would venture to suggest, sir: inspect the landing page — budget is flowing, but conversions are absent.'
@@ -437,8 +445,8 @@ function buildMorningBriefAnswer(ctx) {
     opening = `${orders} orders already, sir, and the cost per acquisition is behaving itself.`
   } else if (spend > 0 && orders === 0) {
     opening = 'The budget is running and not a single order has arrived, sir. That is where we begin.'
-  } else if (cpa != null && cpa > 60) {
-    opening = `Real CPA stands at ${fmt(cpa)} PLN, sir — above the line, and the first thing to address.`
+  } else if (cpaAlarm) {
+    opening = `${cpaAlarm.message}, sir — above the line, and the first thing to address.`
   } else {
     opening = `${orders} orders and ${fmt(revenue)} PLN so far today, sir.`
   }
@@ -628,25 +636,34 @@ function buildRedFlagsAnswer(ctx) {
   const flags = []
   const dh = ctx.dataHealth
   const p = ctx.profitData
-  const kpi = ctx.todayKPIs
+
+  // The CPA and ROAS flags used to read todayKPIs — ONE day, straight off the
+  // daily view — so a quiet Tuesday raised "CPA very high". They now come from
+  // the alarm rules (netlify/shared/alertRules.js), which only ever colour on
+  // seven full Warsaw days. Stanley repeats their verdict; he does not grade.
+  for (const a of ctx.alerts ?? []) {
+    if (a.severity === 'red' || a.severity === 'amber') {
+      flags.push(`${a.severity === 'red' ? 'CZERWONY' : 'ŻÓŁTY'} · ${a.rule} — ${a.message}`)
+    }
+  }
 
   if (dh && !dh.metaFresh) flags.push(`Meta data stale (${dh.latestMetaDate})`)
   if (dh && !dh.wixFresh) flags.push(`Wix orders stale (${dh.latestWixDate})`)
   if (p?.ok && (p.estimatedProfitAfterAds ?? 0) < 0) flags.push(`Negative profit: ${fmt(p.estimatedProfitAfterAds)} PLN`)
-  if (kpi?.real_cpa != null && kpi.real_cpa > 60) flags.push(`CPA very high: ${fmt(kpi.real_cpa)} PLN`)
-  if (kpi?.real_roas != null && kpi.real_roas < 1.5) flags.push(`ROAS low: ${fmt(kpi.real_roas)}x`)
   if ((p?.unknownRevenue ?? 0) > 100) flags.push(`${fmt(p?.unknownRevenue)} PLN unmapped revenue`)
 
   if (flags.length === 0) {
-    const msg = 'No critical issues detected in dashboard data.'
-    return { text: msg, speech: msg, sources: ['todayKPIs', 'profitData', 'dataHealth'], warnings: [] }
+    const msg = (ctx.alerts ?? []).length > 0
+      ? 'No active alarms. Every rule ran on whole Warsaw days and found nothing, sir.'
+      : 'No critical issues detected in dashboard data.'
+    return { text: msg, speech: msg, sources: ['alerts', 'profitData', 'dataHealth'], warnings: [] }
   }
 
   const list = flags.map((f, i) => `${i + 1}. ${f}`).join('\n')
   return {
     text: `Red flags (${flags.length}):\n` + list,
     speech: `${flags.length} red flag${flags.length > 1 ? 's' : ''}. Top: ${flags[0]}.`,
-    sources: ['todayKPIs', 'profitData', 'dataHealth'],
+    sources: ['alerts', 'profitData', 'dataHealth'],
     warnings: flags,
   }
 }
@@ -875,17 +892,24 @@ function buildMorningBriefLLMPrompt(ctx) {
   const hasWeekData     = weekRows.length >= 2
 
   const redFlags = []
-  if (cpa != null && cpa > 50) redFlags.push(`Real CPA ${fmt(cpa)} PLN — exceeds the 50 PLN alert threshold`)
+  // CPA and ROAS flags come from the alarm rules, which only colour on seven
+  // full Warsaw days. Reading today's figure here meant one quiet morning
+  // produced "exceeds the 50 PLN alert threshold" on a day that had barely
+  // started. ctx.alerts is computed in src/lib/alerts.ts.
+  for (const a of ctx.alerts ?? []) {
+    if ((a.rule === 'CPA' || a.rule === 'ROAS') && (a.severity === 'red' || a.severity === 'amber')) {
+      redFlags.push(a.message)
+    }
+  }
   if (spend > 0 && orders === 0) redFlags.push('Meta spend active, zero Wix orders')
-  if (roas != null && roas < 2 && spend > 50) redFlags.push(`ROAS ${fmt(roas)}x — below breakeven`)
   if (memCount > 0 && jsuCount === 0 && memCount >= 3) redFlags.push(`${memCount} PP buyers with zero JSU conversions — check upsell sequence`)
 
   // Tone hint based on data
   let toneHint
   if (spend > 0 && orders === 0) {
     toneHint = 'TONE: composed alarm — budget is burning, no orders. Urgent but glacially calm.'
-  } else if (cpa != null && cpa > 60) {
-    toneHint = 'TONE: strategic concern — CPA is painfully high. Precise, measured, focused.'
+  } else if ((ctx.alerts ?? []).some(a => a.rule === 'CPA' && a.severity === 'red')) {
+    toneHint = 'TONE: strategic concern — CPA is painfully high over seven full days. Precise, measured, focused.'
   } else if (redFlags.length > 0) {
     toneHint = 'TONE: watchful composure — some flags present, sir is informed without panic.'
   } else if (orders > 5 && (cpa == null || cpa < 35)) {

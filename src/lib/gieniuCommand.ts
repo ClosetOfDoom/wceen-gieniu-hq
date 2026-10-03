@@ -13,6 +13,12 @@ export interface TrendRow {
 }
 
 export interface GieniuCommandContext {
+  /**
+   * Alarm verdicts from the one rules module (src/lib/alerts.ts), already
+   * computed over WHOLE Warsaw days. Stanley reads these instead of grading a
+   * single day himself — a one-day CPA is noise, and he used to flag on it.
+   */
+  alerts?: Array<{ severity: 'red' | 'amber' | 'none'; rule: string; message: string }>
   todayKPIs: {
     wix_orders?: number | null
     wix_revenue?: number | null

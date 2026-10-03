@@ -401,6 +401,7 @@ function RightPanel({
   digestUnmappedFields,
   digestExcludedCount,
   digestExcludedRevenue,
+  digestOrdersToHour,
 }: {
   response: string
   chart?: InsightChartSpec
@@ -436,6 +437,7 @@ function RightPanel({
   digestUnmappedFields: string[]
   digestExcludedCount: number
   digestExcludedRevenue: number
+  digestOrdersToHour: { today: number; yesterday: number; hour: number } | null
 }) {
   const [inputVal, setInputVal] = useState('')
 
@@ -486,6 +488,7 @@ function RightPanel({
           unmappedFields={digestUnmappedFields}
           excludedCount={digestExcludedCount}
           excludedRevenue={digestExcludedRevenue}
+          ordersToHour={digestOrdersToHour}
         />
 
         {/* Response text — only ever a real answer. Idle and thinking states are
@@ -1069,6 +1072,7 @@ export default function App() {
     const latestMetaDate = ads[0]?.date ?? trend.find(r => r.meta_spend > 0)?.date ?? '—'
     const latestWixDate  = trend[0]?.date ?? '—'
     return {
+      alerts: alerts.all.map(a => ({ severity: a.severity, rule: a.rule, message: a.message })),
       todayKPIs: perf ? {
         wix_orders: perf.wix_orders,
         wix_revenue: perf.wix_revenue,
@@ -1482,6 +1486,17 @@ export default function App() {
         nowHour,
         dailySeries,
       )
+    : null
+
+  // Today vs yesterday AT THE SAME HOUR — the Skrót dnia comparison. Against a
+  // finished yesterday, every morning read as a collapse.
+  const yesterdayRow = dailySeries[dailySeries.length - 1]
+  const ordersToHour = ordersData?.todayHourly && yesterdayRow?.hourly
+    ? {
+        today: ordersData.todayHourly.hourly.slice(0, nowHour + 1).reduce((a, b) => a + b, 0),
+        yesterday: yesterdayRow.hourly.slice(0, nowHour + 1).reduce((a, b) => a + b, 0),
+        hour: nowHour,
+      }
     : null
 
   const cpaGoalRes  = cpaGoal(cpaBlended, undefined, alertBy('CPA'))
@@ -2003,6 +2018,7 @@ export default function App() {
         digestUnmappedFields={noMarginFields}
         digestExcludedCount={excludedCount}
         digestExcludedRevenue={excludedRevenue}
+        digestOrdersToHour={ordersToHour}
       />
 
       {/* Mobile bottom nav */}

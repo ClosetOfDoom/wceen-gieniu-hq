@@ -24,6 +24,12 @@ interface Props {
   /** Orders deliberately kept out of the blended figures (WSZTP). Not a gap. */
   excludedCount?: number
   excludedRevenue?: number
+  /**
+   * Orders today and at the SAME hour yesterday, from orders-data's per-hour
+   * series. Comparing a morning against yesterday's finished day made every
+   * morning look like a collapse; this compares like with like.
+   */
+  ordersToHour?: { today: number; yesterday: number; hour: number } | null
 }
 
 const fmtInt = (n: number | null | undefined) =>
@@ -118,9 +124,14 @@ export function DayDigest({
   today, yesterday, stale, dateLabel,
   unmappedCount = 0, unmappedFields = [],
   excludedCount = 0, excludedRevenue = 0,
+  ordersToHour = null,
 }: Props) {
   const hasAny = !!today
-  const cmp = yesterday ? 'vs wczoraj' : 'brak danych z wczoraj'
+  // When the hour-for-hour figures are available the comparison says so,
+  // because "vs wczoraj" against a finished day is not a fair read at 09:00.
+  const cmp = ordersToHour
+    ? `vs wczoraj do ${String(ordersToHour.hour).padStart(2, '0')}:00`
+    : yesterday ? 'vs wczoraj (pełna doba)' : 'brak danych z wczoraj'
 
   return (
     <div
@@ -163,8 +174,10 @@ export function DayDigest({
         <>
           <Row
             label="Zamówienia"
-            value={fmtInt(today?.wix_orders)}
-            d={delta(today?.wix_orders, yesterday?.wix_orders)}
+            value={ordersToHour ? fmtInt(ordersToHour.today) : fmtInt(today?.wix_orders)}
+            d={ordersToHour
+              ? delta(ordersToHour.today, ordersToHour.yesterday)
+              : delta(today?.wix_orders, yesterday?.wix_orders)}
           />
           <Row
             label="Przychód"
