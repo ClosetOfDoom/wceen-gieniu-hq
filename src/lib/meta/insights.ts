@@ -95,6 +95,14 @@ export interface MetaAdsDailyRow {
   impressions: number
   clicks: number
   link_clicks: number
+  /** Meta reach for this ad-day. NOT additive across days. */
+  reach: number
+  /**
+   * Meta's own pixel count of checkout initiations. Under-reported, no UTM,
+   * never joinable to a Wix order — a trend indicator inside one funnel, never
+   * attribution and never a conversion rate measured against Wix.
+   */
+  initiate_checkout: number
   meta_purchases: number
   meta_purchase_value: number
 }
@@ -228,8 +236,25 @@ const num = (v: string | undefined): number => {
   return Number.isFinite(n) ? n : 0
 }
 
-/** Purchase action types Meta reports; the pixel one is what the Wix store fires. */
-const PURCHASE_TYPES = new Set(['purchase', 'offsite_conversion.fb_pixel_purchase'])
+/**
+ * Meta reports the SAME conversion under several labels. Verified against the
+ * live API on 2026-10-03 for 2026-09-26 … 2026-10-02:
+ *
+ *   purchase                              53
+ *   offsite_conversion.fb_pixel_purchase  53
+ *   omni_purchase                         53
+ *   onsite_web_purchase                   53
+ *
+ * They are four names for one set of 53 purchases, not 212 purchases. Summing
+ * two of them — which this file used to do — doubles the figure. Exactly one
+ * canonical type per metric, therefore, and `purchase` is the plain one.
+ *
+ * The same applies to checkouts: initiate_checkout,
+ * offsite_conversion.fb_pixel_initiate_checkout, onsite_web_initiate_checkout
+ * and omni_initiated_checkout all read 203 over that window.
+ */
+const PURCHASE_TYPE = 'purchase'
+const INITIATE_CHECKOUT_TYPE = 'initiate_checkout'
 
 function sumActions(actions: MetaAction[] | undefined, match: (t: string) => boolean): number {
   if (!Array.isArray(actions)) return 0
@@ -252,7 +277,12 @@ function sumActions(actions: MetaAction[] | undefined, match: (t: string) => boo
  * the table but the requested field set does not produce them, and filling them
  * with zeros would be inventing data. On upsert PostgREST only touches the
  * columns present in the payload, so existing values are left alone.
- * `reach` is fetched per the spec but has no column to land in.
+ *
+ * `reach` and `initiate_checkout` ARE written as of 2026-10-03 — both already
+ * arrived in the existing call (reach is in INSIGHT_FIELDS, initiate_checkout
+ * is inside `actions`), so neither costs an extra request. They need the
+ * columns from supabase/migrations/20261003_meta_reach_initiate_checkout.sql;
+ * until that is applied the upsert will fail on them.
  */
 export function mapInsightRow(r: MetaInsightRow): MetaAdsDailyRow {
   return {
@@ -267,8 +297,10 @@ export function mapInsightRow(r: MetaInsightRow): MetaAdsDailyRow {
     impressions: num(r.impressions),
     clicks: num(r.clicks),
     link_clicks: sumActions(r.actions, (t) => t === 'link_click'),
-    meta_purchases: sumActions(r.actions, (t) => PURCHASE_TYPES.has(t)),
-    meta_purchase_value: sumActions(r.action_values, (t) => PURCHASE_TYPES.has(t)),
+    reach: num(r.reach),
+    initiate_checkout: sumActions(r.actions, (t) => t === INITIATE_CHECKOUT_TYPE),
+    meta_purchases: sumActions(r.actions, (t) => t === PURCHASE_TYPE),
+    meta_purchase_value: sumActions(r.action_values, (t) => t === PURCHASE_TYPE),
   }
 }
 

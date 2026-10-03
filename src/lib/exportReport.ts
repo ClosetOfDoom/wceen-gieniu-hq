@@ -108,6 +108,10 @@ const RULES = `## ZASADY DANYCH (czytaj przed analizą)
 - Wix = jedyne źródło prawdy transakcyjnej. Meta zaniża konwersje.
 - Zamówienia nie niosą UTM → atrybucja per reklama jest NIEMOŻLIWA.
   Wszystkie CPA i ROAS są blended (cały ad spend ÷ całość).
+- meta_purchases i initiate_checkout to liczby Meta (pixel): zaniżone, bez UTM,
+  niełączalne z zamówieniem Wix. Wskaźnik trendu w jednym lejku — nigdy
+  atrybucja i nigdy mianownik konwersji liczonej przeciw Wixowi.
+- reach NIE jest addytywny: suma dobowych zasięgów to nie zasięg zakresu.
 - Marże są szacunkowe, z katalogu produktów, nie z faktur.
 - Dane brakujące są nazwane wprost. Nie uzupełniaj ich estymacją.`
 

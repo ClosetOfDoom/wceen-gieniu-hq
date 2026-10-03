@@ -61,6 +61,14 @@ describe('rule 1 — two consecutive low FULL days', () => {
     expect(dailyLowAlert(series([12, 10, 4, 6])).severity).toBe('none')
   })
 
+  it('the floor stays at 5 — the measured p10 of 7 would fire on a normal week', () => {
+    // Measured 2026-10-03 over 114 days: ≤5 gives 5 days and 0 consecutive
+    // pairs; ≤7 gives 13 days and 2 pairs, both in an ordinary late-June
+    // stretch. A tail cut is not a percentile.
+    expect(ALERT_RULES.DAILY_LOW.maxOrders).toBe(5)
+    expect(dailyLowAlert(series([12, 10, 7, 7])).severity).toBe('none')
+  })
+
   it('a single low day never fires on its own', () => {
     expect(dailyLowAlert(series([12, 3, 11])).severity).toBe('none')
   })
@@ -90,8 +98,8 @@ describe('rule 2 — the trailing seven full days', () => {
 
   it('TEST 3b: only two days under the red line → amber, not red', () => {
     // Nine days: one busy one, then eight of nine orders each. The three most
-    // recent 7-day windows are 74, 63, 63 — two under the red line, so the
-    // streak is 2 and the verdict stops at amber.
+    // recent 7-day windows are 74, 63, 63 — two under the red line of 65, so
+    // the streak is 2 and the verdict stops at amber.
     const s = series([20, 9, 9, 9, 9, 9, 9, 9, 9])
     const windowEndingAt = (i: number) =>
       s.slice(i - 6, i + 1).reduce((t, d) => t + d.orders, 0)
@@ -102,14 +110,21 @@ describe('rule 2 — the trailing seven full days', () => {
     expect(a.values?.streak).toBe(2)
   })
 
-  it('under 74 but not under 66 is amber', () => {
+  it('the thresholds are the measured ones, not the old guesses', () => {
+    // p25 = 72 and p10 = 65, measured 2026-10-03 over 108 rolling windows.
+    expect(ALERT_RULES.ROLLING_7.amberBelow).toBe(72)
+    expect(ALERT_RULES.ROLLING_7.redBelow).toBe(65)
+  })
+
+  it('under 72 but not under 65 is amber', () => {
     const a = rolling7Alert(series([10, 10, 10, 10, 10, 10, 10]))  // 70
     expect(a.severity).toBe('amber')
     expect(a.message).toContain('70')
   })
 
-  it('at or above 74 is clear', () => {
+  it('at or above 72 is clear', () => {
     expect(rolling7Alert(series([12, 12, 12, 12, 12, 12, 12])).severity).toBe('none')  // 84
+    expect(rolling7Alert(series([11, 10, 10, 10, 10, 10, 11])).severity).toBe('none')  // 72
   })
 
   it('TEST 5: a window containing a day with no rows is NOT evaluated', () => {
@@ -210,29 +225,84 @@ describe('rule 4 — the top spender CTR', () => {
 })
 
 // ── 5 and 6 ─────────────────────────────────────────────────────────────────
-describe('rules 5 and 6 — refused, by name', () => {
-  it('TEST 6a: frequency names meta_ads_daily.reach and why a sum will not do', () => {
-    const a = frequencyAlert()
+describe('rules 5 and 6 — they wait for their columns', () => {
+  const nullRows = [
+    { date: '2026-10-01', ad_name: 'PP', impressions: 8000, link_clicks: 200, reach: null, initiate_checkout: null },
+    { date: '2026-10-02', ad_name: 'PP', impressions: 8000, link_clicks: 200, reach: null, initiate_checkout: null },
+  ]
+
+  it('TEST 4: reach = NULL is BRAK DANYCH — not 0, not green', () => {
+    const a = frequencyAlert(nullRows)
     expect(a.severity).toBe('none')
     expect(a.values?.refusal).toBe(true)
     expect(a.message).toContain('meta_ads_daily.reach')
+    expect(a.message).toContain('0 z wartością')
     expect(a.message).toContain('nie jest addytywny')
-    // It must survive the project's own refusal guard.
+    // Never a figure derived from the NULLs.
+    expect(a.message).not.toMatch(/częstotliwość \d/)
     expect(validateRefusal(a.message).valid).toBe(true)
   })
 
-  it('TEST 6b: click-to-checkout names meta_ads_daily.initiate_checkout', () => {
-    const a = clickToCheckoutAlert()
+  it('initiate_checkout = NULL is BRAK DANYCH, naming the column', () => {
+    const a = clickToCheckoutAlert(nullRows)
     expect(a.values?.refusal).toBe(true)
     expect(a.message).toContain('meta_ads_daily.initiate_checkout')
+    expect(a.message).toContain('0 z wartością')
     expect(validateRefusal(a.message).valid).toBe(true)
   })
 
-  it('neither invents a number', () => {
-    for (const a of [frequencyAlert(), clickToCheckoutAlert()]) {
+  it('no coverage means no percentage is ever printed', () => {
+    for (const a of [frequencyAlert(nullRows), clickToCheckoutAlert(nullRows)]) {
       expect(a.severity).toBe('none')
       expect(a.message).not.toMatch(/\b\d+(\.\d+)?%/)
     }
+  })
+
+  it('once reach arrives, frequency is judged PER DAY — reach is not additive', () => {
+    const rows = [
+      { date: '2026-10-01', ad_name: 'PP', impressions: 8670, reach: 7798 },   // 1.11
+      { date: '2026-10-02', ad_name: 'PP', impressions: 30000, reach: 10000 }, // 3.00
+    ]
+    const a = frequencyAlert(rows)
+    expect(a.severity).toBe('red')
+    expect(a.message).toContain('3.00')
+    expect(a.message).toContain('2026-10-02')
+    expect(a.message).toContain('zasięg nie jest addytywny')
+    // The window is never handed one summed reach.
+    expect(a.message).not.toContain('17798')
+  })
+
+  it('a healthy frequency is reported without a colour', () => {
+    const a = frequencyAlert([{ date: '2026-10-02', ad_name: 'PP', impressions: 8670, reach: 7798 }])
+    expect(a.severity).toBe('none')
+    expect(a.message).toContain('1.11')
+  })
+
+  it('two full days under 12% go red — labelled as a Meta figure', () => {
+    const rows = [
+      { date: '2026-10-01', link_clicks: 200, initiate_checkout: 10 },  // 5%
+      { date: '2026-10-02', link_clicks: 200, initiate_checkout: 12 },  // 6%
+    ]
+    const a = clickToCheckoutAlert(rows)
+    expect(a.severity).toBe('red')
+    expect(a.message).toContain('5.0%')
+    expect(a.message).toContain('Liczba Meta')
+    expect(a.message).toContain('nie atrybucja')
+  })
+
+  it('one bad day is not enough', () => {
+    const rows = [
+      { date: '2026-10-01', link_clicks: 200, initiate_checkout: 40 },  // 20%
+      { date: '2026-10-02', link_clicks: 200, initiate_checkout: 10 },  // 5%
+    ]
+    expect(clickToCheckoutAlert(rows).severity).toBe('none')
+  })
+
+  it('every checkout figure carries the Meta caveat, even when clear', () => {
+    const a = clickToCheckoutAlert([{ date: '2026-10-02', link_clicks: 200, initiate_checkout: 40 }])
+    expect(a.severity).toBe('none')
+    expect(a.message).toContain('liczba Meta')
+    expect(a.message).toContain('nie atrybucja')
   })
 })
 

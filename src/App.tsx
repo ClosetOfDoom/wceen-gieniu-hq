@@ -26,7 +26,7 @@ import {
   daysInMonthOf, PP_ORDERS_TARGET,
 } from './lib/goalProgress'
 import { businessHoursSinceMidnight, businessToday } from './lib/businessDay'
-import { evaluateAlerts, todayContext } from './lib/alerts'
+import { evaluateAlerts, todayContext, ALERT_RULES } from './lib/alerts'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday, fetchPerformanceBetween,
@@ -1740,6 +1740,12 @@ export default function App() {
                         DZIŚ (informacyjnie, bez oceny): {todayCtx.note}
                       </div>
                     )}
+
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: 'var(--muted2)', marginTop: '10px', lineHeight: 1.6 }}>
+                      Progi z pomiaru 2026-10-03 · 114 pełnych dób od 2026-06-11 · zamówienia &gt; {ALERT_RULES.ORDER_MIN_AMOUNT_PLN} zł.
+                      Statyczne: krocząca percentyla spada razem ze sprzedażą, więc powolny zjazd nigdy by nie odpalił alarmu.
+                      Przeliczanie ręczne, raz na kwartał (<code>npm run alerts</code>).
+                    </div>
 
                     {/* Rules that cannot run, named rather than silently absent. */}
                     {alerts.refusals.length > 0 && (

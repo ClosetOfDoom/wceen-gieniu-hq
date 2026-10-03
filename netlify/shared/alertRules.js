@@ -34,15 +34,48 @@ export const GOALS = {
   MONTHLY_REVENUE: 30000,
 }
 
+// ── WHY THESE NUMBERS ARE STATIC ─────────────────────────────────────────────
+//
+// Every threshold below is a FIXED number, re-derived by hand. None of them is
+// recomputed from a rolling window at runtime, and that is deliberate: a
+// percentile taken from the trailing window falls as sales fall, so a slow
+// decline would keep redefining "normal" downwards and never trip anything.
+// An alarm that moves with the thing it is watching is not an alarm.
+//
+// Re-deriving them is a manual decision, once a quarter, from
+// `npm run alerts` — which prints the distribution these came from.
+//
+// MEASURED 2026-10-03 · 114 full Warsaw days · orders paid and > 5 PLN ·
+// from 2026-06-11 (the first day `orders` has any row for):
+//   daily       p10 7 · p25 9 · median 12 · p75 15 · max 28
+//   rolling 7   p10 65 · p25 72 · median 84.5 · min 51 · max 155
 export const ALERT_RULES = {
-  /** An order below this is a test, not a sale. */
+  /** An order below this is a test, not a sale. 12 such rows since 2026-06-11. */
   ORDER_MIN_AMOUNT_PLN: 5,
 
-  /** 1 — two consecutive full days at or under this many orders. */
+  /**
+   * 1 — two consecutive full days at or under this many orders.
+   *
+   * Kept at 5, NOT raised to the measured p10 of 7. This is a tail cut, not a
+   * percentile: at 5 the rule covers 5 days out of 114 and has never once seen
+   * two in a row, which is what makes a pair worth waking up for. Measured
+   * 2026-10-03, the consequence of each candidate over those 114 days:
+   *   ≤5 →  5 days,  0 consecutive pairs   ← here
+   *   ≤6 →  6 days,  0 pairs
+   *   ≤7 → 13 days,  2 pairs (20-21.06, 21-22.06 — an ordinary quiet stretch)
+   *   ≤8 → 21 days,  6 pairs
+   * Raising it to 7 would have fired on a normal late-June week.
+   */
   DAILY_LOW: { maxOrders: 5, consecutiveDays: 2 },
 
-  /** 2 — the trailing 7 FULL days. p10 of that window is 65, p25 is 72. */
-  ROLLING_7: { windowDays: 7, amberBelow: 74, redBelow: 66, redStreakDays: 3 },
+  /**
+   * 2 — the trailing 7 FULL days.
+   * amberBelow = p25 of the rolling-7 distribution (72), redBelow = p10 (65).
+   * Measured 2026-10-03 over 108 windows. Against the previous 74/66 this is a
+   * slight tightening: 26 amber windows instead of 29, and the same 9 days of
+   * red alarm (all 25.06 – 03.07).
+   */
+  ROLLING_7: { windowDays: 7, amberBelow: 72, redBelow: 65, redStreakDays: 3 },
 
   /** 3 — CPA and ROAS are only ever coloured on 7 full days. */
   CPA:  { windowDays: 7, green: 40, amber: 50, doNotScale: 60 },
@@ -247,27 +280,117 @@ export function creativeCtrAlert(adDays) {
     { ad: topAd, basis, floor, streak })
 }
 
-// ── 5 and 6. the two rules the data cannot support ──────────────────────────
+// ── 5 and 6. rules that wait for their columns ──────────────────────────────
 //
-// Both return a refusal that names the table and the column, because a rule
-// that silently does not run is worse than one that says why. The strings are
-// shaped to pass validateRefusal() in src/lib/refusalGuard.ts.
+// The columns were added on 2026-10-03
+// (supabase/migrations/20261003_meta_reach_initiate_checkout.sql) and the
+// ingest now writes them, but historical rows stay NULL and the first run has
+// to happen before anything is there. So both rules check COVERAGE first and,
+// while it is zero, refuse by name. They never return a green light they have
+// not earned, and they never read NULL as 0.
+//
+// The refusal strings are shaped to pass validateRefusal() in
+// src/lib/refusalGuard.ts: they name table.column and a real source.
 
-export function frequencyAlert() {
-  return alert('none', 'CZĘSTOTLIWOŚĆ',
-    'Nie mam tej danej. meta_ads_daily.reach nie istnieje w schemacie — Meta Insights API '
-    + 'pobiera reach, ale ingest nie ma go gdzie zapisać. Częstotliwości nie da się policzyć '
-    + 'z dziennych wierszy, bo zasięg nie jest addytywny: suma dobowych reach to nie reach '
-    + 'zakresu. Potrzebny jest reach liczony przez Meta dla całego okna.',
-    { refusal: true, table: 'meta_ads_daily', column: 'reach' })
+/** Rows in the window that actually carry a value for `field`. */
+function coverage(adDays, field) {
+  const rows = adDays ?? []
+  const withValue = rows.filter(r => r[field] != null)
+  return { rows: rows.length, withValue: withValue.length, values: withValue }
 }
 
-export function clickToCheckoutAlert() {
+/**
+ * 5 — frequency > 2.0.
+ *
+ * Reach is NOT additive: summing the daily figures does not give the window's
+ * reach, because the same person reached on two days counts once. So this
+ * judges the worst SINGLE day rather than inventing a window-level reach —
+ * and says that is what it is doing.
+ */
+export function frequencyAlert(adDays) {
+  const { rows, withValue, values } = coverage(adDays, 'reach')
+  if (withValue === 0) {
+    return alert('none', 'CZĘSTOTLIWOŚĆ',
+      'Nie mam tej danej. meta_ads_daily.reach jest puste dla całego okna '
+      + `(${rows} wierszy, 0 z wartością) — kolumna istnieje od migracji 2026-10-03, `
+      + 'ale ingest Meta Insights API jeszcze jej nie zapełnił. Zasięgu nie da się '
+      + 'odtworzyć z innych kolumn: nie jest addytywny, więc suma dobowych reach '
+      + 'to nie reach zakresu.',
+      { refusal: true, table: 'meta_ads_daily', column: 'reach', rows, withValue })
+  }
+
+  const R = ALERT_RULES.FREQUENCY
+  const perDay = values
+    .filter(r => Number(r.reach) > 0)
+    .map(r => ({ date: r.date, ad: r.ad_name ?? r.ad_id ?? '—',
+                 freq: (Number(r.impressions) || 0) / Number(r.reach) }))
+  if (perDay.length === 0) {
+    return alert('none', 'CZĘSTOTLIWOŚĆ', 'reach obecny, ale zerowy we wszystkich wierszach okna',
+      { rows, withValue })
+  }
+  const worst = perDay.reduce((a, b) => (b.freq > a.freq ? b : a))
+  if (worst.freq > R.max) {
+    return alert('red', 'CZĘSTOTLIWOŚĆ',
+      `"${worst.ad}" — częstotliwość ${worst.freq.toFixed(2)} w dobie ${worst.date}, powyżej ${R.max}. `
+      + 'Liczone per doba, nie dla okna: zasięg nie jest addytywny.',
+      { ad: worst.ad, date: worst.date, frequency: worst.freq })
+  }
+  return alert('none', 'CZĘSTOTLIWOŚĆ',
+    `najwyższa częstotliwość dobowa ${worst.freq.toFixed(2)} ("${worst.ad}", ${worst.date}), próg ${R.max}`,
+    { frequency: worst.freq })
+}
+
+/**
+ * 6 — click → checkout below 12% for two full days.
+ *
+ * initiate_checkout is META'S OWN pixel count: under-reported, no UTM, not
+ * joinable to a Wix order. It is a trend signal inside one funnel, never
+ * attribution, and the ratio below is deliberately Meta-internal
+ * (checkout ÷ link clicks, both from Meta) so it is never silently read as a
+ * conversion rate against Wix.
+ */
+export function clickToCheckoutAlert(adDays) {
+  const { rows, withValue, values } = coverage(adDays, 'initiate_checkout')
+  if (withValue === 0) {
+    return alert('none', 'KLIK_DO_KASY',
+      'Nie mam tej danej. meta_ads_daily.initiate_checkout jest puste dla całego okna '
+      + `(${rows} wierszy, 0 z wartością) — kolumna istnieje od migracji 2026-10-03, `
+      + 'ale ingest Meta Insights API jeszcze jej nie zapełnił.',
+      { refusal: true, table: 'meta_ads_daily', column: 'initiate_checkout', rows, withValue })
+  }
+
+  const R = ALERT_RULES.CLICK_TO_CHECKOUT
+  const byDate = new Map()
+  for (const r of values) {
+    const e = byDate.get(r.date) ?? { clicks: 0, checkouts: 0 }
+    e.clicks += Number(r.link_clicks) || 0
+    e.checkouts += Number(r.initiate_checkout) || 0
+    byDate.set(r.date, e)
+  }
+  const days = [...byDate.entries()]
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+    .filter(([, e]) => e.clicks > 0)
+    .map(([date, e]) => ({ date, pct: (e.checkouts / e.clicks) * 100 }))
+
+  let streak = 0
+  const below = []
+  for (let i = days.length - 1; i >= 0; i--) {
+    if (days[i].pct < R.minPct) { streak++; below.unshift(days[i]) } else break
+  }
+  if (streak >= R.consecutiveDays) {
+    const detail = below.map(d => `${d.date}: ${d.pct.toFixed(1)}%`).join(', ')
+    return alert('red', 'KLIK_DO_KASY',
+      `klik → kasa poniżej ${R.minPct}% przez ${streak} pełne doby (${detail}). `
+      + 'Liczba Meta (pixel, zaniżona, bez UTM) — wskaźnik trendu w jednym lejku, nie atrybucja.',
+      { streak, days: below })
+  }
+  const latest = days[days.length - 1]
   return alert('none', 'KLIK_DO_KASY',
-    'Nie mam tej danej. meta_ads_daily.initiate_checkout nie istnieje w schemacie, a ingest '
-    + 'z Meta Insights API zapisuje z actions wyłącznie link_click i zakupy. Bez finalizacji '
-    + 'zakupu nie policzę przejścia z kliknięcia do kasy.',
-    { refusal: true, table: 'meta_ads_daily', column: 'initiate_checkout' })
+    latest
+      ? `klik → kasa ${latest.pct.toFixed(1)}% (${latest.date}), próg ${R.minPct}% — liczba Meta, `
+        + 'wskaźnik trendu, nie atrybucja'
+      : 'brak dób z kliknięciami w oknie',
+    { streak })
 }
 
 // ── data gaps ───────────────────────────────────────────────────────────────
@@ -355,8 +478,8 @@ export function evaluateAlerts({ series = [], cpa = null, cpaRolling7 = null, ro
     cpaAlert(cpa, cpaRolling7, fullDays),
     roasAlert(roas, roasRolling7, fullDays),
     creativeCtrAlert(adDays),
-    frequencyAlert(),
-    clickToCheckoutAlert(),
+    frequencyAlert(adDays),
+    clickToCheckoutAlert(adDays),
     ...dataGapAlerts(series, recordStartsOn),
   ]
   return {

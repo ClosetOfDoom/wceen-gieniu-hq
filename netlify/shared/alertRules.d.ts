@@ -25,6 +25,10 @@ export interface AdDayRow {
   impressions?: number | null
   clicks?: number | null
   link_clicks?: number | null
+  /** NULL until the ingest fills it. NOT additive across days. */
+  reach?: number | null
+  /** Meta's own pixel count — trend only, never attribution. NULL until filled. */
+  initiate_checkout?: number | null
 }
 
 export interface TodayContext {
@@ -55,8 +59,8 @@ export function rolling7Alert(series: DaySeriesEntry[]): AlertResult
 export function cpaAlert(value: number | null, rolling7: number | null, fullDays: number): AlertResult
 export function roasAlert(value: number | null, rolling7: number | null, fullDays: number): AlertResult
 export function creativeCtrAlert(adDays: AdDayRow[]): AlertResult
-export function frequencyAlert(): AlertResult
-export function clickToCheckoutAlert(): AlertResult
+export function frequencyAlert(adDays?: AdDayRow[]): AlertResult
+export function clickToCheckoutAlert(adDays?: AdDayRow[]): AlertResult
 export function dataGapAlerts(series: DaySeriesEntry[], recordStartsOn?: string | null): AlertResult[]
 export function todayContext(
   ordersSoFar: number, hour: number,
