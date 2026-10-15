@@ -2,6 +2,7 @@ import type { DailyPerformance, DataStatus, MetaAdDaily, MetaStatsToday } from '
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import type { OpsWeekReport } from '../lib/opsWeekReport'
 import type { OrdersData } from '../lib/ordersData'
+import { parseDateRange, countOrdersInWindow } from '../lib/orderWindow'
 import type { ProfitData } from '../lib/profitData'
 import {
   buildRevenueReport, buildOperationalReport, buildPipelineReport,
@@ -15,6 +16,7 @@ import {
   buildLast7Days, buildPeriodComparison, buildAdsDiagnosis,
   buildWorkflowInstructions,
   buildMemoryBundleAnswer, buildMemoryBundleSpoken,
+  buildOrdersInRangeAnswer, buildOrdersInRangeSpoken,
   buildJsuWeekReport, buildJsuWeekReportSpoken, buildJsuSalesAnswer, buildJsuSalesSpoken,
   buildJzkWeekReport, buildJzkWeekReportSpoken, buildJzkSalesAnswer, buildJzkSalesSpoken,
   buildTodayOrdersAnswer, buildTodayOrdersSpoken,
@@ -136,6 +138,23 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
   )) {
     detectedIntent = 'profit_query'
     result = buildProfitAnswer(profitData)
+  }
+
+  // ── Orders in an explicit date range ────────────────────────────────────────
+  // MUST come before today_orders_query: that one matches "how many orders" by
+  // plain substring, so "how many orders between 9 and 15 October" used to land
+  // there and answer about today — 6 instead of 80. This fires only when a
+  // range is actually parsed out of the question, so nothing else changes.
+  if (!result) {
+    const parsed = parseDateRange(q)
+    if (parsed) {
+      const window = countOrdersInWindow(ordersData, parsed.from, parsed.to)
+      detectedIntent = 'orders_in_range'
+      result = w(
+        buildOrdersInRangeAnswer(window, `${parsed.from} – ${parsed.to}`),
+        buildOrdersInRangeSpoken(window),
+      )
+    }
   }
 
   // ── Today orders query ("ile dziś zamówień", "ile zamówień dzisiaj") ──────────

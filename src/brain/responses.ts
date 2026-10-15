@@ -2090,3 +2090,88 @@ export function buildProfitSpoken(d: ProfitData | null): string {
 
   return parts.join(' ')
 }
+
+// ── Orders in an explicit date range ─────────────────────────────────────────
+
+import type { OrderWindow } from '../lib/orderWindow'
+
+/**
+ * Orders between two dates, when the question actually named them.
+ *
+ * Before this existed, "how many orders between 9 and 15 October" matched the
+ * today-orders intent by plain substring, the dates were discarded, and the
+ * answer was today's count — 6 against a real 80. So the range is quoted back
+ * explicitly, and anything that makes the figure incomplete is said out loud
+ * rather than quietly applied.
+ */
+export function buildOrdersInRangeAnswer(w: OrderWindow | null, label: string): string {
+  if (!w) {
+    return [
+      `Zamówienia ${label} — brak źródła`,
+      '',
+      'BRAK DANYCH: orders-data.dailySeries — nie mam serii dobowej, więc nie policzę',
+      'zamówień w tym zakresie. Nie zgaduję.',
+    ].join('\n')
+  }
+
+  const lines = [
+    `Zamówienia ${w.from} – ${w.to} (${w.days.length} ${w.days.length === 1 ? 'doba' : 'doby'}, oba końce włącznie)`,
+    '',
+    `Razem: ${w.orders} zamówień · ${w.revenue.toFixed(2)} PLN`,
+  ]
+
+  // The in-progress day is never passed off as a full one, and never silently
+  // dropped either — both would misstate the total.
+  if (w.partialDay) {
+    lines.push(
+      '',
+      `UWAGA: ${w.partialDay.date} to doba W TOKU — stan na ${String(w.partialDay.hour).padStart(2, '0')}:00,`,
+      `${w.partialDay.orders} ${w.partialDay.orders === 1 ? 'zamówienie' : 'zamówień'}. Ta doba jeszcze się nie skończyła,`,
+      'więc suma wyżej nie jest sumą pełnych dób.',
+      `Pełne doby w zakresie: ${w.days.length - 1} · ${w.orders - w.partialDay.orders} zamówień.`,
+    )
+  }
+
+  if (w.missingDays.length > 0) {
+    lines.push(
+      '',
+      `BRAK DANYCH: orders — ${w.missingDays.length} ${w.missingDays.length === 1 ? 'doba' : 'doby'} bez ani jednego wiersza:`,
+      `  ${w.missingDays.join(', ')}`,
+      'Sprawdź w Wix, czy to zero sprzedaży, czy zacięty sync Make. Te doby liczą się jako 0,',
+      'co może zaniżać sumę.',
+    )
+  }
+
+  if (w.outOfRangeDays.length > 0) {
+    lines.push(
+      '',
+      `BRAK DANYCH: orders-data.dailySeries nie sięga tak daleko wstecz — ${w.outOfRangeDays.length} dób`,
+      `poza oknem serii (${w.outOfRangeDays[0]} … ${w.outOfRangeDays[w.outOfRangeDays.length - 1]}).`,
+      'Nie są wliczone, więc suma jest NIEPEŁNA.',
+    )
+  }
+
+  lines.push(
+    '',
+    `Liczone po dobie Europe/Warsaw, oba końce włącznie. Zamówienia opłacone powyżej progu`,
+    `zamówienia testowego. To liczba surowa — nic nie jest odejmowane za niezmapowane`,
+    'produkty ani za WSZTP; te pozycje widać osobno na karcie EST. PROFIT.',
+  )
+
+  return lines.join('\n')
+}
+
+export function buildOrdersInRangeSpoken(w: OrderWindow | null): string {
+  if (!w) return 'Nie mam serii dobowej, więc nie policzę zamówień w tym zakresie, sir.'
+  const parts = [
+    `Między ${w.from} a ${w.to} włącznie mamy ${w.orders} zamówień na ${w.revenue.toFixed(0)} złotych.`,
+  ]
+  if (w.partialDay) {
+    parts.push(`Uwaga: ${w.partialDay.date} jeszcze trwa — to stan na godzinę ${w.partialDay.hour},`
+      + ` ${w.partialDay.orders} zamówień. Pełnych dób jest ${w.days.length - 1}.`)
+  }
+  if (w.missingDays.length > 0) {
+    parts.push(`${w.missingDays.length} dób nie ma w ogóle wierszy w bazie — suma może być zaniżona.`)
+  }
+  return parts.join(' ')
+}

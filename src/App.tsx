@@ -27,6 +27,7 @@ import {
 } from './lib/goalProgress'
 import { businessHoursSinceMidnight, businessToday } from './lib/businessDay'
 import { evaluateAlerts, todayContext, ALERT_RULES } from './lib/alerts'
+import { countOrdersInWindow } from './lib/orderWindow'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday, fetchPerformanceBetween,
@@ -1439,7 +1440,15 @@ export default function App() {
   const ppOrdersRange = profitData?.ok
     ? (profitData.productBreakdown?.find(p => p.productKey === 'memory_pack')?.orders ?? 0)
     : null
-  const rangeRevenue  = displayPerf?.wix_revenue ?? 0
+  // Orders and revenue for the range come from ONE counter, shared with the
+  // COPY report and with Stanley's answers (src/lib/orderWindow.ts). They used
+  // to be read off v_daily_wix_meta_performance, which still buckets the day by
+  // UTC: for 2026-10-09…15 the view said 79 where `orders` holds 80, because
+  // two orders sit in the 22:00–24:00 UTC window. Spend, impressions and clicks
+  // still come from the view — those are Meta's own figures on Meta's own day.
+  const orderWindow   = countOrdersInWindow(ordersData, rangeFrom, rangeTo)
+  const rangeOrders   = orderWindow?.orders ?? displayPerf?.wix_orders ?? null
+  const rangeRevenue  = orderWindow?.revenue ?? displayPerf?.wix_revenue ?? 0
   const ppExpected  = PP_ORDERS_TARGET * rangeTargetDays
   const ppGoal      = ppOrdersGoal(ppOrdersRange, ppExpected)
   const revGoal     = revenueGoal(rangeRevenue, rangeTargetDays, goalDaysIn)
@@ -1541,8 +1550,11 @@ export default function App() {
       rangeSub,
       buildHash: __BUILD_HASH__,
       generatedAt: new Date().toISOString(),
-      perf: displayPerf,
+      // The report prints the SAME orders/revenue the cards do — one counter,
+      // not three derivations. Spend and the Meta columns stay as they were.
+      perf: displayPerf ? { ...displayPerf, wix_orders: rangeOrders ?? 0, wix_revenue: rangeRevenue } : null,
       prevPerf: aggregatePerf(prevTrendRows),
+      orderWindow,
       dailyRows: trendRows,
       profit: profitData,
       cpa: cpaBlended,
@@ -1630,8 +1642,23 @@ export default function App() {
                   )}
                   {/* Row 1: core metrics + profit */}
                   <div className="kpi-grid">
-                    <KPICard label="Wix Orders" value={fmtNum(displayPerf?.wix_orders)} sublabel={perfIsStale ? trend[0]?.date : undefined} onClick={() => toggleMetric('wix_orders')} active={expandedMetric === 'wix_orders'} />
-                    <KPICard label="Wix Revenue" value={fmtPln(displayPerf?.wix_revenue)} accent sublabel={perfIsStale ? trend[0]?.date : undefined} onClick={() => toggleMetric('wix_revenue')} active={expandedMetric === 'wix_revenue'} />
+                    <KPICard
+                      label="Wix Orders"
+                      value={fmtNum(rangeOrders)}
+                      sublabel={orderWindow?.partialDay
+                        ? `w tym ${orderWindow.partialDay.date} w toku (stan na ${String(orderWindow.partialDay.hour).padStart(2, '0')}:00)`
+                        : perfIsStale ? trend[0]?.date : undefined}
+                      onClick={() => toggleMetric('wix_orders')}
+                      active={expandedMetric === 'wix_orders'}
+                    />
+                    <KPICard
+                      label="Wix Revenue"
+                      value={fmtPln(rangeRevenue)}
+                      accent
+                      sublabel={orderWindow?.partialDay ? 'ostatnia doba w toku' : perfIsStale ? trend[0]?.date : undefined}
+                      onClick={() => toggleMetric('wix_revenue')}
+                      active={expandedMetric === 'wix_revenue'}
+                    />
                     <KPICard label="Ad Spend" value={fmtPln(displayPerf?.meta_spend)} sublabel={perfIsStale ? trend[0]?.date : undefined} onClick={() => toggleMetric('meta_spend')} active={expandedMetric === 'meta_spend'} />
                     <KPICard
                       label="Est. Profit"

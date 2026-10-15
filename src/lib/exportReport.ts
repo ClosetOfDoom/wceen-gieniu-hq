@@ -18,6 +18,7 @@ import { RANGE_LABELS } from './timeRange'
 import { classifyCampaignScope } from './campaignDiagnosis'
 import { fmtPln, fmtNum, fmtRoas } from '../utils/format'
 import type { AlertResult, TodayContext } from './alerts'
+import type { OrderWindow } from './orderWindow'
 
 export interface ReportGoals {
   pp: GoalResult
@@ -65,6 +66,8 @@ export interface ReportInput {
   alerts?: AlertResult[]
   /** Where the in-progress day sits. Context only — never an alarm. */
   todayContext?: TodayContext | null
+  /** The one order counter's verdict for this range — same numbers as the cards. */
+  orderWindow?: OrderWindow | null
 }
 
 // ── formatting ───────────────────────────────────────────────────────────────
@@ -124,6 +127,9 @@ const TARGETS = `## PROGI I CELE
 - Budżet: max +15–20% naraz, jedna zmiana na tydzień`
 
 function summarySection(i: ReportInput): string {
+  // Stated before the table, because a total that includes an unfinished day
+  // is not comparable with one that does not.
+  const partial = i.orderWindow?.partialDay
   const p = i.perf
   const prev = i.prevPerf
   const orders = p?.wix_orders ?? null
@@ -152,6 +158,11 @@ function summarySection(i: ReportInput): string {
   return [
     '## PODSUMOWANIE',
     '',
+    ...(partial
+      ? [`_Ostatnia doba (${partial.date}) jest W TOKU — stan na `
+         + `${String(partial.hour).padStart(2, '0')}:00, ${partial.orders} zam. `
+         + 'Liczby poniżej ją zawierają._', '']
+      : []),
     '| metryka | wartość | vs poprzedni zakres |',
     '| --- | --- | --- |',
     ...rows.map(([k, v, d]) => `| ${k} | ${v} | ${d} |`),
