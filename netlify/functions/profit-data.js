@@ -125,6 +125,10 @@ export const handler = async (event) => {
       // Without these a night order cannot be told apart from a daytime one, and
       // the day-boundary count cannot be checked against the orders it counted.
       order_created_at: order.raw[0]?.order_created_at ?? null,
+      // When the sync actually wrote the row, versus when the order was placed.
+      // The gap between the two is the only window into how Make batches — and
+      // whether it drops rows when several orders land at once.
+      inserted_at:      order.raw[0]?.inserted_at ?? null,
       utc_date:         String(order.raw[0]?.order_created_at ?? '').slice(0, 10) || null,
       warsaw_time:      businessWallClock(order.raw[0]?.order_created_at),
       day_boundary:     isDayBoundary(order),
