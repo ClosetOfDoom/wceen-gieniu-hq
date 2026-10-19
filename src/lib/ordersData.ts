@@ -21,6 +21,17 @@ export interface DailySeriesDay extends DaySeriesEntry {
   revenue: number
   /** Orders per Warsaw hour, 24 entries. */
   hourly: number[]
+  /**
+   * Per-product counts for THIS day, keyed by productCatalog's product key,
+   * plus 'unmapped' and an `unmappedNames` list. Present for every day, not
+   * just today — a breakdown that exists only for today gets invented for
+   * every other day.
+   */
+  products?: Record<string, { orders: number; revenue: number }>
+  /** Raw Wix names of everything that matched nothing. Never substituted. */
+  unmappedNames?: Array<{ name: string; amount: number; failedField?: string | null }>
+  /** Rows the test-order floor removed on this day. */
+  belowFloor?: { orders: number; revenue: number }
 }
 
 export interface OrdersData {
@@ -62,7 +73,14 @@ export interface OrdersData {
    */
   dailySeries?: DailySeriesDay[]
   /** The in-progress day. Kept out of dailySeries so no alarm can fire on it. */
-  todayHourly?: { date: string; orders: number; revenue: number; hourly: number[] }
+  todayHourly?: {
+    date: string; orders: number; revenue: number; hourly: number[]
+    products?: DailySeriesDay['products']
+    unmappedNames?: DailySeriesDay['unmappedNames']
+    belowFloor?: { orders: number; revenue: number }
+  }
+  /** Display names and scope, straight from productCatalog.js. */
+  productCatalog?: Record<string, { displayName: string; scope: string }>
   /** First day `orders` has any row for — days before it are prehistory. */
   recordStartsOn?: string | null
   /** Orders at or below this amount are test orders and are not counted. */

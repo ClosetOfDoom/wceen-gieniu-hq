@@ -16,6 +16,14 @@
 import { businessDay, businessToday, businessDaysBetween, businessHoursSinceMidnight } from './businessDay'
 import type { DailySeriesDay, OrdersData } from './ordersData'
 
+/** One product's share of a window. Keyed by productCatalog's own product key. */
+export interface ProductSlice {
+  key: string
+  displayName: string
+  orders: number
+  revenue: number
+}
+
 export interface OrderWindow {
   from: string
   to: string
@@ -30,6 +38,35 @@ export interface OrderWindow {
   missingDays: string[]
   /** Days inside the window the series does not reach back to. */
   outOfRangeDays: string[]
+  /**
+   * Per product, built by iterating what the series carries — never a hardcoded
+   * list. A product nothing matched lands under key 'unmapped' with its raw Wix
+   * names, so it can neither vanish nor be folded into another bucket.
+   */
+  products: ProductSlice[]
+  unmappedNames: Array<{ name: string; amount: number; failedField?: string | null }>
+  /** Rows the test-order floor removed. Reported, never silently dropped. */
+  belowFloor: { orders: number; revenue: number }
+}
+
+/**
+ * Does the breakdown actually account for the total?
+ *
+ * Asked about 2026-10-17 Stanley printed 18 orders / 3 621 PLN and a breakdown
+ * of 18 × Pakiet Pamięciowy / 2 142 PLN. The two did not agree — 2 142 against
+ * 3 621 — and nothing noticed. This is the check that notices, and it runs on
+ * the numbers about to be shown, whatever produced them.
+ */
+export function checkBreakdownConsistency(w: OrderWindow): { ok: boolean; reason: string | null } {
+  const orders = w.products.reduce((s, p) => s + p.orders, 0)
+  const revenue = w.products.reduce((s, p) => s + p.revenue, 0)
+  if (orders !== w.orders) {
+    return { ok: false, reason: `rozbicie niespójne z sumą: ${orders} szt. w rozbiciu vs ${w.orders} zamówień` }
+  }
+  if (Math.abs(revenue - w.revenue) > 0.01) {
+    return { ok: false, reason: `rozbicie niespójne z sumą: ${revenue.toFixed(2)} PLN w rozbiciu vs ${w.revenue.toFixed(2)} PLN przychodu` }
+  }
+  return { ok: true, reason: null }
 }
 
 /**
@@ -54,11 +91,27 @@ export function countOrdersInWindow(data: OrdersData | null, from: string, to: s
   let revenue = 0
   const missingDays: string[] = []
   const outOfRangeDays: string[] = []
+  const byProduct = new Map<string, { orders: number; revenue: number }>()
+  const unmappedNames: OrderWindow['unmappedNames'] = []
+  const belowFloor = { orders: 0, revenue: 0 }
+
+  const absorb = (src: Pick<DailySeriesDay, 'products' | 'unmappedNames' | 'belowFloor'>) => {
+    for (const [key, slice] of Object.entries(src.products ?? {})) {
+      const cur = byProduct.get(key) ?? { orders: 0, revenue: 0 }
+      cur.orders += slice.orders
+      cur.revenue += slice.revenue
+      byProduct.set(key, cur)
+    }
+    unmappedNames.push(...(src.unmappedNames ?? []))
+    belowFloor.orders += src.belowFloor?.orders ?? 0
+    belowFloor.revenue += src.belowFloor?.revenue ?? 0
+  }
 
   for (const date of days) {
     if (date === today && data.todayHourly) {
       orders += data.todayHourly.orders
       revenue += data.todayHourly.revenue
+      absorb(data.todayHourly)
       continue
     }
     const d = byDate.get(date)
@@ -70,13 +123,27 @@ export function countOrdersInWindow(data: OrdersData | null, from: string, to: s
     if (d.missing) missingDays.push(date)
     orders += d.orders
     revenue += d.revenue
+    absorb(d)
   }
+
+  // Labels come from the catalog the endpoint shipped with the payload, so no
+  // consumer keeps its own list of product names.
+  const catalog = data.productCatalog ?? {}
+  const products: ProductSlice[] = [...byProduct.entries()]
+    .map(([key, v]) => ({
+      key,
+      displayName: key === 'unmapped' ? 'NIEZMAPOWANE' : (catalog[key]?.displayName ?? key),
+      orders: v.orders,
+      revenue: v.revenue,
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
 
   const partialDay = days.includes(today) && data.todayHourly
     ? { date: today, hour: Math.floor(businessHoursSinceMidnight()), orders: data.todayHourly.orders }
     : null
 
-  return { from, to, days, orders, revenue, partialDay, missingDays, outOfRangeDays }
+  return { from, to, days, orders, revenue, partialDay, missingDays, outOfRangeDays,
+           products, unmappedNames, belowFloor }
 }
 
 // ── parsing a range out of a question ───────────────────────────────────────

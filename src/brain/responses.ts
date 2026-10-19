@@ -269,20 +269,50 @@ export function buildMemoryBundleAnswer(
     return lines.join('\n')
   }
 
-  const t = orders.today_classified
-  const total = orders.totals.today_orders
+  // Iterates whatever today's series carries, labelled from the catalog the
+  // endpoint ships. The three product names used to be written out here, so a
+  // fourth product — Cogni, Pakiet Językozaka — would simply not appear.
+  const perProduct = orders.todayHourly?.products ?? {}
+  const catalog = orders.productCatalog ?? {}
+  const slices = Object.entries(perProduct)
+    .map(([k, v]) => ({ label: k === 'unmapped' ? 'NIEZMAPOWANE' : (catalog[k]?.displayName ?? k), ...v }))
+    .sort((a, b) => b.revenue - a.revenue)
+
+  const total = orders.todayHourly?.orders ?? orders.totals.today_orders
+  const totalRevenue = orders.todayHourly?.revenue ?? orders.totals.today_revenue
   const lines = [
     `Rozbicie na produkty — ${orders.today_warsaw}`,
     '',
-    `Pakiet Pamięciowy:  ${t.memory_pack.count} zam. · ${fmtPln(t.memory_pack.revenue)}`,
-    `Językowe (JZK/3T):  ${t.jzk_language.count} zam. · ${fmtPln(t.jzk_language.revenue)}`,
-    `Kurs JSU:           ${t.jsu_course.count} zam. · ${fmtPln(t.jsu_course.revenue)}`,
-    `Bez mapowania:      ${t.unknown.count} zam.`,
+    ...(slices.length > 0
+      ? slices.map(s2 => `${s2.label}: ${s2.orders} zam. · ${fmtPln(s2.revenue)}`)
+      : ['(brak zamówień dziś)']),
     '─'.repeat(42),
-    `Razem dziś:         ${total} zam. · ${fmtPln(orders.totals.today_revenue)}`,
+    `Razem dziś:         ${total} zam. · ${fmtPln(totalRevenue)}`,
   ]
-  if (t.unknown.count > 0) {
-    lines.push('', `⚠  ${t.unknown.count} ${t.unknown.count === 1 ? 'order' : 'orders'} unmapped, margin excluded, sir — sprawdź product_name_raw i kwotę w latest_20_orders.`)
+
+  // Same guard as the range answer: a breakdown that does not add up to its own
+  // total is not shown.
+  const sumO = slices.reduce((t2, s2) => t2 + s2.orders, 0)
+  const sumR = slices.reduce((t2, s2) => t2 + s2.revenue, 0)
+  if (slices.length > 0 && (sumO !== total || Math.abs(sumR - totalRevenue) > 0.01)) {
+    return [
+      `Rozbicie na produkty — ${orders.today_warsaw} — ODRZUCONE`,
+      '',
+      `rozbicie niespójne z sumą: ${sumO} szt. / ${fmtPln(sumR)} vs ${total} zam. / ${fmtPln(totalRevenue)}`,
+      '',
+      'Nie pokażę rozbicia, które nie zgadza się z własną sumą.',
+    ].join('\n')
+  }
+  const unmapped = slices.find(s2 => s2.label === 'NIEZMAPOWANE')
+  if (unmapped) {
+    lines.push('', `⚠  ${unmapped.orders} ${unmapped.orders === 1 ? 'order' : 'orders'} unmapped, margin excluded, sir.`)
+    for (const u of (orders.todayHourly?.unmappedNames ?? []).slice(0, 6)) {
+      lines.push(`   ${u.amount.toFixed(2)} PLN — "${String(u.name).replace(/\n/g, ' / ').slice(0, 64)}"`)
+    }
+  }
+  const floor = orders.todayHourly?.belowFloor
+  if (floor && floor.orders > 0) {
+    lines.push('', `Odcięte progiem: ${floor.orders} szt. · ${fmtPln(floor.revenue)} (zamówienia testowe).`)
   }
   return lines.join('\n')
 }
@@ -297,14 +327,17 @@ export function buildMemoryBundleSpoken(
       : 'Lifidi,'
     return `${ordersClause} endpoint zamówień nie odpowiedział, więc nie mam rozbicia na produkty. Nie zgaduję, ile z nich to Pakiet Pamięciowy.`
   }
-  const t = orders.today_classified
-  const parts = [
-    `Dziś ${t.memory_pack.count} Pakietów Pamięciowych, ${t.jzk_language.count} produktów językowych i ${t.jsu_course.count} kursów JSU.`,
-    `Razem ${orders.totals.today_orders} zamówień na ${orders.totals.today_revenue.toFixed(0)} złotych.`,
-  ]
-  if (t.unknown.count > 0) {
-    parts.push(`${t.unknown.count} zamówień bez mapowania — marża wykluczona.`)
-  }
+  const perProduct = orders.todayHourly?.products ?? {}
+  const catalog = orders.productCatalog ?? {}
+  const slices = Object.entries(perProduct)
+    .map(([k, v]) => ({ label: k === 'unmapped' ? 'niezmapowanych' : (catalog[k]?.displayName ?? k), ...v }))
+    .sort((a, b) => b.revenue - a.revenue)
+  const total = orders.todayHourly?.orders ?? orders.totals.today_orders
+  const totalRevenue = orders.todayHourly?.revenue ?? orders.totals.today_revenue
+  const parts = slices.length > 0
+    ? [`Dziś ${slices.map(s2 => `${s2.orders} ${s2.label}`).join(', ')}.`]
+    : ['Dziś nie ma jeszcze zamówień.']
+  parts.push(`Razem ${total} zamówień na ${totalRevenue.toFixed(0)} złotych.`)
   return parts.join(' ')
 }
 
@@ -2094,6 +2127,7 @@ export function buildProfitSpoken(d: ProfitData | null): string {
 // ── Orders in an explicit date range ─────────────────────────────────────────
 
 import type { OrderWindow } from '../lib/orderWindow'
+import { checkBreakdownConsistency } from '../lib/orderWindow'
 
 /**
  * Orders between two dates, when the question actually named them.
@@ -2114,11 +2148,62 @@ export function buildOrdersInRangeAnswer(w: OrderWindow | null, label: string): 
     ].join('\n')
   }
 
+  // THE CONSISTENCY GUARD.
+  //
+  // Asked about 2026-10-17, Stanley printed 18 orders / 3 621 PLN with a
+  // breakdown of 18 × Pakiet Pamięciowy / 2 142 PLN. The breakdown did not add
+  // up to its own total and nothing caught it. This runs before any answer is
+  // shown, on the numbers about to be shown — so a breakdown that does not
+  // reconcile is never displayed, whatever produced it.
+  const consistency = checkBreakdownConsistency(w)
+  if (!consistency.ok) {
+    // eslint-disable-next-line no-console
+    console.error('[orders_in_range] rozbicie odrzucone:', consistency.reason, w)
+    return [
+      `Zamówienia ${w.from} – ${w.to} — ROZBICIE ODRZUCONE`,
+      '',
+      consistency.reason ?? 'rozbicie niespójne z sumą',
+      '',
+      'Nie pokażę rozbicia, które nie zgadza się z własną sumą. Surowe liczby:',
+      `  zamówień: ${w.orders}`,
+      `  przychód: ${w.revenue.toFixed(2)} PLN`,
+      '',
+      'Pozycje rozbicia, które się nie zsumowały:',
+      ...w.products.map(p => `  ${p.displayName}: ${p.orders} szt. · ${p.revenue.toFixed(2)} PLN`),
+    ].join('\n')
+  }
+
   const lines = [
     `Zamówienia ${w.from} – ${w.to} (${w.days.length} ${w.days.length === 1 ? 'doba' : 'doby'}, oba końce włącznie)`,
     '',
     `Razem: ${w.orders} zamówień · ${w.revenue.toFixed(2)} PLN`,
   ]
+
+  // The breakdown iterates whatever the window carries — no product list is
+  // written down here, so a product added to productCatalog.js appears without
+  // anyone editing this template, and one that matches nothing shows up as
+  // NIEZMAPOWANE with its raw Wix name instead of disappearing.
+  if (w.products.length > 0) {
+    lines.push('', 'Rozbicie per produkt:')
+    for (const p of w.products) {
+      lines.push(`  ${p.displayName}: ${p.orders} szt. · ${p.revenue.toFixed(2)} PLN`)
+    }
+    lines.push(`  ——— razem: ${w.products.reduce((t, p) => t + p.orders, 0)} szt. · `
+      + `${w.products.reduce((t, p) => t + p.revenue, 0).toFixed(2)} PLN`)
+  }
+
+  if (w.unmappedNames.length > 0) {
+    lines.push('', 'NIEZMAPOWANE — surowe nazwy z Wix (nic nie jest podstawiane pod inny produkt):')
+    for (const u of w.unmappedNames.slice(0, 12)) {
+      lines.push(`  ${u.amount.toFixed(2)} PLN — "${String(u.name).replace(/\n/g, ' / ').slice(0, 70)}"`)
+    }
+    if (w.unmappedNames.length > 12) lines.push(`  …+${w.unmappedNames.length - 12} więcej`)
+  }
+
+  if (w.belowFloor.orders > 0) {
+    lines.push('', `Odcięte progiem: ${w.belowFloor.orders} szt. · ${w.belowFloor.revenue.toFixed(2)} PLN `
+      + '(zamówienia testowe poniżej progu — nie wchodzą do sum wyżej).')
+  }
 
   // The in-progress day is never passed off as a full one, and never silently
   // dropped either — both would misstate the total.
@@ -2163,9 +2248,16 @@ export function buildOrdersInRangeAnswer(w: OrderWindow | null, label: string): 
 
 export function buildOrdersInRangeSpoken(w: OrderWindow | null): string {
   if (!w) return 'Nie mam serii dobowej, więc nie policzę zamówień w tym zakresie, sir.'
+  if (!checkBreakdownConsistency(w).ok) {
+    return `Rozbicie nie zgadza się z własną sumą, sir, więc go nie podam. Surowo: `
+      + `${w.orders} zamówień na ${w.revenue.toFixed(0)} złotych.`
+  }
   const parts = [
     `Między ${w.from} a ${w.to} włącznie mamy ${w.orders} zamówień na ${w.revenue.toFixed(0)} złotych.`,
   ]
+  if (w.products.length > 0) {
+    parts.push(w.products.map(p => `${p.displayName}: ${p.orders}`).join(', ') + '.')
+  }
   if (w.partialDay) {
     parts.push(`Uwaga: ${w.partialDay.date} jeszcze trwa — to stan na godzinę ${w.partialDay.hour},`
       + ` ${w.partialDay.orders} zamówień. Pełnych dób jest ${w.days.length - 1}.`)

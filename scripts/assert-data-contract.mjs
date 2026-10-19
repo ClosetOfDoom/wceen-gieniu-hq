@@ -84,10 +84,24 @@ if (!existsSync(responsesPath)) {
     fail('responses.ts missing buildMemoryBundleAnswer or buildMemoryBundleSpoken')
   }
   const mb = c.slice(c.indexOf('export function buildMemoryBundleAnswer'), c.indexOf('export function buildCreativesReport'))
-  if (mb.includes('today_classified') && mb.includes('memory_pack')) {
-    pass('responses.ts buildMemoryBundleAnswer reports real per-product counts from today_classified')
+  // It used to read today_classified, which carries exactly three hardcoded
+  // products. It now iterates todayHourly.products, keyed by productCatalog, so
+  // a fourth product cannot silently vanish from the breakdown.
+  if (mb.includes('todayHourly?.products') && mb.includes('productCatalog')) {
+    pass('responses.ts buildMemoryBundleAnswer iterates the catalog, not a hardcoded product list')
   } else {
-    fail('responses.ts buildMemoryBundleAnswer must read orders.today_classified — never all-order totals as a product count')
+    fail('responses.ts buildMemoryBundleAnswer must iterate orders.todayHourly.products with productCatalog labels')
+  }
+  if (!/t\.memory_pack|t\.jzk_language|t\.jsu_course/.test(mb)) {
+    pass('responses.ts buildMemoryBundleAnswer names no product literally')
+  } else {
+    fail('responses.ts buildMemoryBundleAnswer still hardcodes product names — a new product would not appear')
+  }
+  // A breakdown must reconcile with its own total before it is shown.
+  if (mb.includes('niespójne z sumą')) {
+    pass('responses.ts buildMemoryBundleAnswer refuses a breakdown that does not add up')
+  } else {
+    fail('responses.ts buildMemoryBundleAnswer must reject a breakdown inconsistent with its total')
   }
   if (mb.includes('!orders || !orders.ok') && mb.includes('nie mam rozbicia na produkty')) {
     pass('responses.ts buildMemoryBundleAnswer still refuses to guess when the orders source is down')

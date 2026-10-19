@@ -51,10 +51,39 @@ function buildDailySeries(orders, today, windowDays) {
 
   const hourlyByDay = new Map()
   const revenueByDay = new Map()
-  for (const o of counted) {
+  // Per-product, per-day. Built here so a breakdown exists for EVERY day, not
+  // just today: asked about 2026-10-17, Stanley had no figures to read and the
+  // model filled the gap with 18 × 119 = 2 142 PLN of Pakiet Pamięciowy, when
+  // the day was actually 13 PP + 4 JSU + 1 3T = 3 857 PLN. A breakdown that
+  // only exists for today is a breakdown that gets invented for every other day.
+  const productsByDay = new Map()
+  // Raw Wix names of everything that matched nothing — kept alongside the map
+  // rather than inside it, because a list is not a product key.
+  const unmappedNamesByDay = new Map()
+  // Rows the test-order floor removed. Reported, never silently dropped.
+  const belowFloorByDay = new Map()
+
+  const bump = (map, date, key, orders_, revenue) => {
+    if (!map.has(date)) map.set(date, {})
+    const e = map.get(date)
+    if (!e[key]) e[key] = { orders: 0, revenue: 0 }
+    e[key].orders += orders_
+    e[key].revenue += revenue
+  }
+
+  for (const o of orders) {
     const ts = o.raw[0]?.order_created_at
     const date = ts ? businessDay(ts) : o.orderDate
     if (!date || date < from || date > today) continue
+
+    if (!countsAsOrder(o.revenue)) {
+      const e = belowFloorByDay.get(date) ?? { orders: 0, revenue: 0 }
+      e.orders++
+      e.revenue += o.revenue
+      belowFloorByDay.set(date, e)
+      continue
+    }
+
     if (!hourlyByDay.has(date)) hourlyByDay.set(date, new Array(24).fill(0))
     revenueByDay.set(date, (revenueByDay.get(date) ?? 0) + o.revenue)
     // Hour of the Warsaw wall clock, read from the same helper as the date.
@@ -64,6 +93,20 @@ function buildDailySeries(orders, today, windowDays) {
         }).format(new Date(ts))) % 24
       : 0
     hourlyByDay.get(date)[hour]++
+
+    // The SAME classifier profit-data uses. No second copy, no hardcoded list:
+    // a product added to productCatalog.js shows up here without a code change,
+    // and one that does not match lands in `unmapped` carrying its raw Wix name
+    // rather than being folded into whichever bucket is nearest.
+    const d = classifyOrder(o)
+    const key = d.productKey ?? 'unmapped'
+    bump(productsByDay, date, key, 1, o.revenue)
+    if (!d.productKey) {
+      if (!unmappedNamesByDay.has(date)) unmappedNamesByDay.set(date, [])
+      unmappedNamesByDay.get(date).push({
+        name: o.productNameRaw ?? '—', amount: o.revenue, failedField: d.failedField,
+      })
+    }
   }
 
   // A day is `missing` only if NOTHING at all landed on it — including the test
@@ -86,6 +129,9 @@ function buildDailySeries(orders, today, windowDays) {
       revenue: revenueByDay.get(date) ?? 0,
       missing: !anyRowOnDay.has(date),
       hourly: hourly ?? new Array(24).fill(0),
+      products: productsByDay.get(date) ?? {},
+      unmappedNames: unmappedNamesByDay.get(date) ?? [],
+      belowFloor: belowFloorByDay.get(date) ?? { orders: 0, revenue: 0 },
     })
   }
 
@@ -102,6 +148,9 @@ function buildDailySeries(orders, today, windowDays) {
       orders: todayHourly.reduce((s, n) => s + n, 0),
       revenue: revenueByDay.get(today) ?? 0,
       hourly: todayHourly,
+      products: productsByDay.get(today) ?? {},
+      unmappedNames: unmappedNamesByDay.get(today) ?? [],
+      belowFloor: belowFloorByDay.get(today) ?? { orders: 0, revenue: 0 },
     },
   }
 }
@@ -243,6 +292,10 @@ export const handler = async (event) => {
       recordStartsOn: dayWindow.recordStartsOn,
       todayHourly:  dayWindow.today,
       orderMinAmount: ALERT_RULES.ORDER_MIN_AMOUNT_PLN,
+      // Display names and scope straight from the catalog, so no consumer needs
+      // its own list of products to render a breakdown.
+      productCatalog: Object.fromEntries(
+        Object.values(PRODUCTS).map(p => [p.key, { displayName: p.displayName, scope: p.scope }])),
       totals: {
         all_orders:        orders.length,
         order_rows:        rows.length,
