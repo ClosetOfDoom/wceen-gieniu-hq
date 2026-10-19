@@ -12,9 +12,25 @@
 -- hand: `orders.external_order_id` is a UUID, so there is no sequence in the
 -- table to find a gap in, and a row that never arrived leaves no trace at all.
 --
--- Wix's own `Nr zamówienia` IS sequential — the lost rows were 16031-16035.
--- With that number stored, a missing order becomes detectable from Supabase
--- alone: a hole in the sequence is a hole in the sync.
+-- Wix's own `Nr zamówienia` IS sequential. With that number stored, a missing
+-- order becomes detectable from Supabase alone: a hole in the sequence is a
+-- hole in the sync.
+--
+-- MEASURED, 2026-10-19. scripts/reconcile-wix-export.mjs compared the full Wix
+-- payments export (17 304 rows) against every order in the table and settled
+-- both the facts and the worth of the idea:
+--
+--   · The three rows lost on 2026-10-17 were 16033, 16034 and 16035 — NOT
+--     16031-16035 as guessed here first. 16031 and 16032 did arrive.
+--   · Run against the export as ground truth, the gap rule found 6 of 6 real
+--     losses (recall 100%) and raised 21 flags in all (precision 28.6%). 13 of
+--     the 15 false flags are order numbers with no payment row at all, i.e.
+--     0 PLN orders — which Supabase DOES store, so once Make writes the number
+--     those gaps close by themselves. 28.6% is the floor, not the estimate.
+--   · The detector it replaces — assessSyncHealth, which flags a 15-minute
+--     window holding more than one ARRIVED order — scored precision 0.9% over
+--     the same period. It cannot do better: a row that never arrived leaves
+--     nothing behind to count.
 --
 -- WHAT THIS DOES NOT DO
 -- ---------------------------------------------------------------------------

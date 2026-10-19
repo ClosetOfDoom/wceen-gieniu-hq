@@ -301,9 +301,26 @@ export interface SyncHealth {
  *
  * A window holding more than one order proves the sync was in backlog during
  * it. It does NOT prove anything was lost — the backlog may have drained over
- * the following runs, as it did on 2026-10-17 at 09:17. But every known loss
- * happened inside such a window, so these are the windows worth checking
- * against Wix.
+ * the following runs, as it did on 2026-10-17 at 09:17.
+ *
+ * MEASURED AGAINST THE FULL WIX EXPORT, 2026-10-19
+ * (scripts/reconcile-wix-export.mjs, 2026-06-11 → 2026-10-19):
+ *
+ *   211 windows flagged · 2 of them had a loss · 209 false alarms
+ *   precision 0.9% · recall 50%
+ *
+ * So the earlier claim that "every known loss happened inside such a window"
+ * is false: half of them happened in windows holding a single order. This
+ * cannot be fixed by moving the threshold, because the input is wrong — the
+ * function counts orders that ARRIVED, and an order that never arrived leaves
+ * nothing behind to count. A window with one arrival and three losses is
+ * indistinguishable, from Supabase, from a quiet window.
+ *
+ * The replacement is orders.wix_order_number
+ * (supabase/migrations/20261019_wix_order_number.sql, still unapplied), which
+ * scored 100% recall on the same data. Until Make writes that column this
+ * function is the only signal there is, so it stays — but it is a hint about
+ * load, not evidence of loss, and nothing should treat it as the latter.
  *
  * @param createdAt ISO creation timestamps of orders that reached Supabase
  */

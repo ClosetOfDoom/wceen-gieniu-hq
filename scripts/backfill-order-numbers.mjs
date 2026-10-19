@@ -23,6 +23,7 @@
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { businessDay } from '../netlify/shared/businessDay.js'
+import { readWixPaymentsExport } from './_wixExport.mjs'
 
 const root = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const rootDir = process.platform === 'win32' ? root.replace(/^\//, '') : root
@@ -56,96 +57,55 @@ if (!SUPA_URL || !READ_KEY) {
 }
 
 // ── CSV ──────────────────────────────────────────────────────────────────────
+// Parsing lives in _wixExport.mjs, shared with reconcile-wix-export.mjs. It
+// used to live here too, in a second copy that got the file wrong three ways:
+// it read the merged banner as the header, it looked for a column called
+// "Produkt" in a file whose column is "Nazwa", and Date.parse() returns NaN
+// for "19.10.2026, 10:05:54". Two readers meant two answers; now there is one.
 
-/** A CSV parser that survives quoted fields containing commas and newlines. */
-function parseCsv(text) {
-  const rows = []
-  let row = [], field = '', quoted = false
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i]
-    if (quoted) {
-      if (c === '"') {
-        if (text[i + 1] === '"') { field += '"'; i++ } else quoted = false
-      } else field += c
-    } else if (c === '"') quoted = true
-    else if (c === ',' || c === ';') { row.push(field); field = '' }
-    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = '' }
-    else if (c !== '\r') field += c
-  }
-  if (field || row.length > 0) { row.push(field); rows.push(row) }
-  return rows.filter(r => r.some(x => x.trim() !== ''))
-}
-
-const norm = (s) => String(s ?? '').toLowerCase()
-  .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ł/g, 'l').trim()
-
-/** Find a column by any of several header spellings. */
-function columnIndex(header, ...candidates) {
-  const h = header.map(norm)
-  for (const c of candidates) {
-    const i = h.findIndex(x => x === norm(c) || x.includes(norm(c)))
-    if (i >= 0) return i
-  }
-  return -1
-}
-
-const raw = readFileSync(file, 'utf8')
-const rows = parseCsv(raw)
-if (rows.length < 2) {
-  console.error('FAIL — CSV nie ma wierszy danych')
+let xp
+try {
+  xp = readWixPaymentsExport(file)
+} catch (e) {
+  console.error(`FAIL — ${String(e?.message ?? e)}`)
   process.exit(1)
-}
-const header = rows[0]
-const iNumber = columnIndex(header, 'nr zamowienia', 'order number', 'numer zamowienia')
-const iDate   = columnIndex(header, 'data', 'date', 'data zamowienia', 'order date')
-const iAmount = columnIndex(header, 'kwota', 'total', 'amount', 'suma')
-const iEmail  = columnIndex(header, 'email', 'e-mail', 'kontakt')
-const iName   = columnIndex(header, 'produkt', 'product', 'pozycje', 'items')
-const iStatus = columnIndex(header, 'status platnosci', 'payment status', 'status')
-
-const missingCols = []
-if (iNumber < 0) missingCols.push('Nr zamówienia')
-if (iDate < 0) missingCols.push('Data')
-if (iAmount < 0) missingCols.push('Kwota')
-if (missingCols.length > 0) {
-  console.error(`FAIL — w CSV brakuje kolumn: ${missingCols.join(', ')}`)
-  console.error(`  nagłówek pliku: ${header.join(' | ')}`)
-  process.exit(1)
-}
-
-const toNumber = (s) => {
-  const n = Number(String(s ?? '').replace(/[^\d,.-]/g, '').replace(/\s/g, '').replace(',', '.'))
-  return Number.isFinite(n) ? n : null
 }
 
 const parsed = []
-const unparsable = []
-for (const r of rows.slice(1)) {
-  const number = parseInt(String(r[iNumber] ?? '').replace(/\D/g, ''), 10)
-  const amount = toNumber(r[iAmount])
-  const dateRaw = String(r[iDate] ?? '').trim()
-  const when = Date.parse(dateRaw)
-  if (!Number.isFinite(number) || amount == null || Number.isNaN(when)) {
-    unparsable.push({ number: r[iNumber], date: dateRaw, amount: r[iAmount] })
+const skipped = []
+for (const p of xp.payments) {
+  const number = /^\d+$/.test(String(p.orderNumber)) ? Number(p.orderNumber) : null
+  // A payment that never settled is not an order, and must never be inserted.
+  if (!p.settled) continue
+  if (number == null) {
+    skipped.push(p)
     continue
   }
   parsed.push({
     wix_order_number: number,
-    order_created_at: new Date(when).toISOString(),
-    businessDay: businessDay(new Date(when).toISOString()),
-    amount,
-    email: iEmail >= 0 ? String(r[iEmail] ?? '').trim() : '',
-    product_name_raw: iName >= 0 ? String(r[iName] ?? '').trim() : '',
-    status: iStatus >= 0 ? String(r[iStatus] ?? '').trim() : '',
+    order_created_at: p.paidAt,
+    businessDay: businessDay(p.paidAt),
+    amount: p.amount,
+    email: p.email,
+    product_name_raw: p.name,
+    status: p.statusRaw,
   })
 }
 
-console.log(`CSV: ${parsed.length} wierszy sparsowanych, ${unparsable.length} pominiętych`)
-if (unparsable.length > 0) {
-  console.log('  POMINIĘTE (nie zgaduję — popraw w pliku i uruchom ponownie):')
-  for (const u of unparsable.slice(0, 10)) {
-    console.log(`    nr=${u.number} data=${u.date} kwota=${u.amount}`)
+console.log(`CSV: ${xp.payments.length} wierszy, ${parsed.length} zrealizowanych z numerem zamówienia`)
+if (xp.unparsable.length > 0) {
+  console.log(`  NIEPARSOWALNE: ${xp.unparsable.length} — nie zgaduję, popraw plik i uruchom ponownie`)
+  for (const u of xp.unparsable.slice(0, 10)) {
+    console.log(`    linia ${u.line}: data=${u.date} kwota=${u.amount}`)
   }
+}
+if (skipped.length > 0) {
+  console.log(`  BEZ NUMERU: ${skipped.length} zrealizowanych płatności, w których`)
+  console.log('    "Nr zamówienia" nie jest liczbą, tylko UUID-em. Pomijam je — nie da')
+  console.log('    się ich wpisać do kolumny, która ma wykrywać luki w numeracji.')
+  const kinds = new Map()
+  for (const p of skipped) kinds.set(p.orderKind || '(puste)', (kinds.get(p.orderKind || '(puste)') ?? 0) + 1)
+  for (const [k, n] of [...kinds].sort((a, b) => b[1] - a[1])) console.log(`      ${String(n).padStart(6)}  ${k}`)
 }
 
 // ── what Supabase already holds ──────────────────────────────────────────────
@@ -175,8 +135,16 @@ try {
     if (page.length < 1000) break
   }
 } catch (e) {
-  console.error(`FAIL — nie mogę odczytać orders: ${String(e?.message ?? e)}`)
-  console.error('  klucz anon jest zablokowany przez RLS; potrzebny SUPABASE_SERVICE_ROLE_KEY')
+  const msg = String(e?.message ?? e)
+  console.error(`FAIL — nie mogę odczytać orders: ${msg}`)
+  if (/wix_order_number does not exist/.test(msg)) {
+    console.error('')
+    console.error('  Kolumny jeszcze nie ma. Wgraj supabase/migrations/20261019_wix_order_number.sql')
+    console.error('  w edytorze SQL w Supabase i uruchom ten skrypt ponownie.')
+  } else {
+    console.error('  Jeśli odpowiedź jest pusta zamiast błędna: klucz anon jest blokowany przez')
+    console.error('  RLS po cichu (HTTP 200 + []). Do zapisu i tak potrzebny SUPABASE_SERVICE_ROLE_KEY.')
+  }
   process.exit(1)
 }
 
