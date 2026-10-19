@@ -188,3 +188,48 @@ describe('TEST 5: a 00:07 Warsaw order counts in that day, in BOTH the count and
     expect(w.revenue).not.toBe(3619)
   })
 })
+
+// ── sync health ─────────────────────────────────────────────────────────────
+describe('sync health — orders arriving faster than the sync drains them', () => {
+  it('knows the measured ceiling: one row per run, every 15 minutes', async () => {
+    const m = await import('../orderWindow')
+    expect(m.SYNC_ROWS_PER_RUN).toBe(1)
+    expect(m.SYNC_RUN_INTERVAL_MIN).toBe(15)
+    expect(m.SYNC_ORDERS_PER_HOUR).toBe(4)
+  })
+
+  it('flags the 2026-10-17 burst: five orders inside one 15-minute window', async () => {
+    const { assessSyncHealth } = await import('../orderWindow')
+    const h = assessSyncHealth([
+      '2026-10-17T18:19:01Z', '2026-10-17T18:19:42Z', '2026-10-17T18:20:10Z',
+      '2026-10-17T18:20:55Z', '2026-10-17T18:21:30Z',
+    ])
+    expect(h.backlogWindows).toHaveLength(1)
+    expect(h.worst!.arrived).toBe(5)
+    expect(h.worst!.window).toBe('2026-10-17T18:15:00.000Z')
+  })
+
+  it('says plainly that the shortfall cannot be computed from Supabase alone', async () => {
+    const { assessSyncHealth } = await import('../orderWindow')
+    const h = assessSyncHealth(['2026-10-17T18:19:01Z', '2026-10-17T18:19:42Z'])
+    expect(h.note).toContain('NIE DA SIĘ policzyć')
+    expect(h.note).toContain('nie ma numeru zamówienia')
+    // It must never state a number of lost rows it cannot know.
+    expect(h.note).not.toMatch(/przepadło \d+/)
+  })
+
+  it('a quiet day raises nothing', async () => {
+    const { assessSyncHealth } = await import('../orderWindow')
+    const h = assessSyncHealth([
+      '2026-10-17T08:00:00Z', '2026-10-17T09:30:00Z', '2026-10-17T14:05:00Z',
+    ])
+    expect(h.backlogWindows).toHaveLength(0)
+    expect(h.worst).toBeNull()
+    expect(h.note).toContain('Brak okien z zaległością')
+  })
+
+  it('ignores rubbish timestamps instead of bucketing them', async () => {
+    const { assessSyncHealth } = await import('../orderWindow')
+    expect(assessSyncHealth(['', 'not a date', '2026-10-17T18:19:01Z']).backlogWindows).toHaveLength(0)
+  })
+})

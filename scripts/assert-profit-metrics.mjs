@@ -27,7 +27,7 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
     fail(`${f} is missing - it is the ONE source of prices, margins and scope`)
   } else {
     const cat = await import(new URL('../netlify/shared/productCatalog.js', import.meta.url))
-    const { PRODUCTS, PRICE_TO_PRODUCT } = cat
+    const { PRODUCTS, PRICE_TO_PRODUCTS } = cat
 
     // Authoritative business table: price -> product, scope, contribution margin.
     const CATALOG = [
@@ -44,9 +44,9 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
     ]
     for (const [price, key, scope, margin] of CATALOG) {
       const p = PRODUCTS[key]
-      const ok = PRICE_TO_PRODUCT[price] === key && p && p.scope === scope && p.contributionMargin === margin
+      const ok = (PRICE_TO_PRODUCTS[price] ?? []).includes(key) && p && p.scope === scope && p.contributionMargin === margin
       if (ok) pass(`catalog: ${price} PLN -> ${key}, scope ${scope}, margin ${margin === null ? 'null (not invented)' : margin}`)
-      else fail(`catalog: ${price} PLN must map to ${key}, scope ${scope}, margin ${margin} - got ${PRICE_TO_PRODUCT[price]} / ${p && p.scope} / ${p && p.contributionMargin}`)
+      else fail(`catalog: ${price} PLN must map to ${key}, scope ${scope}, margin ${margin} - got ${(PRICE_TO_PRODUCTS[price] ?? []).join('/')} / ${p && p.scope} / ${p && p.contributionMargin}`)
     }
 
     // A 99 PLN Pakiet Pamieciowy (shipping line missing from the order) must earn

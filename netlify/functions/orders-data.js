@@ -292,6 +292,13 @@ export const handler = async (event) => {
       recordStartsOn: dayWindow.recordStartsOn,
       todayHourly:  dayWindow.today,
       orderMinAmount: ALERT_RULES.ORDER_MIN_AMOUNT_PLN,
+      // Creation timestamps of the last 14 days, for the sync-health detector.
+      // It buckets them into 15-minute windows to find where orders outran the
+      // sync's one-row-per-run ceiling.
+      recentCreatedAt: orders
+        .filter(o2 => (o2.orderDate ?? '') >= businessDaysAgo(14, today))
+        .map(o2 => o2.raw[0]?.order_created_at)
+        .filter(Boolean),
       // Display names and scope straight from the catalog, so no consumer needs
       // its own list of products to render a breakdown.
       productCatalog: Object.fromEntries(

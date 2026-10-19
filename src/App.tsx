@@ -27,7 +27,7 @@ import {
 } from './lib/goalProgress'
 import { businessHoursSinceMidnight, businessToday } from './lib/businessDay'
 import { evaluateAlerts, todayContext, ALERT_RULES } from './lib/alerts'
-import { countOrdersInWindow } from './lib/orderWindow'
+import { countOrdersInWindow, assessSyncHealth } from './lib/orderWindow'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday, fetchPerformanceBetween,
@@ -1447,6 +1447,15 @@ export default function App() {
   // two orders sit in the 22:00–24:00 UTC window. Spend, impressions and clicks
   // still come from the view — those are Meta's own figures on Meta's own day.
   const orderWindow   = countOrdersInWindow(ordersData, rangeFrom, rangeTo)
+  // Windows where orders outran the sync's one-row-per-run ceiling. Built from
+  // the creation timestamps of what DID arrive — a row that never landed
+  // leaves no trace, so this says what was at risk, never what was lost.
+  const syncHealth    = ordersData?.dailySeries
+    ? assessSyncHealth(
+        (ordersData.recentCreatedAt ?? []).length > 0
+          ? ordersData.recentCreatedAt!
+          : [])
+    : null
   const rangeOrders   = orderWindow?.orders ?? displayPerf?.wix_orders ?? null
   const rangeRevenue  = orderWindow?.revenue ?? displayPerf?.wix_revenue ?? 0
   const ppExpected  = PP_ORDERS_TARGET * rangeTargetDays
@@ -2010,6 +2019,7 @@ export default function App() {
               lastRefresh={lastRefresh}
               profitDataDate={profitData?.ok ? profitData.dateWarsaw ?? null : null}
               profitDataOrders={profitData?.ok ? profitData.ordersCount : null}
+              syncHealth={syncHealth}
             />
           )}
 

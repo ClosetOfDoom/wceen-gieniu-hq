@@ -244,3 +244,95 @@ function valid(y: number, m: number, d: number): boolean {
   const dt = new Date(Date.UTC(y, m - 1, d))
   return dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
 }
+
+// ── Sync health ─────────────────────────────────────────────────────────────
+//
+// The Wix→Supabase sync drops orders when several arrive at once. Measured on
+// 2026-10-19 over 467 rows from 2026-09-15 to 10-18:
+//
+//   · every row is written at :12, :27, :42 or :57 past the hour — a cron on a
+//     15-minute schedule, not a per-order webhook
+//   · EVERY run writes exactly one row. 467 runs, 467 rows, maximum 1.
+//   · a backlog drains one row per run: three orders created 09:17/09:21/09:23
+//     on 2026-10-17 were written at 09:42/09:57/10:12
+//   · the longest catch-up observed is 49 minutes, about three runs
+//
+// So the sync's ceiling is FOUR orders per hour. On 2026-10-17 five offline
+// orders were placed between 20:19 and 20:21; two were written and three were
+// never seen again. That is the ceiling, not a coincidence about 1 PLN rows.
+//
+// This cannot be fixed from the repo — it is the Make scenario's "maximum
+// number of returned results". What the repo CAN do is notice when orders are
+// arriving faster than the sync drains them, instead of the shortfall being
+// invisible until someone compares a Wix export by hand.
+
+/** How many rows the sync has ever written in a single run. Measured, not assumed. */
+export const SYNC_ROWS_PER_RUN = 1
+/** Minutes between sync runs, read off the inserted_at minute pattern. */
+export const SYNC_RUN_INTERVAL_MIN = 15
+/** Orders per hour the sync can absorb before it starts falling behind. */
+export const SYNC_ORDERS_PER_HOUR = (60 / SYNC_RUN_INTERVAL_MIN) * SYNC_ROWS_PER_RUN
+
+export interface SyncBacklogWindow {
+  /** Start of the 15-minute window, as an ISO timestamp. */
+  window: string
+  /** Orders created in it that DID reach Supabase. */
+  arrived: number
+}
+
+export interface SyncHealth {
+  /** Windows where more orders arrived than one run can carry. */
+  backlogWindows: SyncBacklogWindow[]
+  /** The worst window seen. */
+  worst: SyncBacklogWindow | null
+  ordersPerHourCeiling: number
+  /**
+   * The shortfall is NOT computable from Supabase alone: a row that never
+   * arrived leaves no trace, and `orders` has no sequential order number to
+   * find a gap in. This says how much of the data was at risk, never how much
+   * was lost — that needs the Wix export, or the order-number column from
+   * supabase/migrations/20261019_wix_order_number.sql.
+   */
+  note: string
+}
+
+/**
+ * Windows where orders arrived faster than the sync drains them.
+ *
+ * A window holding more than one order proves the sync was in backlog during
+ * it. It does NOT prove anything was lost — the backlog may have drained over
+ * the following runs, as it did on 2026-10-17 at 09:17. But every known loss
+ * happened inside such a window, so these are the windows worth checking
+ * against Wix.
+ *
+ * @param createdAt ISO creation timestamps of orders that reached Supabase
+ */
+export function assessSyncHealth(createdAt: string[]): SyncHealth {
+  const buckets = new Map<string, number>()
+  for (const ts of createdAt) {
+    if (!ts) continue
+    const d = new Date(ts)
+    if (Number.isNaN(d.getTime())) continue
+    d.setUTCMinutes(Math.floor(d.getUTCMinutes() / SYNC_RUN_INTERVAL_MIN) * SYNC_RUN_INTERVAL_MIN, 0, 0)
+    const key = d.toISOString()
+    buckets.set(key, (buckets.get(key) ?? 0) + 1)
+  }
+
+  const backlogWindows = [...buckets.entries()]
+    .filter(([, n]) => n > SYNC_ROWS_PER_RUN)
+    .map(([window, arrived]) => ({ window, arrived }))
+    .sort((a, b) => b.arrived - a.arrived || a.window.localeCompare(b.window))
+
+  return {
+    backlogWindows,
+    worst: backlogWindows[0] ?? null,
+    ordersPerHourCeiling: SYNC_ORDERS_PER_HOUR,
+    note: backlogWindows.length === 0
+      ? `Brak okien z zaległością. Sufit synchronizacji to ${SYNC_ORDERS_PER_HOUR} zamówienia/h.`
+      : `${backlogWindows.length} okien 15-min, w których zamówienia wpływały szybciej, niż sync `
+        + `je zapisuje (sufit: ${SYNC_ROWS_PER_RUN} wiersz na przebieg co ${SYNC_RUN_INTERVAL_MIN} min `
+        + `= ${SYNC_ORDERS_PER_HOUR} zam./h). Ile wierszy przepadło, NIE DA SIĘ policzyć z samej bazy: `
+        + 'niezapisany wiersz nie zostawia śladu, a orders nie ma numeru zamówienia, w którym '
+        + 'można by szukać luki. Porównaj te okna z eksportem Wix.',
+  }
+}

@@ -64,6 +64,15 @@ export const PRODUCTS = {
     key: 'cogni_regular', displayName: 'Cogni rocznie', shortName: 'Cogni',
     scope: 'cogni', catalogPrice: 499, contributionMargin: 450,
   },
+  // Perfect Student Online — the Wix/Velo learning platform (CMS collection
+  // PSO_Progress). Nothing to do with Cogni; it shares the 499 PLN price and
+  // that is the whole of the resemblance. Its unit cost is not known, so the
+  // margin stays null and is reported as a hole rather than borrowed from the
+  // product it was being confused with.
+  pso: {
+    key: 'pso', displayName: 'Perfect Student Online', shortName: 'PSO',
+    scope: 'pso', catalogPrice: 499, contributionMargin: null,
+  },
   // WSZTP — Wakacyjna Szkoła Treningu Pamięci. Deposit 1250 / full 3450.
   //
   // Its margin is genuinely unknown, so it stays null. But it is ALSO excluded
@@ -93,24 +102,90 @@ export function unitCostOf(productKey) {
   return p.catalogPrice - p.contributionMargin
 }
 
-// Price → product. AUTHORITATIVE; price beats the product name, because Wix
-// product names are edited freely by hand while the price is what was charged.
+// Price → the products that sell at that price.
+//
+// THE NAME DECIDES, NOT THE PRICE. This used to be the other way round, and it
+// put Perfect Student Online into Cogni because both cost 499 PLN. A Wix
+// product name is edited by hand and a price is not, which is why price looked
+// like the safer signal — but a price shared by two products carries no
+// information at all, while a name almost always does.
+//
+// So: the name is tried first; the price only confirms it, or stands in when
+// the name matched nothing. Where a price has MORE than one candidate and the
+// name did not decide, the order goes to UNMAPPED with the collision spelled
+// out — never the first candidate in the list.
+//
 //   99   = Pakiet Pamięciowy sold without the 20 PLN shipping line (form error)
 //   1250 = WSZTP deposit · 3450 = WSZTP in full
-//   399  = Cogni annual on promo · 499 = Cogni annual at the regular price
+//   399  = Cogni annual on promo
+//   499  = Cogni annual regular AND Perfect Student Online — a real collision
 // 115 is deliberately ABSENT: both a memory row and a language row have sold at
 // 115 PLN, so the price carries no signal there and the name decides.
-export const PRICE_TO_PRODUCT = {
-  95:   'jezykozak_pack',
-  99:   'memory_pack',
-  114:  'language_3t',
-  119:  'memory_pack',
-  347:  'jzk_ai',
-  399:  'cogni_promo',
-  499:  'cogni_regular',
-  549:  'jsu_course',
-  1250: 'wsztp',
-  3450: 'wsztp',
+export const PRICE_TO_PRODUCTS = {
+  95:   ['jezykozak_pack'],
+  99:   ['memory_pack'],
+  114:  ['language_3t'],
+  119:  ['memory_pack'],
+  347:  ['jzk_ai'],
+  399:  ['cogni_promo'],
+  499:  ['cogni_regular', 'pso'],
+  549:  ['jsu_course'],
+  1250: ['wsztp'],
+  3450: ['wsztp'],
+}
+
+/**
+ * Products that are the SAME thing at different prices, so their name cannot
+ * tell them apart and only the price can. Cogni promo and Cogni regular are
+ * one product with two price points; a name match on "Cogni" narrows it to the
+ * family, and the price then picks the member.
+ *
+ * This is the one case where the price outranks the name, and it is listed
+ * explicitly rather than inferred — anything not in here follows the normal
+ * rule, where the name wins.
+ */
+export const PRICE_DECIDES_WITHIN = [
+  ['cogni_promo', 'cogni_regular'],
+]
+
+/** The family a product belongs to, or null when it stands alone. */
+function familyOf(key) {
+  return PRICE_DECIDES_WITHIN.find(group => group.includes(key)) ?? null
+}
+
+/**
+ * The single candidate at a price, or null when there is none or more than one.
+ * Kept separate from PRICE_TO_PRODUCTS so a collision can never be silently
+ * resolved by taking element zero.
+ */
+export function soleProductAtPrice(amount) {
+  const candidates = PRICE_TO_PRODUCTS[amount]
+  return candidates && candidates.length === 1 ? candidates[0] : null
+}
+
+/**
+ * Startup check: a price shared by two products is fine ONLY if both of them
+ * can be told apart by name. Every product here must therefore own at least
+ * one name pattern — otherwise a 499 PLN order with an unhelpful name would be
+ * unresolvable, and the catalog would be lying about what it can distinguish.
+ *
+ * Called at module load. A catalog that cannot do its job should fail the
+ * build, not fail quietly at runtime on one order a month.
+ */
+export function assertCatalogIsResolvable() {
+  const named = new Set(NAME_PATTERNS.map(([key]) => key))
+  const problems = []
+  for (const [price, keys] of Object.entries(PRICE_TO_PRODUCTS)) {
+    if (keys.length < 2) continue
+    const unnameable = keys.filter(k => !named.has(k))
+    if (unnameable.length > 0) {
+      problems.push(`${price} PLN: ${keys.join(' / ')} share a price, and `
+        + `${unnameable.join(', ')} has no name pattern — such an order could never be resolved`)
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error('productCatalog: unresolvable price collision\n  ' + problems.join('\n  '))
+  }
 }
 
 // ── Text handling ────────────────────────────────────────────────────────────
@@ -146,8 +221,16 @@ export function isShippingLine(rawName) {
 //     product never inherits the PP margin.
 const NAME_PATTERNS = [
   ['wsztp',          ['wsztp', 'wakacyjna', 'treningu pamieci', 'szko a treningu']],
-  ['jsu_course',     ['kurs jak sie uczyc', 'kurs jak', 'jsu', 'nauka uczenia']],
+  // 'kurs online jak sie uczyc' is how Wix actually writes it — the old
+  // 'kurs jak' never matched it, so JSU was being resolved by price alone.
+  // Still requires "kurs", so a PP bundle that lists "Jak się uczyć" as a bonus
+  // is not read as the course.
+  ['jsu_course',     ['kurs online jak sie uczyc', 'kurs jak sie uczyc', 'kurs jak', 'jsu', 'nauka uczenia']],
   ['cogni_regular',  ['cogni']],
+  ['pso',            ['perfect student', 'pso']],
+  // Pakiet Językozaka BEFORE Językozak AI: 'jezykozak' is a substring of
+  // 'jezykozaka', so the AI patterns were swallowing the pack.
+  ['jezykozak_pack', ['pakiet jezykozaka', 'jezykozaka']],
   ['jzk_ai',         ['jezykozak ai', 'jezykozak', 'jzk', 'nauka jezykow', 'nauka jezyk']],
   ['language_3t',    ['pakiet jezykowy', 'jezykowy', 'zadziwiajace techniki', 'techniki nauki jezyk', '3 zadziwiajace']],
   ['memory_pack',    ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']],
@@ -180,62 +263,103 @@ const QTY_TOLERANCE = 0.15   // within 15% of a whole multiple of the catalog pr
 export function classifyAmount(amount, rawName) {
   const amt = Number(amount)
   const nameKey = nameMatchKey(rawName)
+  const candidates = PRICE_TO_PRODUCTS[amt] ?? []
 
-  // 1 — exact catalog price wins over the name.
-  const priceKey = Object.prototype.hasOwnProperty.call(PRICE_TO_PRODUCT, amt)
-    ? PRICE_TO_PRODUCT[amt]
-    : null
-
-  if (priceKey) {
-    const p = PRODUCTS[priceKey]
-    const conflict = nameKey && nameKey !== priceKey
-      ? { priceProduct: priceKey, priceAmount: amt, nameProduct: nameKey }
-      : null
-    if (p.excludeFromBlendedProfit) {
-      return { productKey: priceKey, scope: p.scope, bucket: 'EXCLUDED', qty: 1, margin: null, matchedBy: `price ${amt}`, conflict, failedField: null, excludedReason: 'off the ad funnel — kept out of blended profit, CPA and ROAS' }
-    }
-    if (p.contributionMargin == null) {
-      return { productKey: priceKey, scope: p.scope, bucket: 'UNKNOWN_MARGIN', qty: 1, margin: null, matchedBy: `price ${amt}`, conflict, failedField: 'contributionMargin (not in catalog)' }
-    }
-    // At the catalog price the authoritative margin is used verbatim; away from
-    // it the margin is the amount actually charged minus the derived unit cost.
-    const margin = amt === p.catalogPrice ? p.contributionMargin : amt - unitCostOf(priceKey)
-    return { productKey: priceKey, scope: p.scope, bucket: 'MAPPED', qty: 1, margin, matchedBy: `price ${amt}`, conflict, failedField: null }
-  }
-
-  // 2 — name-matched product at a non-catalog amount.
+  // ── 1. THE NAME DECIDES ──────────────────────────────────────────────────
+  // A name match is the strongest signal there is: it says which product was
+  // bought, not merely which products cost that much. The price then either
+  // agrees, or is recorded as a conflict and the NAME still wins.
   if (nameKey) {
-    const p = PRODUCTS[nameKey]
-    if (p.excludeFromBlendedProfit) {
-      return { productKey: nameKey, scope: p.scope, bucket: 'EXCLUDED', qty: 1, margin: null, matchedBy: 'name', conflict: null, failedField: null, excludedReason: 'off the ad funnel — kept out of blended profit, CPA and ROAS' }
+    const priceAgrees = candidates.includes(nameKey)
+    if (priceAgrees) return decide(nameKey, amt, `name + price ${amt}`, null)
+
+    // Same product, different price point — Cogni promo vs regular. The name
+    // got us to the family; only the price can pick the member, so here and
+    // only here the price outranks the name.
+    const family = familyOf(nameKey)
+    if (family) {
+      const sibling = candidates.find(c => family.includes(c))
+      if (sibling) return decide(sibling, amt, `name (family) + price ${amt}`, null)
     }
-    if (p.contributionMargin == null) {
-      return { productKey: nameKey, scope: p.scope, bucket: 'UNKNOWN_MARGIN', qty: 1, margin: null, matchedBy: 'name', conflict: null, failedField: 'contributionMargin (not in catalog)' }
-    }
-    const cost = unitCostOf(nameKey)
-    // Below the catalog price → one discounted unit. Never inflated to a multiple.
-    if (amt < p.catalogPrice) {
-      return { productKey: nameKey, scope: p.scope, bucket: 'MAPPED', qty: 1, margin: amt - cost, matchedBy: 'name (below catalog)', conflict: null, failedField: null }
-    }
-    const qty = Math.round(amt / p.catalogPrice)
-    if (qty >= 1 && Math.abs(amt - qty * p.catalogPrice) < QTY_TOLERANCE * (qty * p.catalogPrice)) {
-      return { productKey: nameKey, scope: p.scope, bucket: 'MAPPED', qty, margin: amt - cost * qty, matchedBy: `name ×${qty}`, conflict: null, failedField: null }
-    }
+
+    // Otherwise the name wins and the disagreement is recorded, not resolved
+    // in the price's favour. A Wix name is edited by hand but it still says
+    // which product was bought; a price shared by two products does not.
+    const conflict = candidates.length > 0
+      ? { priceProduct: candidates[0], priceAmount: amt, nameProduct: nameKey }
+      : null
+    return decide(nameKey, amt, 'name', conflict)
+  }
+
+  // ── 2. THE PRICE STANDS IN, but only when it is unambiguous ──────────────
+  const sole = soleProductAtPrice(amt)
+  if (sole) {
+    return decide(sole, amt, 'amount', null)
+  }
+
+  // ── 3. A SHARED PRICE AND NO NAME IS NOT A GUESS ─────────────────────────
+  if (candidates.length > 1) {
+    const names = candidates.map(k => PRODUCTS[k].displayName).join(', ')
     return {
-      productKey: nameKey, scope: p.scope, bucket: 'AMBIGUOUS', qty: null, margin: null,
-      minMargin: amt - cost * Math.ceil(amt / p.catalogPrice),
-      matchedBy: 'name', conflict: null,
-      failedField: `quantity (${amt} PLN is no whole multiple of ${p.catalogPrice} within 15%)`,
+      productKey: null, scope: null, bucket: 'UNMAPPED', qty: null, margin: null,
+      matchedBy: null, conflict: null,
+      failedField: `kolizja ceny: ${amt} PLN pasuje do ${candidates.length} produktów `
+        + `(${names}), a nazwa "${String(rawName ?? '').slice(0, 40)}" nie rozstrzygnęła`,
+      priceCollision: candidates,
     }
   }
 
-  // 3 — nothing matched.
+  // ── 4. nothing matched ───────────────────────────────────────────────────
   return {
     productKey: null, scope: null, bucket: 'UNMAPPED', qty: null, margin: null,
     matchedBy: null, conflict: null,
     failedField: normalizeText(rawName)
-      ? `amount (${amt} PLN not in PRICE_TO_PRODUCT) + product_name_raw (no pattern match)`
-      : `amount (${amt} PLN not in PRICE_TO_PRODUCT) + product_name_raw (empty)`,
+      ? `amount (${amt} PLN not in PRICE_TO_PRODUCTS) + product_name_raw (no pattern match)`
+      : `amount (${amt} PLN not in PRICE_TO_PRODUCTS) + product_name_raw (empty)`,
+  }
+}
+
+/**
+ * Turn a settled product key into a verdict: excluded, margin-less, mapped, or
+ * ambiguous on quantity. Shared by the name path and the price path so the two
+ * cannot drift.
+ */
+function decide(key, amt, matchedBy, conflict) {
+  const p = PRODUCTS[key]
+
+  if (p.excludeFromBlendedProfit) {
+    return { productKey: key, scope: p.scope, bucket: 'EXCLUDED', qty: 1, margin: null,
+             matchedBy, conflict, failedField: null,
+             excludedReason: 'off the ad funnel — kept out of blended profit, CPA and ROAS' }
+  }
+  if (p.contributionMargin == null) {
+    return { productKey: key, scope: p.scope, bucket: 'UNKNOWN_MARGIN', qty: 1, margin: null,
+             matchedBy, conflict, failedField: 'contributionMargin (not in catalog)' }
+  }
+
+  const cost = unitCostOf(key)
+
+  // At the catalog price the authoritative margin is used verbatim.
+  if (amt === p.catalogPrice) {
+    return { productKey: key, scope: p.scope, bucket: 'MAPPED', qty: 1,
+             margin: p.contributionMargin, matchedBy, conflict, failedField: null }
+  }
+  // Below it → one discounted unit. Never inflated to a multiple.
+  if (amt < p.catalogPrice) {
+    return { productKey: key, scope: p.scope, bucket: 'MAPPED', qty: 1,
+             margin: amt - cost, matchedBy: `${matchedBy} (below catalog)`, conflict, failedField: null }
+  }
+  // Above it → a whole multiple within tolerance, or the quantity is unclear.
+  const qty = Math.round(amt / p.catalogPrice)
+  if (qty >= 1 && Math.abs(amt - qty * p.catalogPrice) < QTY_TOLERANCE * (qty * p.catalogPrice)) {
+    return { productKey: key, scope: p.scope, bucket: 'MAPPED', qty,
+             margin: amt - cost * qty, matchedBy: `${matchedBy} ×${qty}`, conflict, failedField: null }
+  }
+  return {
+    productKey: key, scope: p.scope, bucket: 'AMBIGUOUS', qty: null, margin: null,
+    minMargin: amt - cost * Math.ceil(amt / p.catalogPrice),
+    matchedBy, conflict,
+    failedField: `quantity (${amt} PLN is no whole multiple of ${p.catalogPrice} within 15%)`,
   }
 }
 
@@ -396,3 +520,8 @@ export async function fetchAllOrders(supabaseUrl, serviceKey, table) {
   })
   return rows.filter(isCountableOrder)
 }
+
+// The catalog checks itself on load: a price shared by products that cannot be
+// told apart by name would make some orders permanently unresolvable, and that
+// is a build failure, not a runtime surprise.
+assertCatalogIsResolvable()

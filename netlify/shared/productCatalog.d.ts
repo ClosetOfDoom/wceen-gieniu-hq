@@ -4,9 +4,9 @@
 
 export type ProductKey =
   | 'memory_pack' | 'language_3t' | 'jezykozak_pack' | 'jzk_ai'
-  | 'jsu_course' | 'cogni_promo' | 'cogni_regular' | 'wsztp'
+  | 'jsu_course' | 'cogni_promo' | 'cogni_regular' | 'pso' | 'wsztp'
 
-export type ProductScope = 'memory' | 'language' | 'cogni'
+export type ProductScope = 'memory' | 'language' | 'cogni' | 'pso'
 
 export interface CatalogProduct {
   key: ProductKey
@@ -21,7 +21,11 @@ export interface CatalogProduct {
 }
 
 export const PRODUCTS: Record<ProductKey, CatalogProduct>
-export const PRICE_TO_PRODUCT: Record<number, ProductKey>
+/** Every product that sells at a given price. More than one = a collision. */
+export const PRICE_TO_PRODUCTS: Record<number, ProductKey[]>
+export function soleProductAtPrice(amount: number): ProductKey | null
+/** Throws when a shared price cannot be resolved by name. Runs at load. */
+export function assertCatalogIsResolvable(): void
 export const SHIPPING_PATTERNS: string[]
 
 export function unitCostOf(productKey: ProductKey | string): number | null
@@ -46,6 +50,8 @@ export interface Decision {
   /** Which field the match broke on. Null for MAPPED and for EXCLUDED — an
    *  exclusion is a decision, so there is no field for anyone to go and fix. */
   failedField: string | null
+  /** Set when one price matched several products and the name did not decide. */
+  priceCollision?: ProductKey[]
   /** Why the product is out of the blended figures. Only on EXCLUDED. */
   excludedReason?: string
 }

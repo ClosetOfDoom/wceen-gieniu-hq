@@ -2,6 +2,7 @@ import { businessToday } from '../lib/businessDay'
 import { useState, useEffect } from 'react'
 import type { DailyPerformance, MetaAdDaily, AutomationRun } from '../services/data'
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
+import type { SyncHealth } from '../lib/orderWindow'
 import { fetchDataContract, type DataContractReport } from '../lib/dataAudit'
 import type { OpsWeekReport } from '../lib/opsWeekReport'
 import { fetchDataHealth, type DataHealthReport } from '../lib/dataHealth'
@@ -33,6 +34,8 @@ interface Props {
   lastRefresh?: Date | null
   profitDataDate?: string | null
   profitDataOrders?: number | null
+  /** Windows where orders outran the sync. Null while orders-data has not loaded. */
+  syncHealth?: SyncHealth | null
 }
 
 function Row({ label, value, ok }: { label: string; value: string; ok?: boolean | null }) {
@@ -45,7 +48,7 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
   )
 }
 
-export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, browserVoiceInfo, englishVoiceCount, lastIntent, lastIntentConfidence, llmConnected, sttLastFinal, sttInterim, sttConfidence, sttStatus, sttRejectionReason, lastRefresh, profitDataDate, profitDataOrders }: Props) {
+export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, browserVoiceInfo, englishVoiceCount, lastIntent, lastIntentConfidence, llmConnected, sttLastFinal, sttInterim, sttConfidence, sttStatus, sttRejectionReason, lastRefresh, profitDataDate, profitDataOrders, syncHealth }: Props) {
   const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
   const [dataHealth, setDataHealth] = useState<DataHealthReport | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
@@ -71,6 +74,35 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
 
   return (
     <div>
+      {/* Sync health — the Wix→Supabase scenario writes one row per 15-minute
+          run, so orders arriving faster than that queue up and the tail can be
+          lost. These are the windows worth checking against a Wix export. */}
+      {syncHealth && (
+        <div className="card" style={{ padding: '18px 20px', marginBottom: '18px',
+          borderLeft: `3px solid ${syncHealth.backlogWindows.length > 0 ? 'var(--amber)' : 'var(--emerald)'}` }}>
+          <div style={{ fontFamily: 'var(--font-sans)', fontSize: '0.74rem', fontWeight: 600,
+            textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text2)', marginBottom: 10 }}>
+            Synchronizacja Wix → Supabase
+          </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', lineHeight: 1.7,
+            color: syncHealth.backlogWindows.length > 0 ? 'var(--amber)' : 'var(--muted2)' }}>
+            Sufit: {syncHealth.ordersPerHourCeiling} zamówienia/h (1 wiersz na przebieg co 15 min).
+            <br />
+            {syncHealth.note}
+          </div>
+          {syncHealth.backlogWindows.length > 0 && (
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', marginTop: 10, lineHeight: 1.7 }}>
+              {syncHealth.backlogWindows.slice(0, 8).map((w: SyncHealth['backlogWindows'][number]) => (
+                <div key={w.window}>
+                  {w.window.slice(0, 16).replace('T', ' ')} UTC — {w.arrived} zamówień w jednym oknie
+                </div>
+              ))}
+              {syncHealth.backlogWindows.length > 8 && <div>…+{syncHealth.backlogWindows.length - 8} więcej</div>}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="section-title section-title-gold" style={{ marginBottom: '18px' }}>
         Diagnostics
       </div>

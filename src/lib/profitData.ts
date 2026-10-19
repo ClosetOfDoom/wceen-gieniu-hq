@@ -69,7 +69,7 @@ export interface ProfitData {
   // Est. Profit must never look complete while this is above zero.
   noMarginOrdersCount?: number
   noMarginRevenue?: number
-  /** The field(s) the match broke on, e.g. "amount (137 PLN not in PRICE_TO_PRODUCT)". */
+  /** The field(s) the match broke on, e.g. "amount (137 PLN not in PRICE_TO_PRODUCTS)". */
   noMarginFields?: string[]
   // Deliberate exclusions (WSZTP) — a DIFFERENT state from unmapped. Nothing is
   // missing from the catalog here, so these must never be counted in the

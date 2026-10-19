@@ -156,11 +156,11 @@ describe('products — a gap and a decision are different states', () => {
     const r = buildReport(input({
       profit: profit({
         noMarginOrdersCount: 2, noMarginRevenue: 274,
-        noMarginFields: ['amount (137 PLN not in PRICE_TO_PRODUCT)'],
+        noMarginFields: ['amount (137 PLN not in PRICE_TO_PRODUCTS)'],
       }),
     }))
     expect(r).toContain('- NIEZMAPOWANE: 2 zamówień, 274.00 PLN, marża pominięta, '
-      + 'brakujące pole: amount (137 PLN not in PRICE_TO_PRODUCT)')
+      + 'brakujące pole: amount (137 PLN not in PRICE_TO_PRODUCTS)')
   })
 
   it('puts a WSZTP order in WYKLUCZONE, not in NIEZMAPOWANE', () => {

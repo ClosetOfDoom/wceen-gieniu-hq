@@ -79,6 +79,8 @@ export interface OrdersData {
     unmappedNames?: DailySeriesDay['unmappedNames']
     belowFloor?: { orders: number; revenue: number }
   }
+  /** Creation timestamps of the last 14 days, for the sync-health detector. */
+  recentCreatedAt?: string[]
   /** Display names and scope, straight from productCatalog.js. */
   productCatalog?: Record<string, { displayName: string; scope: string }>
   /** First day `orders` has any row for — days before it are prehistory. */

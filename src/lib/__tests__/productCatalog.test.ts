@@ -5,7 +5,9 @@
 // contract is netlify/shared/productCatalog.d.ts.
 import {
   PRODUCTS,
-  PRICE_TO_PRODUCT,
+  PRICE_TO_PRODUCTS,
+  soleProductAtPrice,
+  assertCatalogIsResolvable,
   unitCostOf,
   isExcludedFromBlended,
   isCountableOrder,
@@ -28,6 +30,7 @@ const AUTHORITATIVE: Array<[number, ProductKey, string, number | null]> = [
   [549,  'jsu_course',      'memory',   500],
   [399,  'cogni_promo',     'cogni',    355],
   [499,  'cogni_regular',   'cogni',    450],
+  [499,  'pso',             'pso',      null],
   // WSZTP's margin is genuinely unknown — and it is ALSO excluded from every
   // blended figure, which is a separate decision (see the EXCLUDED block).
   [1250, 'wsztp',           'memory',   null],
@@ -36,7 +39,7 @@ const AUTHORITATIVE: Array<[number, ProductKey, string, number | null]> = [
 
 describe('catalog', () => {
   it.each(AUTHORITATIVE)('%i PLN → %s, scope %s, margin %s', (price, key, scope, margin) => {
-    expect(PRICE_TO_PRODUCT[price]).toBe(key)
+    expect(PRICE_TO_PRODUCTS[price]).toContain(key)
     expect(PRODUCTS[key].scope).toBe(scope)
     expect(PRODUCTS[key].contributionMargin).toBe(margin)
   })
@@ -85,7 +88,52 @@ describe('shipping line', () => {
   })
 })
 
-describe('classifyAmount — price beats name', () => {
+describe('classifyAmount — the name decides, the price confirms', () => {
+  it('a price shared by two products, with no name, is UNMAPPED — never a guess', () => {
+    const d = classifyAmount(499, 'zupełnie nieznany produkt')
+    expect(d.bucket).toBe('UNMAPPED')
+    expect(d.productKey).toBeNull()
+    expect(d.failedField).toContain('kolizja ceny')
+    expect(d.failedField).toContain('Cogni')
+    expect(d.failedField).toContain('Perfect Student Online')
+    expect(d.priceCollision).toEqual(['cogni_regular', 'pso'])
+  })
+
+  it('Perfect Student Online at 499 is PSO, not Cogni, and its margin is a hole', () => {
+    const d = classifyAmount(499, 'Perfect Student Online')
+    expect(d.productKey).toBe('pso')
+    expect(d.scope).toBe('pso')
+    expect(d.bucket).toBe('UNKNOWN_MARGIN')
+    expect(d.margin).toBeNull()
+    expect(d.failedField).toContain('contributionMargin')
+  })
+
+  it('Cogni at 499 with its name is Cogni, not PSO', () => {
+    expect(classifyAmount(499, 'Cogni — dostęp roczny').productKey).toBe('cogni_regular')
+  })
+
+  it('Cogni promo and regular differ only by price, so the price picks the member', () => {
+    // The name cannot tell them apart — PRICE_DECIDES_WITHIN says so explicitly.
+    expect(classifyAmount(399, 'Cogni — dostęp roczny').productKey).toBe('cogni_promo')
+    expect(classifyAmount(499, 'Cogni — dostęp roczny').productKey).toBe('cogni_regular')
+  })
+
+  it('a price-only match is flagged as such', () => {
+    const d = classifyAmount(119, '')
+    expect(d.productKey).toBe('memory_pack')
+    expect(d.matchedBy).toBe('amount')
+  })
+
+  it('the catalog refuses to load if a shared price cannot be resolved by name', () => {
+    expect(() => assertCatalogIsResolvable()).not.toThrow()
+  })
+
+  it('soleProductAtPrice returns null on a collision', () => {
+    expect(soleProductAtPrice(119)).toBe('memory_pack')
+    expect(soleProductAtPrice(499)).toBeNull()
+    expect(soleProductAtPrice(12345)).toBeNull()
+  })
+
   it('119 PLN → Pakiet Pamięciowy, margin 70', () => {
     const d = classifyAmount(119, 'Pamięć. Trening Interaktywny: Ebook + Druk')
     expect(d).toMatchObject({ productKey: 'memory_pack', scope: 'memory', bucket: 'MAPPED', qty: 1, margin: 70 })
@@ -115,9 +163,15 @@ describe('classifyAmount — price beats name', () => {
     })
   })
 
-  it('records a conflict when the name disagrees with the price, and maps by price', () => {
+  it('maps by NAME when the two disagree, and records the conflict', () => {
+    // This used to map by price. It put Perfect Student Online into Cogni
+    // because both cost 499 PLN — a price shared by two products carries no
+    // information, while the name almost always does.
     const d = classifyAmount(119, 'Językozak AI')
-    expect(d.productKey).toBe('memory_pack')
+    expect(d.productKey).toBe('jzk_ai')
+    // 119 is below Językozak AI's 347 catalog price, so it reads as one
+    // discounted unit — the suffix says which branch decided.
+    expect(d.matchedBy).toBe('name (below catalog)')
     expect(d.conflict).toMatchObject({ priceProduct: 'memory_pack', nameProduct: 'jzk_ai' })
   })
 })
@@ -177,7 +231,7 @@ describe('classifyAmount — EXCLUDED is not UNMAPPED', () => {
     expect(d.bucket).toBe('UNMAPPED')
     expect(d.productKey).toBeNull()
     expect(d.margin).toBeNull()
-    expect(d.failedField).toContain('137 PLN not in PRICE_TO_PRODUCT')
+    expect(d.failedField).toContain('137 PLN not in PRICE_TO_PRODUCTS')
     expect(d.failedField).toContain('product_name_raw')
   })
 
