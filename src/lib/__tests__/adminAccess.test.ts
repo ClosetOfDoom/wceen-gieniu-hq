@@ -117,3 +117,39 @@ describe('the row carries the operator through aggregation', () => {
     expect(classifyOrder(order).bucket).toBe('ADMIN_ACCESS')
   })
 })
+
+describe('one count, carried to the card, the report and Q&A', () => {
+  // The debt this guards: three places each deciding for themselves what a
+  // 1 PLN row is. countOrdersInWindow is the shared plumbing — if the count
+  // does not survive aggregation, every consumer invents its own.
+  it('countOrdersInWindow sums the per-day grants', async () => {
+    const { countOrdersInWindow } = await import('../orderWindow')
+    const day = (date: string, orders: number, adminAccess: number) => ({
+      date, orders, revenue: orders * 119, missing: false,
+      hourly: new Array(24).fill(0),
+      products: { memory_pack: { orders, revenue: orders * 119 } },
+      unmappedNames: [], belowFloor: { orders: 0, revenue: 0 }, adminAccess,
+    })
+    const w = countOrdersInWindow(
+      { ok: true, dailySeries: [day('2026-10-16', 9, 0), day('2026-10-17', 18, 2)] } as never,
+      '2026-10-16', '2026-10-17',
+    )
+    expect(w?.orders).toBe(27)
+    expect(w?.adminAccess).toBe(2)
+    // Grants carry no money, so the window's revenue must not move because of them.
+    expect(w?.revenue).toBe(27 * 119)
+  })
+
+  it('a day with no grants reports zero, not undefined', async () => {
+    const { countOrdersInWindow } = await import('../orderWindow')
+    const w = countOrdersInWindow(
+      { ok: true, dailySeries: [{
+        date: '2026-10-16', orders: 9, revenue: 1071, missing: false,
+        hourly: new Array(24).fill(0), products: {}, unmappedNames: [],
+        belowFloor: { orders: 0, revenue: 0 },
+      }] } as never,
+      '2026-10-16', '2026-10-16',
+    )
+    expect(w?.adminAccess).toBe(0)
+  })
+})
