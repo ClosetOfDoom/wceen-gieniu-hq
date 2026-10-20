@@ -147,6 +147,13 @@ export function readWixPaymentsExport(path) {
   const iCur    = columnIndex(header, 'waluta', 'currency')
   const iKind   = columnIndex(header, 'rodzaj zamowienia')
   const iRefund = columnIndex(header, 'kwota zwrotu')
+  // Wix Pricing Plans columns. "Status" appears twice in the header — the
+  // subscription's own status and the chargeback's — and an exact match finds
+  // the subscription one, because the other is spelled "Status transakcji".
+  const iCycle  = columnIndex(header, 'cykl rozliczeniowy')
+  const iFreq   = columnIndex(header, 'czestotliwosc')
+  const iPeriod = columnIndex(header, 'okres')
+  const iSubSt  = columnIndex(header, 'status')
 
   const missing = []
   if (iDate < 0)   missing.push('Data płatności')
@@ -191,6 +198,10 @@ export function readWixPaymentsExport(path) {
       currency: iCur >= 0 ? String(r[iCur] ?? '').trim() : '',
       orderKind: iKind >= 0 ? String(r[iKind] ?? '').trim() : '',
       refundAmount: iRefund >= 0 ? toNumber(r[iRefund]) : null,
+      billingCycle: iCycle >= 0 ? String(r[iCycle] ?? '').trim() : '',
+      frequency: iFreq >= 0 ? String(r[iFreq] ?? '').trim() : '',
+      period: iPeriod >= 0 ? String(r[iPeriod] ?? '').trim() : '',
+      subscriptionStatus: iSubSt >= 0 ? String(r[iSubSt] ?? '').trim() : '',
     })
   }
 

@@ -27,7 +27,7 @@ import {
 } from './lib/goalProgress'
 import { businessHoursSinceMidnight, businessToday } from './lib/businessDay'
 import { evaluateAlerts, todayContext, ALERT_RULES } from './lib/alerts'
-import { countOrdersInWindow, assessSyncHealth } from './lib/orderWindow'
+import { countOrdersInWindow, assessSyncHealth, SYNC_BACKLOG_DETECTOR_ACTIVE } from './lib/orderWindow'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday, fetchPerformanceBetween,
@@ -1447,14 +1447,15 @@ export default function App() {
   // two orders sit in the 22:00–24:00 UTC window. Spend, impressions and clicks
   // still come from the view — those are Meta's own figures on Meta's own day.
   const orderWindow   = countOrdersInWindow(ordersData, rangeFrom, rangeTo)
-  // Windows where orders outran the sync's one-row-per-run ceiling. Built from
-  // the creation timestamps of what DID arrive — a row that never landed
-  // leaves no trace, so this says what was at risk, never what was lost.
-  const syncHealth    = ordersData?.dailySeries
-    ? assessSyncHealth(
-        (ordersData.recentCreatedAt ?? []).length > 0
-          ? ordersData.recentCreatedAt!
-          : [])
+  // Windows where orders outran the sync's one-row-per-run ceiling.
+  //
+  // OFF since 2026-10-20. Measured against the full Wix export it was right
+  // twice in 211 flags — 0.9% precision — and an amber panel that cries wolf
+  // 209 times teaches people to ignore amber everywhere else. The function is
+  // still there and still tested; it just no longer gets to colour the screen.
+  // See SYNC_BACKLOG_DETECTOR_ACTIVE in lib/orderWindow.ts.
+  const syncHealth    = SYNC_BACKLOG_DETECTOR_ACTIVE && ordersData?.dailySeries
+    ? assessSyncHealth(ordersData.recentCreatedAt ?? [])
     : null
   const rangeOrders   = orderWindow?.orders ?? displayPerf?.wix_orders ?? null
   const rangeRevenue  = orderWindow?.revenue ?? displayPerf?.wix_revenue ?? 0

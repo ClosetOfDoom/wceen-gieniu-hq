@@ -102,9 +102,50 @@ if (/SERVICE_ROLE|method:\s*['"]POST|method:\s*['"]PATCH|method:\s*['"]DELETE/.t
   pass('reconcile-wix-export.mjs is read-only (no write credential, no write method)')
 }
 
+// ── the two loss detectors, and the rule that neither glows on nothing ──────
+//
+// A detector that cannot see what it claims to watch is worse than no
+// detector: it reports "all clear" with the same confidence it would report a
+// problem. Both of these are off, both for a measured reason, and neither may
+// be reconnected by accident.
+const orderWindow = readFileSync(join(rootDir, 'src/lib/orderWindow.ts'), 'utf8')
+const app = code(readFileSync(join(rootDir, 'src/App.tsx'), 'utf8'))
+
+const backlogOff = /SYNC_BACKLOG_DETECTOR_ACTIVE\s*=\s*false/.test(orderWindow)
+const gapOff = /NUMBER_GAP_DETECTOR_ACTIVE\s*=\s*false/.test(orderWindow)
+
+if (backlogOff) {
+  pass('SYNC_BACKLOG_DETECTOR_ACTIVE is false (measured precision 0.9%)')
+  // Every call in the app has to sit behind the flag, or the flag is decoration.
+  const calls = app.split('assessSyncHealth(').length - 1
+  const gated = app.split(/SYNC_BACKLOG_DETECTOR_ACTIVE\s*&&/).length - 1
+  if (calls === 0 || gated >= 1) {
+    pass('App.tsx does not run the backlog detector while the flag is false')
+  } else {
+    fail(`App.tsx calls assessSyncHealth ${calls}× with no SYNC_BACKLOG_DETECTOR_ACTIVE gate`)
+  }
+} else {
+  pass('SYNC_BACKLOG_DETECTOR_ACTIVE is true — somebody turned it back on deliberately')
+}
+
+if (gapOff) {
+  pass('NUMBER_GAP_DETECTOR_ACTIVE is false (column unapplied, Make not mapping it)')
+  // Reading an empty column and showing "no gaps" is the failure this prevents.
+  const readers = readdirSync(join(rootDir, 'src/lib'))
+    .filter(f => f.endsWith('.ts') && !f.includes('.test.'))
+    .filter(f => /wix_order_number/.test(code(readFileSync(join(rootDir, 'src/lib', f), 'utf8'))))
+  if (readers.length === 0 && !/wix_order_number/.test(app)) {
+    pass('nothing in the app reads wix_order_number while the column is empty')
+  } else {
+    fail(`these read wix_order_number although the gap detector is off: ${[...readers, 'App.tsx'].join(', ')}`)
+  }
+} else {
+  pass('NUMBER_GAP_DETECTOR_ACTIVE is true — the column must be populated by now')
+}
+
 console.log('')
 if (errors > 0) {
   console.error(`FAIL — ${errors} Wix export violation(s).`)
   process.exit(1)
 }
-console.log('PASS — one reader for the Wix export, and it is read-only.')
+console.log('PASS — one reader for the Wix export, both loss detectors accounted for.')

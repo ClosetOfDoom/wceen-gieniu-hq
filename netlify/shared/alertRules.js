@@ -57,25 +57,53 @@ export const ALERT_RULES = {
    * 1 — two consecutive full days at or under this many orders.
    *
    * Kept at 5, NOT raised to the measured p10 of 7. This is a tail cut, not a
-   * percentile: at 5 the rule covers 5 days out of 114 and has never once seen
-   * two in a row, which is what makes a pair worth waking up for. Measured
-   * 2026-10-03, the consequence of each candidate over those 114 days:
-   *   ≤5 →  5 days,  0 consecutive pairs   ← here
+   * percentile: at 5 the rule has never once seen two days in a row, which is
+   * what makes a pair worth waking up for.
+   *
+   * RE-MEASURED 2026-10-20 · 130 full days · after the 15-20.08
+   * de-duplication. The verdict is unchanged, and so is the threshold:
+   *   ≤4 →  2 days,  0 consecutive pairs
+   *   ≤5 →  5 days,  0 pairs   ← here
    *   ≤6 →  6 days,  0 pairs
-   *   ≤7 → 13 days,  2 pairs (20-21.06, 21-22.06 — an ordinary quiet stretch)
-   *   ≤8 → 21 days,  6 pairs
-   * Raising it to 7 would have fired on a normal late-June week.
+   *   ≤7 → 14 days,  2 pairs (20-21.06, 21-22.06 — an ordinary quiet stretch)
+   *   ≤8 → 22 days,  6 pairs
+   * Raising it to 7 would still fire on a normal late-June week. The
+   * de-duplication could not have moved this one either way: every day it
+   * touched had 11 or more orders left after the copies were removed, nowhere
+   * near a threshold of 5. Over those 130 days the rule fires 0 times.
    */
   DAILY_LOW: { maxOrders: 5, consecutiveDays: 2 },
 
   /**
    * 2 — the trailing 7 FULL days.
-   * amberBelow = p25 of the rolling-7 distribution (72), redBelow = p10 (65).
-   * Measured 2026-10-03 over 108 windows. Against the previous 74/66 this is a
-   * slight tightening: 26 amber windows instead of 29, and the same 9 days of
-   * red alarm (all 25.06 – 03.07).
+   * amberBelow = p25 of the rolling-7 distribution, redBelow = p10.
+   *
+   * MEASURED 2026-10-20 · 124 windows · 130 full Warsaw days (2026-06-12 →
+   * 2026-10-19) · orders above ORDER_MIN_AMOUNT_PLN · AFTER the 15-20.08
+   * de-duplication (supabase/migrations/20261020_dedup_august_duplicates.sql).
+   *   p25 = 75  ·  p10 = 66
+   *
+   * THE DE-DUPLICATION CHANGED NOTHING HERE, and that is worth writing down so
+   * nobody recomputes it hoping otherwise. The 67 phantom rows sat on six
+   * August days that ran 22-28 orders against a median of 12 — the TOP of the
+   * distribution. p10 and p25 are read off the BOTTOM, where those windows
+   * never were. Run over the series as it stood on the day the old thresholds
+   * were set (to 2026-10-02, 107 windows), with and without the copies:
+   *   z kopiami   p25 72 · p10 64
+   *   bez kopii   p25 72 · p10 64      ← identical
+   *
+   * So the move from 72/65 to 75/66 is not a correction. It is sixteen more
+   * days of trading since 2026-10-03, and p25 tracking a business that grew.
+   * Leaving 72 in place would have meant amber firing on less than a quarter
+   * of windows, which is not what a p25 threshold is for.
+   *
+   * CONSEQUENCE, counted over the same 130 days with the real rule:
+   *   72/65 → 26 days in alarm
+   *   75/66 → 30 days in alarm  (23.1%, which is what p25 means)
+   *
+   * scripts/reconcile-wix-export.mjs, step 11b, reproduces all of the above.
    */
-  ROLLING_7: { windowDays: 7, amberBelow: 72, redBelow: 65, redStreakDays: 3 },
+  ROLLING_7: { windowDays: 7, amberBelow: 75, redBelow: 66, redStreakDays: 3 },
 
   /** 3 — CPA and ROAS are only ever coloured on 7 full days. */
   CPA:  { windowDays: 7, green: 40, amber: 50, doNotScale: 60 },

@@ -273,6 +273,40 @@ export const SYNC_RUN_INTERVAL_MIN = 15
 /** Orders per hour the sync can absorb before it starts falling behind. */
 export const SYNC_ORDERS_PER_HOUR = (60 / SYNC_RUN_INTERVAL_MIN) * SYNC_ROWS_PER_RUN
 
+/**
+ * Does the backlog signal appear anywhere a person looks? No — switched off
+ * 2026-10-20.
+ *
+ * Checked against the full Wix payments export over 2026-06-11 → 2026-10-19:
+ * 211 windows flagged, 2 of which had actually lost anything. Precision 0.9%.
+ * An amber panel that is wrong 209 times out of 211 does not warn anybody; it
+ * teaches them that amber means nothing, and then the alarm that matters gets
+ * the same shrug.
+ *
+ * assessSyncHealth() below is kept, tested and correct — the measurement of
+ * how far behind the sync runs is still true and still useful when
+ * investigating by hand. What it cannot do is tell anyone that something was
+ * LOST, because the rows that were lost are exactly the ones it cannot see.
+ *
+ * Flip this to true only with a reason that is not "it looks empty now".
+ */
+export const SYNC_BACKLOG_DETECTOR_ACTIVE = false
+
+/**
+ * The replacement, and why it is not on either.
+ *
+ * A hole in orders.wix_order_number is real evidence of a dropped row: scored
+ * against the same export it found 6 of 6 real losses, with 21 flags in all.
+ * It needs two things that have not happened yet — the column
+ * (supabase/migrations/20261019_wix_order_number.sql, unapplied) and Make
+ * writing the number on every order.
+ *
+ * Until then the column is empty, and a gap detector reading an empty column
+ * reports "no gaps" with total confidence. That is worse than silence, so
+ * there is nothing wired up and this says so by name rather than by absence.
+ */
+export const NUMBER_GAP_DETECTOR_ACTIVE = false
+
 export interface SyncBacklogWindow {
   /** Start of the 15-minute window, as an ISO timestamp. */
   window: string

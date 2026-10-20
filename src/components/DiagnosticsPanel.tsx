@@ -74,9 +74,15 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
 
   return (
     <div>
-      {/* Sync health — the Wix→Supabase scenario writes one row per 15-minute
-          run, so orders arriving faster than that queue up and the tail can be
-          lost. These are the windows worth checking against a Wix export. */}
+      {/* Sync health — NOT RENDERED any more. App.tsx passes null since
+          2026-10-20: measured against the full Wix export the signal was right
+          2 times in 211 flags (0.9% precision), so it was teaching people to
+          ignore amber rather than telling them anything. The block stays for
+          the day there is a detector worth showing here — the numbering-gap
+          one, once Make writes orders.wix_order_number. Do not re-enable this
+          one by passing syncHealth again; flip
+          SYNC_BACKLOG_DETECTOR_ACTIVE in lib/orderWindow.ts and read why it
+          is false first. */}
       {syncHealth && (
         <div className="card" style={{ padding: '18px 20px', marginBottom: '18px',
           borderLeft: `3px solid ${syncHealth.backlogWindows.length > 0 ? 'var(--amber)' : 'var(--emerald)'}` }}>

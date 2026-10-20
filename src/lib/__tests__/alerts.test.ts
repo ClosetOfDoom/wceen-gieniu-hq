@@ -98,7 +98,7 @@ describe('rule 2 — the trailing seven full days', () => {
 
   it('TEST 3b: only two days under the red line → amber, not red', () => {
     // Nine days: one busy one, then eight of nine orders each. The three most
-    // recent 7-day windows are 74, 63, 63 — two under the red line of 65, so
+    // recent 7-day windows are 74, 63, 63 — two under the red line of 66, so
     // the streak is 2 and the verdict stops at amber.
     const s = series([20, 9, 9, 9, 9, 9, 9, 9, 9])
     const windowEndingAt = (i: number) =>
@@ -111,20 +111,30 @@ describe('rule 2 — the trailing seven full days', () => {
   })
 
   it('the thresholds are the measured ones, not the old guesses', () => {
-    // p25 = 72 and p10 = 65, measured 2026-10-03 over 108 rolling windows.
-    expect(ALERT_RULES.ROLLING_7.amberBelow).toBe(72)
-    expect(ALERT_RULES.ROLLING_7.redBelow).toBe(65)
+    // p25 = 75 and p10 = 66, measured 2026-10-20 over 124 rolling windows, on
+    // the series with the 67 August duplicates removed.
+    //
+    // The de-duplication did not cause this change and the comment on
+    // ALERT_RULES says so with the figures: those copies sat on days running
+    // 22-28 orders against a median of 12, i.e. the top of the distribution,
+    // and p10/p25 are read off the bottom. Same series to 2026-10-02, with and
+    // without the copies, gives p25 72 / p10 64 either way. The move to 75/66
+    // is sixteen more days of trading.
+    expect(ALERT_RULES.ROLLING_7.amberBelow).toBe(75)
+    expect(ALERT_RULES.ROLLING_7.redBelow).toBe(66)
   })
 
-  it('under 72 but not under 65 is amber', () => {
+  it('under 75 but not under 66 is amber', () => {
     const a = rolling7Alert(series([10, 10, 10, 10, 10, 10, 10]))  // 70
     expect(a.severity).toBe('amber')
     expect(a.message).toContain('70')
   })
 
-  it('at or above 72 is clear', () => {
+  it('at or above 75 is clear', () => {
     expect(rolling7Alert(series([12, 12, 12, 12, 12, 12, 12])).severity).toBe('none')  // 84
-    expect(rolling7Alert(series([11, 10, 10, 10, 10, 10, 11])).severity).toBe('none')  // 72
+    // Exactly on the line: amberBelow is strict, so 75 is clear and 74 is not.
+    expect(rolling7Alert(series([11, 11, 11, 11, 11, 10, 10])).severity).toBe('none')  // 75
+    expect(rolling7Alert(series([11, 11, 11, 11, 10, 10, 10])).severity).toBe('amber') // 74
   })
 
   it('TEST 5: a window containing a day with no rows is NOT evaluated', () => {
