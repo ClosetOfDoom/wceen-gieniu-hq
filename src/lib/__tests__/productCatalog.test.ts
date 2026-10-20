@@ -13,7 +13,7 @@ import {
   isCountableOrder,
   isShippingLine,
   nameMatchKey,
-  classifyAmount,
+  classifyAmount, assertCatalogIsComplete,
   aggregateOrders,
   classifyOrder,
 } from '../../../netlify/shared/productCatalog.js'
@@ -28,14 +28,16 @@ const AUTHORITATIVE: Array<[number, ProductKey, string, number | null]> = [
   [95,   'jezykozak_pack',  'language', 88],
   [347,  'jzk_ai',          'language', 320],
   [549,  'jsu_course',      'memory',   500],
-  [399,  'cogni_promo',     'cogni',    355],
-  [499,  'cogni_regular',   'cogni',    450],
-  [499,  'pso',             'pso',      null],
   // WSZTP's margin is genuinely unknown — and it is ALSO excluded from every
   // blended figure, which is a separate decision (see the EXCLUDED block).
   [1250, 'wsztp',           'memory',   null],
   [3450, 'wsztp',           'memory',   null],
 ]
+
+// PSO is NOT in the table above, and that is the point: it has no entry in
+// PRICE_TO_PRODUCTS at all. 499 PLN is a price it sells at, not a route into
+// it. See the name-only tests further down.
+
 
 describe('catalog', () => {
   it.each(AUTHORITATIVE)('%i PLN → %s, scope %s, margin %s', (price, key, scope, margin) => {
@@ -50,8 +52,7 @@ describe('catalog', () => {
     expect(unitCostOf('jezykozak_pack')).toBe(7)    // 95 − 88
     expect(unitCostOf('jzk_ai')).toBe(27)           // 347 − 320
     expect(unitCostOf('jsu_course')).toBe(49)       // 549 − 500
-    expect(unitCostOf('cogni_promo')).toBe(44)      // 399 − 355
-    expect(unitCostOf('cogni_regular')).toBe(49)    // 499 − 450
+    expect(unitCostOf('pso')).toBeNull()            // margin unknown -> no cost
     expect(unitCostOf('wsztp')).toBeNull()          // margin unknown -> no cost
   })
 
@@ -59,12 +60,47 @@ describe('catalog', () => {
     expect(PRODUCTS.wsztp.contributionMargin).toBeNull()
   })
 
-  it('Cogni is two entries because two prices carry two different margins', () => {
-    // One entry cannot hold two margins without deriving - i.e. inventing - one.
-    expect(PRODUCTS.cogni_promo.catalogPrice).toBe(399)
-    expect(PRODUCTS.cogni_regular.catalogPrice).toBe(499)
-    expect(PRODUCTS.cogni_promo.contributionMargin).toBe(355)
-    expect(PRODUCTS.cogni_regular.contributionMargin).toBe(450)
+  // TEST 3 — Cogni is sold through Stripe and only Stripe. No `orders` row can
+  // be a Cogni sale, so an entry for it could only ever mislabel something
+  // else. It did: sharing 499 PLN with PSO, it ate every PSO sale and credited
+  // it with a 450 PLN margin that was never earned.
+  it('Cogni is not in the catalog, in any form', () => {
+    const keys = Object.keys(PRODUCTS)
+    expect(keys.filter(k => /cogni/i.test(k))).toEqual([])
+    expect(Object.values(PRODUCTS).filter(p => p.scope === ('cogni' as never))).toEqual([])
+    expect(Object.values(PRODUCTS).filter(p => /cogni/i.test(p.displayName))).toEqual([])
+    expect(Object.values(PRICE_TO_PRODUCTS).flat().filter(k => /cogni/i.test(k))).toEqual([])
+  })
+
+  it('no price resolves to PSO — the name is the only way in', () => {
+    // 499 must not be a key here. If it were, an unrecognised 499 PLN order
+    // would land in PSO on the price alone, which is the same mistake that
+    // produced the false Cogni, just pointed somewhere else.
+    expect(PRICE_TO_PRODUCTS[499]).toBeUndefined()
+    expect(Object.values(PRICE_TO_PRODUCTS).flat()).not.toContain('pso')
+  })
+
+  it('PSO sits outside both ad funnels', () => {
+    // There is no Meta campaign for PSO, so charging it to memory or language
+    // would attribute spend that never chased it.
+    expect(PRODUCTS.pso.scope).toBe('other')
+  })
+
+  // TEST 4 — an entry states its margin, or states that it does not know it.
+  it('every entry has a margin or an explicit, named gap', () => {
+    for (const [key, p] of Object.entries(PRODUCTS)) {
+      const hasNumber = typeof p.contributionMargin === 'number'
+      if (hasNumber) {
+        expect(p.marginUnknown, `${key}: margin AND marginUnknown`).toBeFalsy()
+        continue
+      }
+      expect(p.marginUnknown, `${key}: null margin with no marginUnknown flag`).toBe(true)
+      expect(p.marginUnknownReason, `${key}: marginUnknown with no reason`).toBeTruthy()
+    }
+  })
+
+  it('and the check runs at load, so a bad entry fails the build', () => {
+    expect(() => assertCatalogIsComplete()).not.toThrow()
   })
 
   it('WSZTP is the only product excluded from the blended figures', () => {
@@ -89,33 +125,40 @@ describe('shipping line', () => {
 })
 
 describe('classifyAmount — the name decides, the price confirms', () => {
-  it('a price shared by two products, with no name, is UNMAPPED — never a guess', () => {
+  // TEST 2 — 499 PLN with a name the catalog does not know.
+  it('499 PLN with an unknown name is UNMAPPED — never PSO, never Cogni', () => {
     const d = classifyAmount(499, 'zupełnie nieznany produkt')
     expect(d.bucket).toBe('UNMAPPED')
     expect(d.productKey).toBeNull()
-    expect(d.failedField).toContain('kolizja ceny')
-    expect(d.failedField).toContain('Cogni')
-    expect(d.failedField).toContain('Perfect Student Online')
-    expect(d.priceCollision).toEqual(['cogni_regular', 'pso'])
+    expect(d.failedField).toContain('499 PLN not in PRICE_TO_PRODUCTS')
   })
 
-  it('Perfect Student Online at 499 is PSO, not Cogni, and its margin is a hole', () => {
+  it('499 PLN with no name at all is UNMAPPED too', () => {
+    expect(classifyAmount(499, '').productKey).toBeNull()
+    expect(classifyAmount(499, null).productKey).toBeNull()
+  })
+
+  // TEST 1 — the real October order.
+  it('Perfect Student Online at 499 is PSO, and its margin is a named hole', () => {
     const d = classifyAmount(499, 'Perfect Student Online')
     expect(d.productKey).toBe('pso')
-    expect(d.scope).toBe('pso')
+    expect(d.scope).toBe('other')
     expect(d.bucket).toBe('UNKNOWN_MARGIN')
     expect(d.margin).toBeNull()
-    expect(d.failedField).toContain('contributionMargin')
+    // Named, not generic: this tells somebody what to go and ask for.
+    expect(d.failedField).toBe('marża PSO nieznana — brak w briefingu')
   })
 
-  it('Cogni at 499 with its name is Cogni, not PSO', () => {
-    expect(classifyAmount(499, 'Cogni — dostęp roczny').productKey).toBe('cogni_regular')
+  it('PSO is matched by name at any amount, because the name is the signal', () => {
+    // If the price were doing the work, a PSO sold at another price point
+    // would stop being PSO. It does not.
+    expect(classifyAmount(449, 'Perfect Student Online').productKey).toBe('pso')
+    expect(classifyAmount(499, 'PSO — dostęp roczny').productKey).toBe('pso')
   })
 
-  it('Cogni promo and regular differ only by price, so the price picks the member', () => {
-    // The name cannot tell them apart — PRICE_DECIDES_WITHIN says so explicitly.
-    expect(classifyAmount(399, 'Cogni — dostęp roczny').productKey).toBe('cogni_promo')
-    expect(classifyAmount(499, 'Cogni — dostęp roczny').productKey).toBe('cogni_regular')
+  it('the name "Cogni" resolves to nothing at all', () => {
+    expect(classifyAmount(499, 'Cogni — dostęp roczny').productKey).toBeNull()
+    expect(classifyAmount(399, 'Cogni — dostęp roczny').productKey).toBeNull()
   })
 
   it('a price-only match is flagged as such', () => {
@@ -218,12 +261,12 @@ describe('classifyAmount — EXCLUDED is not UNMAPPED', () => {
     })
   })
 
-  it.each([[399, 'cogni_promo', 355], [499, 'cogni_regular', 450]] as const)(
-    'Cogni at %i PLN maps to %s with margin %i',
-    (amount, key, margin) => {
-      expect(classifyAmount(amount, 'Cogni — dostęp roczny')).toMatchObject({
-        productKey: key, scope: 'cogni', bucket: 'MAPPED', margin,
-      })
+  it.each([399, 499] as const)(
+    'a Cogni name at %i PLN resolves to nothing — Cogni never came through Wix',
+    (amount) => {
+      const d = classifyAmount(amount, 'Cogni — dostęp roczny')
+      expect(d.productKey).toBeNull()
+      expect(d.bucket).toBe('UNMAPPED')
     })
 
   it('an unknown amount with no name match is UNMAPPED, never PP', () => {

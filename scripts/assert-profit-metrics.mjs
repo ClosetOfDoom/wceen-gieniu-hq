@@ -36,12 +36,40 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
       [95,   'jezykozak_pack', 'language', 88],
       [347,  'jzk_ai',         'language', 320],
       [549,  'jsu_course',     'memory',   500],
-      [399,  'cogni_promo',    'cogni',    355],
-      [499,  'cogni_regular',  'cogni',    450],
       // WSZTP's margin is genuinely unknown AND it is excluded from blended.
       [1250, 'wsztp',          'memory',   null],
       [3450, 'wsztp',          'memory',   null],
     ]
+
+    // Cogni is NOT in this table and must never come back. It is sold through
+    // Stripe only, so no `orders` row can be one; an entry for it could only
+    // mislabel something else, and did — sharing 499 PLN with Perfect Student
+    // Online, it ate every PSO sale and credited it with a 450 PLN margin.
+    const cogniKeys = Object.keys(PRODUCTS).filter(k => /cogni/i.test(k))
+    const cogniScopes = Object.values(PRODUCTS).filter(p => p.scope === 'cogni')
+    if (cogniKeys.length === 0 && cogniScopes.length === 0) {
+      pass('catalog: no Cogni entry and no cogni scope (Stripe-only, out of Wix reach)')
+    } else {
+      fail(`catalog: Cogni is back — keys ${cogniKeys.join('/')}, ${cogniScopes.length} with scope cogni`)
+    }
+
+    // PSO is reachable by NAME ONLY. A 499 PLN key here would recreate the
+    // original bug pointed at a different product.
+    if (PRICE_TO_PRODUCTS[499] === undefined
+        && !Object.values(PRICE_TO_PRODUCTS).flat().includes('pso')) {
+      pass('catalog: no price resolves to PSO — the name is the only way in')
+    } else {
+      fail(`catalog: PSO is reachable by price (499 -> ${(PRICE_TO_PRODUCTS[499] ?? []).join('/')})`)
+    }
+
+    // Every entry states its margin or names the gap.
+    const vague = Object.entries(PRODUCTS).filter(([, p]) =>
+      typeof p.contributionMargin !== 'number' && !(p.marginUnknown && p.marginUnknownReason))
+    if (vague.length === 0) {
+      pass('catalog: every entry has a margin or an explicit, named gap')
+    } else {
+      fail(`catalog: ${vague.map(([k]) => k).join(', ')} have neither a margin nor a named gap`)
+    }
     for (const [price, key, scope, margin] of CATALOG) {
       const p = PRODUCTS[key]
       const ok = (PRICE_TO_PRODUCTS[price] ?? []).includes(key) && p && p.scope === scope && p.contributionMargin === margin

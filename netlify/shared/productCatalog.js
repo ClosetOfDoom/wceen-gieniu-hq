@@ -2,7 +2,7 @@
 // productCatalog.js — THE single source of truth for
 //   · product identity (key, display name)
 //   · price → product mapping
-//   · scope (memory / language / cogni)
+//   · scope (memory / language / other)
 //   · contribution margin (PLN per unit, before ad spend)
 //   · order-row → product classification
 //   · reading orders out of Supabase WITHOUT truncation
@@ -53,25 +53,29 @@ export const PRODUCTS = {
     key: 'jsu_course', displayName: 'Kurs Jak się uczyć', shortName: 'JSU',
     scope: 'memory', catalogPrice: 549, contributionMargin: 500,
   },
-  // Cogni annual sells at two prices with two different margins, so it is two
-  // catalog entries. One entry cannot carry two margins without one of them
-  // being derived — i.e. invented.
-  cogni_promo: {
-    key: 'cogni_promo', displayName: 'Cogni rocznie (promo)', shortName: 'Cogni promo',
-    scope: 'cogni', catalogPrice: 399, contributionMargin: 355,
-  },
-  cogni_regular: {
-    key: 'cogni_regular', displayName: 'Cogni rocznie', shortName: 'Cogni',
-    scope: 'cogni', catalogPrice: 499, contributionMargin: 450,
-  },
+  // COGNI IS NOT HERE, AND MUST NOT BE ADDED BACK.
+  //
+  // Cogni is never sold through Wix. Its revenue arrives in Stripe and only in
+  // Stripe, so no `orders` row can be a Cogni sale — and an entry for it in
+  // this catalog can therefore only ever mislabel something else. It did: at
+  // 499 PLN it shared a price with Perfect Student Online, and until fd7551b
+  // the price decided, so every PSO sale was reported as "Cogni rocznie" with
+  // a 450 PLN margin it never earned.
+  //
+  // A matching price is NOT a reason to put it back. That is exactly the
+  // evidence that produced the wrong answer last time.
+
   // Perfect Student Online — the Wix/Velo learning platform (CMS collection
-  // PSO_Progress). Nothing to do with Cogni; it shares the 499 PLN price and
-  // that is the whole of the resemblance. Its unit cost is not known, so the
-  // margin stays null and is reported as a hole rather than borrowed from the
-  // product it was being confused with.
+  // PSO_Progress). Matched by NAME ONLY: 499 is deliberately absent from
+  // PRICE_TO_PRODUCTS below, so an unrecognised 499 PLN order can never fall
+  // into PSO the way it used to fall into Cogni.
   pso: {
     key: 'pso', displayName: 'Perfect Student Online', shortName: 'PSO',
-    scope: 'pso', catalogPrice: 499, contributionMargin: null,
+    // Out of both ad funnels: there is no Meta campaign for PSO, so putting it
+    // in `memory` or `language` would charge it with spend that never chased it.
+    scope: 'other', catalogPrice: 499, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża PSO nieznana — brak w briefingu',
   },
   // WSZTP — Wakacyjna Szkoła Treningu Pamięci. Deposit 1250 / full 3450.
   //
@@ -85,6 +89,8 @@ export const PRODUCTS = {
     key: 'wsztp', displayName: 'WSZTP', shortName: 'WSZTP',
     scope: 'memory', catalogPrice: 3450, contributionMargin: null,
     excludeFromBlendedProfit: true,
+    marginUnknown: true,
+    marginUnknownReason: 'marża WSZTP nieznana — obóz rozliczany poza lejkiem',
   },
 }
 
@@ -117,40 +123,24 @@ export function unitCostOf(productKey) {
 //
 //   99   = Pakiet Pamięciowy sold without the 20 PLN shipping line (form error)
 //   1250 = WSZTP deposit · 3450 = WSZTP in full
-//   399  = Cogni annual on promo
-//   499  = Cogni annual regular AND Perfect Student Online — a real collision
-// 115 is deliberately ABSENT: both a memory row and a language row have sold at
-// 115 PLN, so the price carries no signal there and the name decides.
+//
+// 499 IS DELIBERATELY ABSENT. Perfect Student Online sells at 499 and is
+// matched by name alone. Listing it here would mean an unrecognised 499 PLN
+// order resolves to PSO on the price — which is precisely the mechanism that
+// turned PSO sales into "Cogni rocznie" before fd7551b, just pointed at a
+// different product. A 499 PLN order whose name says nothing goes to UNMAPPED.
+//
+// 115 is absent for the same family of reason: both a memory row and a
+// language row have sold at 115 PLN, so the price carries no signal.
 export const PRICE_TO_PRODUCTS = {
   95:   ['jezykozak_pack'],
   99:   ['memory_pack'],
   114:  ['language_3t'],
   119:  ['memory_pack'],
   347:  ['jzk_ai'],
-  399:  ['cogni_promo'],
-  499:  ['cogni_regular', 'pso'],
   549:  ['jsu_course'],
   1250: ['wsztp'],
   3450: ['wsztp'],
-}
-
-/**
- * Products that are the SAME thing at different prices, so their name cannot
- * tell them apart and only the price can. Cogni promo and Cogni regular are
- * one product with two price points; a name match on "Cogni" narrows it to the
- * family, and the price then picks the member.
- *
- * This is the one case where the price outranks the name, and it is listed
- * explicitly rather than inferred — anything not in here follows the normal
- * rule, where the name wins.
- */
-export const PRICE_DECIDES_WITHIN = [
-  ['cogni_promo', 'cogni_regular'],
-]
-
-/** The family a product belongs to, or null when it stands alone. */
-function familyOf(key) {
-  return PRICE_DECIDES_WITHIN.find(group => group.includes(key)) ?? null
 }
 
 /**
@@ -335,7 +325,7 @@ const NAME_PATTERNS = [
   // Still requires "kurs", so a PP bundle that lists "Jak się uczyć" as a bonus
   // is not read as the course.
   ['jsu_course',     ['kurs online jak sie uczyc', 'kurs jak sie uczyc', 'kurs jak', 'jsu', 'nauka uczenia']],
-  ['cogni_regular',  ['cogni']],
+  // PSO is name-only — see PRICE_TO_PRODUCTS for why 499 is not a route in.
   ['pso',            ['perfect student', 'pso']],
   // Pakiet Językozaka BEFORE Językozak AI: 'jezykozak' is a substring of
   // 'jezykozaka', so the AI patterns were swallowing the pack.
@@ -401,16 +391,15 @@ export function classifyAmount(amount, rawName, paymentProvider = null) {
     const priceAgrees = candidates.includes(nameKey)
     if (priceAgrees) return decide(nameKey, amt, `name + price ${amt}`, null)
 
-    // Same product, different price point — Cogni promo vs regular. The name
-    // got us to the family; only the price can pick the member, so here and
-    // only here the price outranks the name.
-    const family = familyOf(nameKey)
-    if (family) {
-      const sibling = candidates.find(c => family.includes(c))
-      if (sibling) return decide(sibling, amt, `name (family) + price ${amt}`, null)
-    }
+    // There used to be a branch here for one product sold at two price points
+    // (Cogni promo 399 / regular 499), where the name reached the family and
+    // only the price could pick the member. Cogni is gone and nothing else in
+    // the catalog has that shape, so the branch was unreachable and is
+    // removed rather than kept as scenery. If a product ever does sell at two
+    // prices under one name, this is where that exception belongs — and it
+    // belongs listed explicitly, never inferred.
 
-    // Otherwise the name wins and the disagreement is recorded, not resolved
+    // The name wins and the disagreement is recorded, not resolved
     // in the price's favour. A Wix name is edited by hand but it still says
     // which product was bought; a price shared by two products does not.
     const conflict = candidates.length > 0
@@ -461,8 +450,12 @@ function decide(key, amt, matchedBy, conflict) {
              excludedReason: 'off the ad funnel — kept out of blended profit, CPA and ROAS' }
   }
   if (p.contributionMargin == null) {
+    // The gap is named by the product, not by a generic string. "marża PSO
+    // nieznana — brak w briefingu" tells somebody what to go and ask for;
+    // "contributionMargin (not in catalog)" tells them the shape of a bug.
     return { productKey: key, scope: p.scope, bucket: 'UNKNOWN_MARGIN', qty: 1, margin: null,
-             matchedBy, conflict, failedField: 'contributionMargin (not in catalog)' }
+             matchedBy, conflict,
+             failedField: p.marginUnknownReason ?? 'contributionMargin (not in catalog)' }
   }
 
   const cost = unitCostOf(key)
@@ -652,7 +645,42 @@ export async function fetchAllOrders(supabaseUrl, serviceKey, table) {
   return rows.filter(isCountableOrder)
 }
 
-// The catalog checks itself on load: a price shared by products that cannot be
-// told apart by name would make some orders permanently unresolvable, and that
-// is a build failure, not a runtime surprise.
+/**
+ * Startup check: every product states its margin, or states that it does not
+ * know it.
+ *
+ * A null `contributionMargin` with nothing beside it is ambiguous — it could
+ * mean "nobody has worked it out yet" or "somebody deleted a number by
+ * accident", and the two want opposite responses. Requiring the explicit flag
+ * makes the first case a decision on the record and the second case a build
+ * failure.
+ *
+ * It also stops the quiet repair: faced with a null margin and no explanation,
+ * the tempting fix is to put a plausible number in. An entry that has to carry
+ * a REASON is much harder to paper over.
+ */
+export function assertCatalogIsComplete() {
+  const problems = []
+  for (const [key, p] of Object.entries(PRODUCTS)) {
+    const hasNumber = typeof p.contributionMargin === 'number' && Number.isFinite(p.contributionMargin)
+    if (hasNumber) {
+      if (p.marginUnknown) problems.push(`${key}: has a margin AND marginUnknown — pick one`)
+      continue
+    }
+    if (!p.marginUnknown) {
+      problems.push(`${key}: contributionMargin is not a number and marginUnknown is not set `
+        + '— say which, do not leave it blank')
+    } else if (!p.marginUnknownReason) {
+      problems.push(`${key}: marginUnknown with no marginUnknownReason — name the gap`)
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error('productCatalog: incomplete entry\n  ' + problems.join('\n  '))
+  }
+}
+
+// The catalog checks itself on load. A price shared by products that cannot be
+// told apart by name, or an entry that neither states its margin nor admits it
+// does not know it, is a build failure rather than a runtime surprise.
 assertCatalogIsResolvable()
+assertCatalogIsComplete()

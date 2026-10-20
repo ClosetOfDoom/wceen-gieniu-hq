@@ -21,7 +21,7 @@ export interface ProfitSummary {
 export interface ProductBreakdownItem {
   productKey: string
   displayName: string
-  scope?: 'memory' | 'language' | 'cogni'
+  scope?: 'memory' | 'language' | 'other'
   /** Catalog price per unit, straight from productCatalog.js. */
   catalogPrice?: number
   orders: number
@@ -32,7 +32,7 @@ export interface ProductBreakdownItem {
 }
 
 export interface ScopeBreakdownItem {
-  scope: 'memory' | 'language' | 'cogni'
+  scope: 'memory' | 'language' | 'other'
   orders: number
   revenue: number
   marginTotal: number
@@ -42,7 +42,7 @@ export interface ScopeBreakdownItem {
 export interface ExcludedBreakdownItem {
   productKey: string
   displayName: string
-  scope: 'memory' | 'language' | 'cogni'
+  scope: 'memory' | 'language' | 'other'
   orders: number
   revenue: number
   reason: string

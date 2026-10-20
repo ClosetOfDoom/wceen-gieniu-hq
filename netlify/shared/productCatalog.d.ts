@@ -2,11 +2,15 @@
 // shared with the Netlify Functions runtime; this file is the typed contract for
 // anything that imports it from TypeScript (currently the unit tests).
 
+// Cogni is absent on purpose: it is sold through Stripe only, never through
+// Wix, so no `orders` row can be one. An entry for it could only mislabel
+// something else — and did, until fd7551b, because it shared 499 PLN with PSO.
 export type ProductKey =
   | 'memory_pack' | 'language_3t' | 'jezykozak_pack' | 'jzk_ai'
-  | 'jsu_course' | 'cogni_promo' | 'cogni_regular' | 'pso' | 'wsztp'
+  | 'jsu_course' | 'pso' | 'wsztp'
 
-export type ProductScope = 'memory' | 'language' | 'cogni' | 'pso'
+/** `other` = sold, but outside both Meta funnels, so no spend chased it. */
+export type ProductScope = 'memory' | 'language' | 'other'
 
 export interface CatalogProduct {
   key: ProductKey
@@ -18,6 +22,14 @@ export interface CatalogProduct {
   contributionMargin: number | null
   /** Kept out of blended profit / CPA / ROAS on purpose (WSZTP). */
   excludeFromBlendedProfit?: boolean
+  /**
+   * Set when contributionMargin is null BECAUSE NOBODY KNOWS IT, as opposed to
+   * because a number went missing. assertCatalogIsComplete() requires one or
+   * the other, so the difference cannot be left implicit.
+   */
+  marginUnknown?: boolean
+  /** What to go and ask for, e.g. "marża PSO nieznana — brak w briefingu". */
+  marginUnknownReason?: string
 }
 
 export const PRODUCTS: Record<ProductKey, CatalogProduct>
@@ -26,6 +38,8 @@ export const PRICE_TO_PRODUCTS: Record<number, ProductKey[]>
 export function soleProductAtPrice(amount: number): ProductKey | null
 /** Throws when a shared price cannot be resolved by name. Runs at load. */
 export function assertCatalogIsResolvable(): void
+/** Throws when an entry neither states its margin nor admits it is unknown. */
+export function assertCatalogIsComplete(): void
 export const SHIPPING_PATTERNS: string[]
 
 export function unitCostOf(productKey: ProductKey | string): number | null
