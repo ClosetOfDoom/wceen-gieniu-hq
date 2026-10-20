@@ -102,3 +102,21 @@ CREATE OR REPLACE VIEW public.v_daily_wix_meta_performance AS
 -- figures (netlify/shared/productCatalog.js, excludeFromBlendedProfit). The view
 -- has no way to express that, so the dashboard reads CPA and ROAS from the
 -- profit-data endpoint instead and treats these two columns as a fallback only.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- REJESTRACJA — żeby panel MIGRACJE w Diagnostics przestał o tej zmianie krzyczeć
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Odporne na brak rejestru: gdyby ktoś wgrał tę migrację przed
+-- 20261020_applied_migrations.sql, zapis się pominie z komunikatem zamiast
+-- wywrócić całą migrację na nieistniejącej tabeli.
+DO $reg$
+BEGIN
+  IF to_regclass('public.applied_migrations') IS NOT NULL THEN
+    INSERT INTO public.applied_migrations (filename)
+      VALUES ('20260928_warsaw_business_day.sql')
+      ON CONFLICT (filename) DO NOTHING;
+  ELSE
+    RAISE NOTICE 'applied_migrations nie istnieje — wgraj 20261020_applied_migrations.sql, zeby panel MIGRACJE zobaczyl te zmiane';
+  END IF;
+END
+$reg$;

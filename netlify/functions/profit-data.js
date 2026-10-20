@@ -13,6 +13,7 @@
 //   ?debug=1                        → also return every classified order
 
 import {
+  NON_SALE_LABELS,
   PRODUCTS,
   aggregateOrders,
   classifyOrder,
@@ -101,12 +102,16 @@ export const handler = async (event) => {
   let ambiguousRevenue = 0, ambiguousOrdersCount = 0
   let ambiguousMinMargin = 0
   let excludedRevenue = 0, excludedOrdersCount = 0   // WSZTP — out on purpose
-  // Manual access grants: 1 PLN, operator Offline, somebody being let into a
-  // course they paid for elsewhere. Not a sale, so out of every blended
-  // figure — and NOT folded into the no-margin count, because nothing is
+  // Rows that were never transactions: emptied carts (0 PLN), free lead
+  // magnets (0 PLN, "GRATIS:"), manual access grants (1 PLN, Offline). Out of
+  // every blended figure and NOT folded into the no-margin count — nothing is
   // missing and nobody has anything to fix.
-  let adminAccessRevenue = 0, adminAccessOrdersCount = 0
-  const adminAccessOrders = []
+  let nonSaleRevenue = 0, nonSaleOrdersCount = 0
+  const nonSaleOrders = []
+  const nonSaleByCategory = {}
+  // Sold below the listed price. catalogPrice no longer classifies anything —
+  // this is the one job it still has.
+  const discountAccum = {}
   const unmappedOrders = []
   const unknownMarginOrders = []
   const ambiguousOrders = []
@@ -157,17 +162,57 @@ export const handler = async (event) => {
       if (debug) debugOrders.push({ ...dbgBase, bucket: d.bucket, product: d.productKey, scope: d.scope, matched_by: d.matchedBy, failed_field: d.failedField, ...extra })
     }
 
-    // ADMIN_ACCESS — an opened door, not a transaction. Counted, named, and
-    // kept out of revenue before revenue is even accumulated.
-    if (d.bucket === 'ADMIN_ACCESS') {
-      adminAccessRevenue += order.revenue
-      adminAccessOrdersCount++
-      adminAccessOrders.push({ ...dbgBase, evidence: d.matchedBy })
+    // NON_SALE — never a transaction. Counted by category, named, and kept
+    // out of revenue before revenue is even accumulated. Margin is 0 in both
+    // directions: an emptied cart consumed no book, so there is no unit cost
+    // to deduct. Two of them used to be matched to Pakiet Pamięciowy on the
+    // name and charged 49 PLN of cost each against zero revenue.
+    if (d.bucket === 'NON_SALE') {
+      nonSaleRevenue += order.revenue
+      nonSaleOrdersCount++
+      nonSaleOrders.push({ ...dbgBase, category: d.nonSaleCategory, evidence: d.matchedBy })
+      const cat = d.nonSaleCategory
+      if (!nonSaleByCategory[cat]) {
+        nonSaleByCategory[cat] = { category: cat, label: NON_SALE_LABELS[cat] ?? cat, orders: 0 }
+      }
+      nonSaleByCategory[cat].orders++
       dbg({ qty: 1, margin: 0 })
       continue
     }
 
     totalRevenue += order.revenue
+
+    // RABATY — any identified product that came in under its listed price.
+    // Counted for UNKNOWN_MARGIN products too: the shortfall in revenue is
+    // measurable even when the margin behind it is not.
+    if (d.productKey && PRODUCTS[d.productKey]?.catalogPrice != null && d.bucket !== 'EXCLUDED') {
+      const p = PRODUCTS[d.productKey]
+      const units = d.qty ?? 1
+      const listed = p.catalogPrice * units
+      const paid = order.productAmount
+      if (paid > 0 && paid < listed - 0.005) {
+        if (!discountAccum[d.productKey]) {
+          discountAccum[d.productKey] = {
+            productKey: d.productKey, displayName: p.displayName,
+            catalogPrice: p.catalogPrice, orders: 0, units: 0,
+            listedTotal: 0, paidTotal: 0,
+            marginLost: p.contributionMargin == null ? null : 0,
+            marginKnown: p.contributionMargin != null,
+            rates: {},
+          }
+        }
+        const e = discountAccum[d.productKey]
+        e.orders++
+        e.units += units
+        e.listedTotal += listed
+        e.paidTotal += paid
+        if (e.marginKnown) e.marginLost += listed - paid
+        // Round to the nearest whole percent so a 10% code shows up as one
+        // bucket instead of a smear of 9.97 / 10.02.
+        const rate = Math.round(((listed - paid) / listed) * 100)
+        e.rates[rate] = (e.rates[rate] ?? 0) + 1
+      }
+    }
 
     if (d.bucket === 'UNMAPPED') {
       unknownRevenue += order.revenue
@@ -296,7 +341,7 @@ export const handler = async (event) => {
   // every paid Wix row, 1 PLN ones included), and they are out of everything
   // that measures the business.
   const ordersCount             = orders.length
-  const blendedOrdersCount      = ordersCount - excludedOrdersCount - adminAccessOrdersCount
+  const blendedOrdersCount      = ordersCount - excludedOrdersCount - nonSaleOrdersCount
   const blendedRevenue          = totalRevenue - excludedRevenue
   const marginBeforeAds         = knownMargin
   const estimatedProfitAfterAds = knownMargin - adSpend
@@ -329,11 +374,16 @@ export const handler = async (event) => {
       dayBoundaryOrders,
       blendedOrdersCount,
       blendedRevenue,
-      // Manual access grants — reported on their own line, never as sales and
-      // never as a gap to fix. See ADMIN_ACCESS in productCatalog.js.
-      adminAccessOrdersCount,
-      adminAccessRevenue,
-      adminAccessOrders,
+      // Rows that were never sales, split by category so each gets its own
+      // line. Never counted as sales, never as a gap to fix.
+      // See NON_SALE in productCatalog.js.
+      nonSaleOrdersCount,
+      nonSaleRevenue,
+      nonSaleOrders,
+      nonSaleBreakdown: Object.values(nonSaleByCategory),
+      // Sold under the listed price, per product, with the share of margin
+      // that went with it where the margin is known.
+      discounts: Object.values(discountAccum).sort((a, b) => (b.listedTotal - b.paidTotal) - (a.listedTotal - a.paidTotal)),
       orderRowsFetched: rangeRows.length,
       revenue: totalRevenue,
       adSpend,

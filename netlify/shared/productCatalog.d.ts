@@ -5,9 +5,7 @@
 // Cogni is absent on purpose: it is sold through Stripe only, never through
 // Wix, so no `orders` row can be one. An entry for it could only mislabel
 // something else — and did, until fd7551b, because it shared 499 PLN with PSO.
-export type ProductKey =
-  | 'memory_pack' | 'language_3t' | 'jezykozak_pack' | 'jzk_ai'
-  | 'jsu_course' | 'pso' | 'wsztp'
+export type ProductKey = string
 
 /** `other` = sold, but outside both Meta funnels, so no spend chased it. */
 export type ProductScope = 'memory' | 'language' | 'other'
@@ -33,11 +31,6 @@ export interface CatalogProduct {
 }
 
 export const PRODUCTS: Record<ProductKey, CatalogProduct>
-/** Every product that sells at a given price. More than one = a collision. */
-export const PRICE_TO_PRODUCTS: Record<number, ProductKey[]>
-export function soleProductAtPrice(amount: number): ProductKey | null
-/** Throws when a shared price cannot be resolved by name. Runs at load. */
-export function assertCatalogIsResolvable(): void
 /** Throws when an entry neither states its margin nor admits it is unknown. */
 export function assertCatalogIsComplete(): void
 export const SHIPPING_PATTERNS: string[]
@@ -49,10 +42,24 @@ export function normalizeText(s: unknown): string
 export function isShippingLine(rawName: unknown): boolean
 export function nameMatchKey(rawName: unknown): ProductKey | null
 
+/**
+ * The best name match. Longest matching pattern wins, so a variant beats the
+ * product it is a variant of ("Jak się uczyć (PDF)" over "Jak się uczyć").
+ * A tie between two products is reported, never broken.
+ */
+export function nameMatch(rawName: unknown): {
+  key: ProductKey | null
+  pattern: string | null
+  tie: ProductKey[] | null
+}
+
+/** Throws when a product could only be selected by its price. Runs at load. */
+export function assertNoPriceOnlyProducts(): void
+
 export type Bucket =
   | 'MAPPED' | 'EXCLUDED' | 'UNKNOWN_MARGIN' | 'AMBIGUOUS' | 'UNMAPPED'
-  /** A manual access grant: 1 PLN, operator Offline. Not a sale at all. */
-  | 'ADMIN_ACCESS'
+  /** Never a transaction: an emptied cart, a lead magnet, a manual grant. */
+  | 'NON_SALE'
 
 export interface Decision {
   productKey: ProductKey | null
@@ -67,12 +74,12 @@ export interface Decision {
   /** Which field the match broke on. Null for MAPPED and for EXCLUDED — an
    *  exclusion is a decision, so there is no field for anyone to go and fix. */
   failedField: string | null
-  /** Set when one price matched several products and the name did not decide. */
-  priceCollision?: ProductKey[]
+  /** Set when two products matched the name equally well and neither won. */
+  nameCollision?: ProductKey[]
   /** Why the product is out of the blended figures. Only on EXCLUDED. */
   excludedReason?: string
-  /** Set on ADMIN_ACCESS. No revenue, no margin, no product — an opened door. */
-  adminAccess?: boolean
+  /** Which kind of non-sale, set on NON_SALE. No revenue, no cost, no margin. */
+  nonSaleCategory?: NonSaleCategory
 }
 
 /**
@@ -83,16 +90,22 @@ export function classifyAmount(
   amount: number, rawName?: unknown, paymentProvider?: unknown,
 ): Decision
 
-/** The manual-access-grant category, declared in one place. */
-export const ADMIN_ACCESS: {
-  maxAmount: number
-  operator: string
-  grantName: string
+export type NonSaleCategory = 'empty_cart' | 'lead_magnet' | 'admin_access'
+
+/** The non-sale rules, declared in one place. */
+export const NON_SALE: {
+  adminMaxAmount: number
+  adminOperator: string
+  adminGrantName: string
+  leadMagnetPrefix: string
 }
 
-export function adminAccessVerdict(
+/** Human labels, so the card, COPY and Q&A cannot drift apart. */
+export const NON_SALE_LABELS: Record<NonSaleCategory, string>
+
+export function nonSaleVerdict(
   amount: number, rawName: unknown, provider: unknown,
-): { grant: true; evidence: string } | { grant: false; reason: string | null }
+): { category: NonSaleCategory; evidence: string } | { category: null; reason: string | null }
 
 export function extractPaymentProvider(row: Record<string, unknown> | null | undefined): string | null
 

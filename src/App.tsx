@@ -2043,6 +2043,9 @@ export default function App() {
               profitDataDate={profitData?.ok ? profitData.dateWarsaw ?? null : null}
               profitDataOrders={profitData?.ok ? profitData.ordersCount : null}
               syncHealth={syncHealth}
+              migrations={ordersData?.migrations}
+              migrationRegisterMissing={ordersData?.migrationRegisterMissing}
+              migrationRegisterError={ordersData?.migrationRegisterError}
             />
           )}
 

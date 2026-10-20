@@ -18,6 +18,8 @@ import {
   businessToday, businessWeekStart, businessDay, businessDaysAgo, businessDaysBetween,
 } from '../shared/businessDay.js'
 import { ALERT_RULES, countsAsOrder } from '../shared/alertRules.js'
+import { MIGRATION_FILES, MIGRATION_REGISTER_FILE } from '../shared/migrationList.js'
+import { tryReadTable } from '../shared/supabaseRead.js'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -62,11 +64,10 @@ function buildDailySeries(orders, today, windowDays) {
   const unmappedNamesByDay = new Map()
   // Rows the test-order floor removed. Reported, never silently dropped.
   const belowFloorByDay = new Map()
-  // Manual access grants — 1 PLN, operator Offline. These used to be counted
-  // as "odcięte progiem", which said the wrong thing: the floor caught them by
-  // accident, and nothing about them was nearly a sale. Counted on their own
-  // line, by name, with no amount attached.
-  const adminAccessByDay = new Map()
+  // Rows that were never sales, per day and per category: emptied carts, lead
+  // magnets, manual grants. Counted on their own lines, by name, with no
+  // amount attached — assigning one would turn a non-event into revenue.
+  const nonSaleByDay = new Map()
 
   const bump = (map, date, key, orders_, revenue) => {
     if (!map.has(date)) map.set(date, {})
@@ -85,8 +86,10 @@ function buildDailySeries(orders, today, windowDays) {
     // "is this a sale" is answered by the catalog, "is this big enough to
     // count" by the floor. Asking the floor first is what hid the grants.
     const cls = classifyOrder(o)
-    if (cls.bucket === 'ADMIN_ACCESS') {
-      adminAccessByDay.set(date, (adminAccessByDay.get(date) ?? 0) + 1)
+    if (cls.bucket === 'NON_SALE') {
+      if (!nonSaleByDay.has(date)) nonSaleByDay.set(date, {})
+      const e = nonSaleByDay.get(date)
+      e[cls.nonSaleCategory] = (e[cls.nonSaleCategory] ?? 0) + 1
       continue
     }
 
@@ -147,7 +150,7 @@ function buildDailySeries(orders, today, windowDays) {
       products: productsByDay.get(date) ?? {},
       unmappedNames: unmappedNamesByDay.get(date) ?? [],
       belowFloor: belowFloorByDay.get(date) ?? { orders: 0, revenue: 0 },
-      adminAccess: adminAccessByDay.get(date) ?? 0,
+      nonSale: nonSaleByDay.get(date) ?? {},
     })
   }
 
@@ -167,7 +170,7 @@ function buildDailySeries(orders, today, windowDays) {
       products: productsByDay.get(today) ?? {},
       unmappedNames: unmappedNamesByDay.get(today) ?? [],
       belowFloor: belowFloorByDay.get(today) ?? { orders: 0, revenue: 0 },
-      adminAccess: adminAccessByDay.get(today) ?? 0,
+      nonSale: nonSaleByDay.get(today) ?? {},
     },
   }
 }
@@ -207,6 +210,29 @@ export const handler = async (event) => {
 
   const today     = businessToday()
   const weekStart = businessWeekStart()
+
+  // Which migrations in the repo have actually been run.
+  //
+  // Supabase's own history lives in supabase_migrations.schema_migrations,
+  // which PostgREST does not expose (404) and which would not list these
+  // anyway — they are pasted into the SQL editor by hand, not run through the
+  // CLI. So each migration registers itself in public.applied_migrations and
+  // this compares that against the files on disk.
+  //
+  // tryReadTable, not readTable: before 20261020_applied_migrations.sql is
+  // applied the table does not exist, and "the register is missing" is a state
+  // to report, not an error that should take the whole dashboard down.
+  const register = await tryReadTable(supabaseUrl, serviceKey, 'applied_migrations', {
+    select: 'filename,applied_at,note',
+    order: 'filename.asc',
+  })
+  const appliedRows = new Map(register.rows.map(r => [r.filename, r]))
+  const migrations = MIGRATION_FILES.map(file => ({
+    file,
+    applied: appliedRows.has(file),
+    appliedAt: appliedRows.get(file)?.applied_at ?? null,
+    note: appliedRows.get(file)?.note ?? null,
+  }))
 
   let rows = []
   let usedTable = 'none'
@@ -309,6 +335,12 @@ export const handler = async (event) => {
       recordStartsOn: dayWindow.recordStartsOn,
       todayHourly:  dayWindow.today,
       orderMinAmount: ALERT_RULES.ORDER_MIN_AMOUNT_PLN,
+      // Migration state for the MIGRACJE panel. `registerMissing` is its own
+      // flag because "no register" and "nothing applied" look identical from
+      // the rows alone and mean completely different things.
+      migrations,
+      migrationRegisterMissing: !register.ok || !appliedRows.has(MIGRATION_REGISTER_FILE),
+      migrationRegisterError: register.ok ? null : register.error,
       // Creation timestamps of the last 14 days, for the sync-health detector.
       // It buckets them into 15-minute windows to find where orders outran the
       // sync's one-row-per-run ceiling.

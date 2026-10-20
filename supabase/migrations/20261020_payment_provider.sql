@@ -65,3 +65,21 @@ COMMENT ON COLUMN public.orders.payment_provider IS
 --     FROM public.orders
 --    WHERE payment_provider = 'Offline' AND amount <= 5
 --    GROUP BY 1 ORDER BY 1;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- REJESTRACJA — żeby panel MIGRACJE w Diagnostics przestał o tej zmianie krzyczeć
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Odporne na brak rejestru: gdyby ktoś wgrał tę migrację przed
+-- 20261020_applied_migrations.sql, zapis się pominie z komunikatem zamiast
+-- wywrócić całą migrację na nieistniejącej tabeli.
+DO $reg$
+BEGIN
+  IF to_regclass('public.applied_migrations') IS NOT NULL THEN
+    INSERT INTO public.applied_migrations (filename)
+      VALUES ('20261020_payment_provider.sql')
+      ON CONFLICT (filename) DO NOTHING;
+  ELSE
+    RAISE NOTICE 'applied_migrations nie istnieje — wgraj 20261020_applied_migrations.sql, zeby panel MIGRACJE zobaczyl te zmiane';
+  END IF;
+END
+$reg$;

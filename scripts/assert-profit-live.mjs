@@ -130,7 +130,8 @@ async function checkRange(label, from, to) {
   console.log(`  margin total      = ${pln(d.marginBeforeAds)}`)
   console.log(`  EST. PROFIT       = ${pln(d.estimatedProfitAfterAds)}`)
   console.log(`  no-margin orders  = ${d.noMarginOrdersCount ?? 0}  (revenue ${pln(d.noMarginRevenue)})`)
-  console.log(`  dostęp admin.     = ${d.adminAccessOrdersCount ?? 0} nadań (${pln(d.adminAccessRevenue)}, poza przychodem)`)
+  console.log(`  nie-sprzedaż      = ${d.nonSaleOrdersCount ?? 0} wierszy (${pln(d.nonSaleRevenue)}, poza przychodem)`)
+  for (const c of d.nonSaleBreakdown ?? []) console.log(`      ${c.label}: ${c.orders}`)
   console.log(`  day-boundary      = ${d.dayBoundaryOrders ?? 0} order(s) whose UTC day ≠ Warsaw day`)
   if ((d.noMarginFields ?? []).length > 0) {
     for (const f of d.noMarginFields) console.log(`      failed field: ${f}`)
@@ -189,7 +190,7 @@ async function checkRange(label, from, to) {
   // included; profit-data keeps grants out of `revenue` on purpose. Adding
   // them back is what makes the two sides comparable — without it a day with
   // two grants looks like a 2.00 PLN discrepancy with no cause.
-  const adminRev = d.adminAccessRevenue ?? 0
+  const adminRev = d.nonSaleRevenue ?? 0
   const revGap = (d.revenue + adminRev) - v.revenue
   const maxOrder = rows.length > 0
     ? Math.max(...rows.map(r => Number(r.amount) || 0))
@@ -238,11 +239,11 @@ async function checkRange(label, from, to) {
   // Every order is accounted for in exactly one bucket.
   const mapped = (d.productBreakdown ?? []).reduce((s, p) => s + p.orders, 0)
   const accounted = mapped + (d.noMarginOrdersCount ?? 0) + (d.excludedOrdersCount ?? 0)
-                  + (d.adminAccessOrdersCount ?? 0)
+                  + (d.nonSaleOrdersCount ?? 0)
   if (accounted === d.ordersCount) {
     pass(`${label}: every order is in exactly one bucket (${mapped} mapped + `
        + `${d.noMarginOrdersCount ?? 0} no-margin + ${d.excludedOrdersCount ?? 0} excluded + `
-       + `${d.adminAccessOrdersCount ?? 0} admin)`)
+       + `${d.nonSaleOrdersCount ?? 0} nie-sprzedaż)`)
   } else {
     fail(`${label}: ${d.ordersCount} orders but ${accounted} accounted for — an order fell through the buckets`)
   }
@@ -256,21 +257,21 @@ async function checkRange(label, from, to) {
   // exclusion, but something that was never a transaction. It must stay out of
   // the no-margin count (nobody has anything to fix) and out of every blended
   // figure (it is not a sale).
-  const admin = d.adminAccessOrdersCount ?? 0
+  const admin = d.nonSaleOrdersCount ?? 0
   if (admin > 0) {
     if ((d.blendedOrdersCount ?? 0) === d.ordersCount - (d.excludedOrdersCount ?? 0) - admin) {
-      pass(`${label}: blended order count leaves out the ${admin} manual grant(s)`)
+      pass(`${label}: blended order count leaves out the ${admin} non-sale row(s)`)
     } else {
-      fail(`${label}: blendedOrdersCount ${d.blendedOrdersCount} does not leave out the ${admin} manual grant(s)`)
+      fail(`${label}: blendedOrdersCount ${d.blendedOrdersCount} does not leave out the ${admin} non-sale row(s)`)
     }
     // A grant has nothing for anyone to fix, so it must never appear in the
     // figure that asks somebody to go and map a product.
-    const grantsInNoMargin = (d.adminAccessOrders ?? [])
+    const grantsInNoMargin = (d.nonSaleOrders ?? [])
       .filter(g => (d.noMarginFields ?? []).includes(g.failed_field))
     if (grantsInNoMargin.length === 0) {
-      pass(`${label}: the ${admin} manual grant(s) are not in the no-margin count`)
+      pass(`${label}: the ${admin} non-sale row(s) are not in the no-margin count`)
     } else {
-      fail(`${label}: ${grantsInNoMargin.length} manual grant(s) leaked into the no-margin count`)
+      fail(`${label}: ${grantsInNoMargin.length} non-sale row(s) leaked into the no-margin count`)
     }
   }
 

@@ -1,400 +1,249 @@
 // Tests for netlify/shared/productCatalog.js — the ONE module that defines
 // prices, margins, scope and classification. The file under test is plain ESM
 // JS shared with the Netlify functions; it is imported directly so the tests
-// exercise exactly the code that runs in production, not a copy. Its typed
-// contract is netlify/shared/productCatalog.d.ts.
+// exercise exactly the code that runs in production, not a copy.
+//
+// THE PRICE DOES NOT CLASSIFY ANYTHING. That is what most of this file is
+// about. There used to be a price→product map, and every bug it caused was
+// the same bug wearing a different product: 499 PLN meant Cogni, so every
+// Perfect Student Online sale was reported as Cogni with a 450 PLN margin it
+// never earned. The catalog now holds eight products at 50 PLN, three at 95,
+// two at 499 and two at 60. A price is not evidence of anything.
+
+import { describe, it, expect } from 'vitest'
 import {
   PRODUCTS,
-  PRICE_TO_PRODUCTS,
-  soleProductAtPrice,
-  assertCatalogIsResolvable,
+  normalizeText,
+  isShippingLine,
+  nameMatch,
+  nameMatchKey,
+  classifyAmount,
+  assertCatalogIsComplete,
+  assertNoPriceOnlyProducts,
   unitCostOf,
   isExcludedFromBlended,
   isCountableOrder,
-  isShippingLine,
-  nameMatchKey,
-  classifyAmount, assertCatalogIsComplete,
   aggregateOrders,
   classifyOrder,
 } from '../../../netlify/shared/productCatalog.js'
 import type { ProductKey } from '../../../netlify/shared/productCatalog.js'
-import { describe, it, expect } from 'vitest'
 
-// The authoritative catalog, restated here so a silent edit to a margin fails a
-// test instead of quietly moving Est. Profit.
-const AUTHORITATIVE: Array<[number, ProductKey, string, number | null]> = [
-  [119,  'memory_pack',     'memory',   70],
-  [114,  'language_3t',     'language', 55],
-  [95,   'jezykozak_pack',  'language', 88],
-  [347,  'jzk_ai',          'language', 320],
-  [549,  'jsu_course',      'memory',   500],
-  // WSZTP's margin is genuinely unknown — and it is ALSO excluded from every
-  // blended figure, which is a separate decision (see the EXCLUDED block).
-  [1250, 'wsztp',           'memory',   null],
-  [3450, 'wsztp',           'memory',   null],
+// The margins that were established before this catalog grew, restated here so
+// a silent edit fails a test instead of quietly moving Est. Profit.
+const ESTABLISHED: Array<[ProductKey, string, number]> = [
+  ['memory_pack',    'memory',   70],
+  ['language_3t',    'language', 55],
+  ['jezykozak_pack', 'language', 88],
+  ['jzk_ai',         'language', 320],
+  ['jsu_course',     'memory',   500],
 ]
 
-// PSO is NOT in the table above, and that is the point: it has no entry in
-// PRICE_TO_PRODUCTS at all. 499 PLN is a price it sells at, not a route into
-// it. See the name-only tests further down.
-
-
 describe('catalog', () => {
-  it.each(AUTHORITATIVE)('%i PLN → %s, scope %s, margin %s', (price, key, scope, margin) => {
-    expect(PRICE_TO_PRODUCTS[price]).toContain(key)
+  it.each(ESTABLISHED)('%s keeps its measured margin', (key, scope, margin) => {
     expect(PRODUCTS[key].scope).toBe(scope)
     expect(PRODUCTS[key].contributionMargin).toBe(margin)
   })
 
-  it('derives unit cost from the authoritative margin, and only when it exists', () => {
+  it('derives unit cost only where a margin exists', () => {
     expect(unitCostOf('memory_pack')).toBe(49)      // 119 − 70
-    expect(unitCostOf('language_3t')).toBe(59)      // 114 − 55
-    expect(unitCostOf('jezykozak_pack')).toBe(7)    // 95 − 88
-    expect(unitCostOf('jzk_ai')).toBe(27)           // 347 − 320
     expect(unitCostOf('jsu_course')).toBe(49)       // 549 − 500
-    expect(unitCostOf('pso')).toBeNull()            // margin unknown -> no cost
-    expect(unitCostOf('wsztp')).toBeNull()          // margin unknown -> no cost
-  })
-
-  it('never invents a margin for a product whose margin is unknown', () => {
-    expect(PRODUCTS.wsztp.contributionMargin).toBeNull()
-  })
-
-  // TEST 3 — Cogni is sold through Stripe and only Stripe. No `orders` row can
-  // be a Cogni sale, so an entry for it could only ever mislabel something
-  // else. It did: sharing 499 PLN with PSO, it ate every PSO sale and credited
-  // it with a 450 PLN margin that was never earned.
-  it('Cogni is not in the catalog, in any form', () => {
-    const keys = Object.keys(PRODUCTS)
-    expect(keys.filter(k => /cogni/i.test(k))).toEqual([])
-    expect(Object.values(PRODUCTS).filter(p => p.scope === ('cogni' as never))).toEqual([])
-    expect(Object.values(PRODUCTS).filter(p => /cogni/i.test(p.displayName))).toEqual([])
-    expect(Object.values(PRICE_TO_PRODUCTS).flat().filter(k => /cogni/i.test(k))).toEqual([])
-  })
-
-  it('no price resolves to PSO — the name is the only way in', () => {
-    // 499 must not be a key here. If it were, an unrecognised 499 PLN order
-    // would land in PSO on the price alone, which is the same mistake that
-    // produced the false Cogni, just pointed somewhere else.
-    expect(PRICE_TO_PRODUCTS[499]).toBeUndefined()
-    expect(Object.values(PRICE_TO_PRODUCTS).flat()).not.toContain('pso')
-  })
-
-  it('PSO sits outside both ad funnels', () => {
-    // There is no Meta campaign for PSO, so charging it to memory or language
-    // would attribute spend that never chased it.
-    expect(PRODUCTS.pso.scope).toBe('other')
-  })
-
-  // TEST 4 — an entry states its margin, or states that it does not know it.
-  it('every entry has a margin or an explicit, named gap', () => {
-    for (const [key, p] of Object.entries(PRODUCTS)) {
-      const hasNumber = typeof p.contributionMargin === 'number'
-      if (hasNumber) {
-        expect(p.marginUnknown, `${key}: margin AND marginUnknown`).toBeFalsy()
-        continue
-      }
-      expect(p.marginUnknown, `${key}: null margin with no marginUnknown flag`).toBe(true)
-      expect(p.marginUnknownReason, `${key}: marginUnknown with no reason`).toBeTruthy()
-    }
-  })
-
-  it('and the check runs at load, so a bad entry fails the build', () => {
-    expect(() => assertCatalogIsComplete()).not.toThrow()
+    expect(unitCostOf('pso')).toBeNull()
+    expect(unitCostOf('wsztp')).toBeNull()
+    expect(unitCostOf('book_ptaki')).toBeNull()
   })
 
   it('WSZTP is the only product excluded from the blended figures', () => {
     const excluded = (Object.keys(PRODUCTS) as ProductKey[]).filter(isExcludedFromBlended)
     expect(excluded).toEqual(['wsztp'])
   })
-})
 
-describe('shipping line', () => {
-  it('recognises the Wix shipping line', () => {
-    expect(isShippingLine('Wysyłka + Ubezpieczenie + Paczka')).toBe(true)
-    expect(isShippingLine('wysylka')).toBe(true)
-    expect(isShippingLine('Dostawa kurierem')).toBe(true)
+  // Cogni is sold through Stripe and only Stripe. No `orders` row can be one,
+  // so an entry for it could only mislabel something else — and did.
+  it('Cogni is not in the catalog, in any form', () => {
+    expect(Object.keys(PRODUCTS).filter(k => /cogni/i.test(k))).toEqual([])
+    expect(Object.values(PRODUCTS).filter(p => /cogni/i.test(p.displayName))).toEqual([])
+    expect(Object.values(PRODUCTS).filter(p => p.scope === ('cogni' as never))).toEqual([])
   })
 
-  it('does not treat a product as shipping', () => {
-    expect(isShippingLine('Pamięć. Trening Interaktywny: Ebook + Druk')).toBe(false)
-    expect(isShippingLine('Językozak AI')).toBe(false)
-    expect(isShippingLine('')).toBe(false)
-    expect(isShippingLine(null)).toBe(false)
-  })
-})
-
-describe('classifyAmount — the name decides, the price confirms', () => {
-  // TEST 2 — 499 PLN with a name the catalog does not know.
-  it('499 PLN with an unknown name is UNMAPPED — never PSO, never Cogni', () => {
-    const d = classifyAmount(499, 'zupełnie nieznany produkt')
-    expect(d.bucket).toBe('UNMAPPED')
-    expect(d.productKey).toBeNull()
-    expect(d.failedField).toContain('499 PLN not in PRICE_TO_PRODUCTS')
-  })
-
-  it('499 PLN with no name at all is UNMAPPED too', () => {
-    expect(classifyAmount(499, '').productKey).toBeNull()
-    expect(classifyAmount(499, null).productKey).toBeNull()
-  })
-
-  // TEST 1 — the real October order.
-  it('Perfect Student Online at 499 is PSO, and its margin is a named hole', () => {
-    const d = classifyAmount(499, 'Perfect Student Online')
-    expect(d.productKey).toBe('pso')
-    expect(d.scope).toBe('other')
-    expect(d.bucket).toBe('UNKNOWN_MARGIN')
-    expect(d.margin).toBeNull()
-    // Named, not generic: this tells somebody what to go and ask for.
-    expect(d.failedField).toBe('marża PSO nieznana — brak w briefingu')
-  })
-
-  it('PSO is matched by name at any amount, because the name is the signal', () => {
-    // If the price were doing the work, a PSO sold at another price point
-    // would stop being PSO. It does not.
-    expect(classifyAmount(449, 'Perfect Student Online').productKey).toBe('pso')
-    expect(classifyAmount(499, 'PSO — dostęp roczny').productKey).toBe('pso')
-  })
-
-  it('the name "Cogni" resolves to nothing at all', () => {
-    expect(classifyAmount(499, 'Cogni — dostęp roczny').productKey).toBeNull()
-    expect(classifyAmount(399, 'Cogni — dostęp roczny').productKey).toBeNull()
-  })
-
-  it('a price-only match is flagged as such', () => {
-    const d = classifyAmount(119, '')
-    expect(d.productKey).toBe('memory_pack')
-    expect(d.matchedBy).toBe('amount')
-  })
-
-  it('the catalog refuses to load if a shared price cannot be resolved by name', () => {
-    expect(() => assertCatalogIsResolvable()).not.toThrow()
-  })
-
-  it('soleProductAtPrice returns null on a collision', () => {
-    expect(soleProductAtPrice(119)).toBe('memory_pack')
-    expect(soleProductAtPrice(499)).toBeNull()
-    expect(soleProductAtPrice(12345)).toBeNull()
-  })
-
-  it('119 PLN → Pakiet Pamięciowy, margin 70', () => {
-    const d = classifyAmount(119, 'Pamięć. Trening Interaktywny: Ebook + Druk')
-    expect(d).toMatchObject({ productKey: 'memory_pack', scope: 'memory', bucket: 'MAPPED', qty: 1, margin: 70 })
-  })
-
-  it('347 PLN → Językozak AI, margin 320', () => {
-    const d = classifyAmount(347, 'Językozak AI — dostęp roczny')
-    expect(d).toMatchObject({ productKey: 'jzk_ai', scope: 'language', bucket: 'MAPPED', margin: 320 })
-  })
-
-  it('549 PLN → kurs JSU, margin 500', () => {
-    expect(classifyAmount(549, 'Kurs online "Jak się uczyć"')).toMatchObject({
-      productKey: 'jsu_course', bucket: 'MAPPED', margin: 500,
-    })
-  })
-
-  it('114 PLN → pakiet językowy 3T, margin 55', () => {
-    expect(classifyAmount(114, '3 Zadziwiające Techniki Nauki Języków')).toMatchObject({
-      productKey: 'language_3t', scope: 'language', bucket: 'MAPPED', margin: 55,
-    })
-  })
-
-  it('a discounted PP at 99 PLN earns 50, not the full 70', () => {
-    // 99 = PP sold without the 20 PLN shipping line. Margin = 99 − unit cost 49.
-    expect(classifyAmount(99, 'Pamięć. Trening Interaktywny')).toMatchObject({
-      productKey: 'memory_pack', bucket: 'MAPPED', margin: 50,
-    })
-  })
-
-  it('maps by NAME when the two disagree, and records the conflict', () => {
-    // This used to map by price. It put Perfect Student Online into Cogni
-    // because both cost 499 PLN — a price shared by two products carries no
-    // information, while the name almost always does.
-    const d = classifyAmount(119, 'Językozak AI')
-    expect(d.productKey).toBe('jzk_ai')
-    // 119 is below Językozak AI's 347 catalog price, so it reads as one
-    // discounted unit — the suffix says which branch decided.
-    expect(d.matchedBy).toBe('name (below catalog)')
-    expect(d.conflict).toMatchObject({ priceProduct: 'memory_pack', nameProduct: 'jzk_ai' })
+  it('every entry states its margin or names the gap', () => {
+    for (const [key, p] of Object.entries(PRODUCTS)) {
+      if (typeof p.contributionMargin === 'number') {
+        expect(p.marginUnknown, `${key}: margin AND marginUnknown`).toBeFalsy()
+        continue
+      }
+      expect(p.marginUnknown, `${key}: null margin, no marginUnknown`).toBe(true)
+      expect(p.marginUnknownReason, `${key}: marginUnknown, no reason`).toBeTruthy()
+    }
+    expect(() => assertCatalogIsComplete()).not.toThrow()
   })
 })
 
-describe('classifyAmount — EXCLUDED is not UNMAPPED', () => {
-  it.each([1250, 3450])('WSZTP at %i PLN is EXCLUDED, named, with no margin', (amount) => {
-    const d = classifyAmount(amount, 'WSZTP 2026')
-    expect(d.productKey).toBe('wsztp')
-    expect(d.bucket).toBe('EXCLUDED')
-    expect(d.margin).toBeNull()
-    // Nothing is missing from the catalog, so there is no field to go and fix.
-    expect(d.failedField).toBeNull()
-    expect(d.excludedReason).toContain('ad funnel')
+describe('no product can be told apart by price alone', () => {
+  it('there is no price→product map left to consult', async () => {
+    const mod = await import('../../../netlify/shared/productCatalog.js')
+    expect('PRICE_TO_PRODUCTS' in mod).toBe(false)
+    expect('soleProductAtPrice' in mod).toBe(false)
   })
 
-  it('a WSZTP order contributes nothing to margin and nothing to blended revenue', () => {
-    const orders = aggregateOrders([
-      { external_order_id: 'W1', order_created_at: '2026-09-07T09:00:00Z', amount: 3450, product_name_raw: 'WSZTP 2026 — całość' },
-      { external_order_id: 'W2', order_created_at: '2026-09-07T10:00:00Z', amount: 119,  product_name_raw: 'Pamięć. Trening Interaktywny' },
-    ])
-    const decisions = orders.map(classifyOrder)
-    const margin    = decisions.reduce((s, d) => s + (d.margin ?? 0), 0)
-    const excluded  = decisions.filter(d => d.bucket === 'EXCLUDED')
-    const blendedRevenue = orders
-      .filter((_, i) => decisions[i].bucket !== 'EXCLUDED')
-      .reduce((s, o) => s + o.revenue, 0)
-
-    expect(margin).toBe(70)                 // only the PP earns
-    expect(excluded).toHaveLength(1)
-    expect(blendedRevenue).toBe(119)        // ROAS never sees the 3450
-    // …and it is NOT reported as a gap that needs a catalog entry.
-    expect(decisions.filter(d => d.bucket === 'UNMAPPED')).toHaveLength(0)
-    expect(decisions.filter(d => d.bucket === 'UNKNOWN_MARGIN')).toHaveLength(0)
+  it('and the catalog proves it at load time', () => {
+    expect(() => assertNoPriceOnlyProducts()).not.toThrow()
   })
 
-  it('a WSZTP name never inherits the PP margin via the broad pamiec pattern', () => {
-    expect(nameMatchKey('Wakacyjna Szkoła Treningu Pamięci')).toBe('wsztp')
-    expect(classifyAmount(2000, 'Wakacyjna Szkoła Treningu Pamięci').bucket).toBe('EXCLUDED')
+  // The property that makes the above meaningful: prices are shared freely,
+  // so a price could not identify a product even if something wanted it to.
+  it('prices really are shared — 50 PLN alone names eight different products', () => {
+    const at50 = Object.values(PRODUCTS).filter(p => p.catalogPrice === 50)
+    expect(at50.length).toBeGreaterThanOrEqual(8)
+    const at499 = Object.values(PRODUCTS).filter(p => p.catalogPrice === 499)
+    expect(at499.length).toBe(2)
   })
 
-  it('95 PLN Pakiet Językozaka is mapped with margin 88', () => {
-    expect(classifyAmount(95, 'Pakiet Językozaka')).toMatchObject({
-      productKey: 'jezykozak_pack', scope: 'language', bucket: 'MAPPED', margin: 88,
-    })
-  })
-
-  it.each([399, 499] as const)(
-    'a Cogni name at %i PLN resolves to nothing — Cogni never came through Wix',
-    (amount) => {
-      const d = classifyAmount(amount, 'Cogni — dostęp roczny')
-      expect(d.productKey).toBeNull()
-      expect(d.bucket).toBe('UNMAPPED')
-    })
-
-  it('an unknown amount with no name match is UNMAPPED, never PP', () => {
-    const d = classifyAmount(137, 'Zestaw niespodzianka')
-    expect(d.bucket).toBe('UNMAPPED')
-    expect(d.productKey).toBeNull()
-    expect(d.margin).toBeNull()
-    expect(d.failedField).toContain('137 PLN not in PRICE_TO_PRODUCTS')
-    expect(d.failedField).toContain('product_name_raw')
-  })
-
-  it('an unknown amount with no name at all is UNMAPPED and says the name was empty', () => {
-    const d = classifyAmount(0, null)
-    expect(d.bucket).toBe('UNMAPPED')
-    expect(d.failedField).toContain('empty')
-  })
-
-  it('a PP bundle listing Jak sie uczyc as a bonus stays PP', () => {
-    expect(classifyAmount(119, 'Pakiet Pamięciowy + bonus Jak się uczyć').productKey).toBe('memory_pack')
-  })
-})
-
-// The daily view counts orders WHERE source='wix' AND payment_status='paid' AND
-// the id/email are not test rows. profit-data must apply the same predicate or
-// its order count can never match the Wix card beside it.
-describe('isCountableOrder — the same predicate as the daily view', () => {
-  const paid = { source: 'wix', payment_status: 'PAID', external_order_id: 'abc', email: 'x@gmail.com' }
-
-  it('counts a paid wix order', () => {
-    expect(isCountableOrder(paid)).toBe(true)
-  })
-  it('drops a non-wix source', () => {
-    expect(isCountableOrder({ ...paid, source: 'stripe' })).toBe(false)
-  })
-  it('drops an unpaid order', () => {
-    expect(isCountableOrder({ ...paid, payment_status: 'pending' })).toBe(false)
-  })
-  it('drops a TEST- order id and a test e-mail', () => {
-    expect(isCountableOrder({ ...paid, external_order_id: 'TEST-123' })).toBe(false)
-    expect(isCountableOrder({ ...paid, email: 'filip+test@gmail.com' })).toBe(false)
-  })
-  it('cannot judge a column the row does not have, so it keeps the row', () => {
-    // The `wix_orders` fallback table has a different shape — a row without
-    // payment_status is not evidence that it is unpaid.
-    expect(isCountableOrder({ external_order_id: 'abc', amount: 119 })).toBe(true)
-  })
-})
-
-describe('aggregateOrders — classification runs on the whole order', () => {
-  it('99 PLN product + 20 PLN shipping in one order → one PP at 119, margin 70', () => {
-    const rows = [
-      { external_order_id: 'A1', order_created_at: '2026-09-07T09:00:00Z', amount: 99,
-        product_name_raw: 'Pamięć. Trening Interaktywny: Ebook + Druk' },
-      { external_order_id: 'A1', order_created_at: '2026-09-07T09:00:00Z', amount: 20,
-        product_name_raw: 'Wysyłka + Ubezpieczenie + Paczka' },
-    ]
-    const orders = aggregateOrders(rows)
-    expect(orders).toHaveLength(1)
-    expect(orders[0]).toMatchObject({ revenue: 119, productAmount: 99, shippingAmount: 20, lineCount: 2 })
-    // The shipping line is out of the classification, so the product amount is 99
-    // → PP at a discount. The 20 PLN is still in revenue but earns nothing.
-    const d = classifyOrder(orders[0])
-    expect(d.productKey).toBe('memory_pack')
-    expect(d.bucket).toBe('MAPPED')
-  })
-
-  it('one row per order (the shape the orders table actually has) is left alone', () => {
-    const rows = [
-      { external_order_id: 'B1', order_created_at: '2026-09-07T09:00:00Z', amount: 119, product_name_raw: 'Pamięć. Trening Interaktywny: Ebook + Druk' },
-      { external_order_id: 'B2', order_created_at: '2026-09-07T10:00:00Z', amount: 119, product_name_raw: 'Pamięć. Trening Interaktywny: Ebook + Druk' },
-    ]
-    const orders = aggregateOrders(rows)
-    expect(orders).toHaveLength(2)
-    expect(orders.map(o => o.revenue)).toEqual([119, 119])
-    for (const o of orders) {
-      expect(classifyOrder(o)).toMatchObject({ productKey: 'memory_pack', margin: 70 })
+  it('the same name classifies identically whatever it sold for', () => {
+    // If the amount were involved anywhere, these would not agree.
+    const name = 'Perfect Student Online'
+    for (const amount of [499, 449, 1, 10_000]) {
+      if (amount <= 5) continue   // ≤5 is the non-sale question, tested elsewhere
+      expect(classifyAmount(amount, name, null).productKey).toBe('pso')
     }
   })
 
-  it('an order whose only line looks like shipping is kept, not deleted', () => {
-    const orders = aggregateOrders([
-      { external_order_id: 'C1', order_created_at: '2026-09-07T09:00:00Z', amount: 20, product_name_raw: 'Wysyłka + Ubezpieczenie + Paczka' },
-    ])
-    expect(orders).toHaveLength(1)
-    expect(orders[0].revenue).toBe(20)
-    expect(classifyOrder(orders[0]).bucket).toBe('UNMAPPED')
-  })
-
-  it('rows with no order id are never merged into one order', () => {
-    const orders = aggregateOrders([
-      { amount: 119, product_name_raw: 'Pamięć. Trening Interaktywny' },
-      { amount: 119, product_name_raw: 'Pamięć. Trening Interaktywny' },
-    ])
-    expect(orders).toHaveLength(2)
+  it('an unknown name is UNMAPPED at any price, and says the price did not count', () => {
+    for (const amount of [50, 95, 499, 137]) {
+      const d = classifyAmount(amount, 'zupełnie nieznany produkt', null)
+      expect(d.bucket).toBe('UNMAPPED')
+      expect(d.productKey).toBeNull()
+      expect(d.failedField).toContain('cena nie klasyfikuje')
+    }
   })
 })
 
-describe('profit arithmetic over a whole day', () => {
-  it('ten PP orders at 119 → margin 700; profit against 311.11 ad spend is +388.89', () => {
-    const rows = Array.from({ length: 10 }, (_, i) => ({
-      external_order_id: `D${i}`,
-      order_created_at: '2026-09-07T09:00:00Z',
-      amount: 119,
-      product_name_raw: 'Pamięć. Trening Interaktywny: Ebook + Druk',
-    }))
-    const orders = aggregateOrders(rows)
-    const decisions = orders.map(classifyOrder)
-
-    expect(orders).toHaveLength(10)
-    expect(orders.reduce((s, o) => s + o.revenue, 0)).toBe(1190)
-    expect(decisions.filter(d => d.productKey === 'memory_pack')).toHaveLength(10)
-
-    const margin = decisions.reduce((s, d) => s + (d.margin ?? 0), 0)
-    expect(margin).toBe(700)
-    expect(Number((margin - 311.11).toFixed(2))).toBe(388.89)
+describe('name matching', () => {
+  it('flattens case, accents, dash width, brackets and doubled spaces', () => {
+    const want = 'historie ktore zostaja'
+    for (const variant of [
+      'Historie, które zostają',
+      'HISTORIE, KTÓRE ZOSTAJĄ',
+      'Historie,   które   zostają',
+      'Historie — które — zostają',
+      '(Historie, które zostają)',
+    ]) {
+      expect(normalizeText(variant)).toContain(want)
+      expect(nameMatchKey(variant)).toBe('book_historie')
+    }
   })
 
-  it('an unmapped order lowers nothing and hides nothing', () => {
-    const orders = aggregateOrders([
-      { external_order_id: 'E1', order_created_at: '2026-09-07T09:00:00Z', amount: 119, product_name_raw: 'Pamięć. Trening Interaktywny' },
-      { external_order_id: 'E2', order_created_at: '2026-09-07T10:00:00Z', amount: 137, product_name_raw: 'Zestaw niespodzianka' },
-    ])
-    const decisions = orders.map(classifyOrder)
-    const margin = decisions.reduce((s, d) => s + (d.margin ?? 0), 0)
-    const noMargin = decisions.filter(d => d.margin == null)
+  it('folds ł to l rather than to a space', () => {
+    // NFD does not decompose ł, so the catch-all used to turn it into a space:
+    // "głosy" became "g osy" and the pattern silently matched nothing.
+    expect(normalizeText('Jak zapamiętywać głosy ptaków')).toBe('jak zapamietywac glosy ptakow')
+    expect(normalizeText('Słowoszyt (PDF)')).toBe('slowoszyt pdf')
+    expect(normalizeText('Wakacyjna Szkoła Treningu Pamięci')).toBe('wakacyjna szkola treningu pamieci')
+  })
 
-    expect(margin).toBe(70)                  // the unmapped order contributes nothing
-    expect(noMargin).toHaveLength(1)          // and is counted, not swallowed
-    expect(noMargin[0].failedField).toBeTruthy()
+  it('survives a truncated name', () => {
+    expect(nameMatchKey('Opowieść o skaczącej myszy - zbiór opowiadań dla')).toBe('book_mysz')
+    expect(nameMatchKey('Opowieść o skaczącej myszy')).toBe('book_mysz')
+  })
+
+  // The variant trap: a shorter name is a substring of the longer one, so
+  // plain substring matching reads every PDF sale as the print edition.
+  it.each([
+    ['Jak się uczyć',                                'jsu_book'],
+    ['Jak się uczyć (PDF)',                          'jsu_pdf'],
+    ['Pamięć. Trening interaktywny',                 'memory_training'],
+    ['Pamięć. Trening interaktywny (PDF)',           'memory_training_pdf'],
+    ['3 zadziwiające techniki nauki języków',        'lang_3t_single'],
+    ['3 Zadziwiające Techniki Nauki Języków (PDF)',  'lang_3t_pdf'],
+  ])('%s is its own product, not its sibling', (name, key) => {
+    expect(nameMatchKey(name)).toBe(key)
+  })
+
+  it('longest match wins, and says which pattern won', () => {
+    const m = nameMatch('Jak się uczyć (PDF)')
+    expect(m.key).toBe('jsu_pdf')
+    expect(m.pattern).toBe('jak sie uczyc pdf')
+  })
+
+  it('the long landing names beat the short shop listings', () => {
+    // "Pamięć. Trening Interaktywny: Ebook + Druk" (119, margin 70) must not
+    // be read as the shop's bare "Pamięć. Trening interaktywny" (95).
+    expect(nameMatchKey('Pamięć. Trening Interaktywny: Ebook + Druk (Wartość: 158 zł)'))
+      .toBe('memory_pack')
+    expect(nameMatchKey('3 Zadziwiające Techniki Nauki Języków - Pakiet Językowy'))
+      .toBe('language_3t')
+  })
+
+  it('a bonus mentioned inside a bundle name does not hijack the bundle', () => {
+    expect(nameMatchKey('Pakiet Pamięciowy – Pamięć + bonusy (14 audycji + Jak się uczyć + 7 warunków)'))
+      .toBe('memory_pack')
+    expect(nameMatchKey('Kurs online "Jak się uczyć" (11 modułów, 5h+ nagrań)'))
+      .toBe('jsu_course')
+  })
+
+  it('still recognises the Wix shipping line', () => {
+    expect(isShippingLine('Wysyłka + Ubezpieczenie + Paczka')).toBe(true)
+    expect(isShippingLine('Pakiet Pamięciowy')).toBe(false)
+  })
+})
+
+describe('classification outcomes', () => {
+  it('a product with a known margin earns it at the catalog price', () => {
+    expect(classifyAmount(119, 'Pamięć. Trening Interaktywny: Ebook + Druk', null)).toMatchObject({
+      productKey: 'memory_pack', bucket: 'MAPPED', margin: 70,
+    })
+  })
+
+  it('sold below the catalog price it earns amount − unit cost, never the full margin', () => {
+    const d = classifyAmount(99, 'Pamięć. Trening Interaktywny: Ebook + Druk', null)
+    expect(d.bucket).toBe('MAPPED')
+    expect(d.margin).toBe(50)   // 99 − 49
+  })
+
+  it('a known product with no known margin is UNKNOWN_MARGIN with a named gap', () => {
+    const d = classifyAmount(499, 'Perfect Student Online', null)
+    expect(d.bucket).toBe('UNKNOWN_MARGIN')
+    expect(d.margin).toBeNull()
+    expect(d.failedField).toBe('marża PSO nieznana — brak w briefingu')
+  })
+
+  it('a new shop product reports its own gap, not a generic one', () => {
+    const d = classifyAmount(50, 'Jak zapamiętywać głosy ptaków', null)
+    expect(d.productKey).toBe('book_ptaki')
+    expect(d.bucket).toBe('UNKNOWN_MARGIN')
+    expect(d.failedField).toContain('czeka na dane od właściciela')
+  })
+
+  it('WSZTP is excluded, which is not the same as unmapped', () => {
+    const d = classifyAmount(3450, 'Wakacyjna Szkoła Treningu Pamięci', null)
+    expect(d.bucket).toBe('EXCLUDED')
+    expect(d.margin).toBeNull()
+  })
+
+  it('an order with no name at all is UNMAPPED', () => {
+    expect(classifyAmount(137, '', null).bucket).toBe('UNMAPPED')
+    expect(classifyAmount(137, null, null).bucket).toBe('UNMAPPED')
+  })
+})
+
+describe('aggregation', () => {
+  it('drops the shipping line from classification but keeps its money', () => {
+    const [order] = aggregateOrders([
+      { external_order_id: 'x', order_created_at: '2026-10-17T10:00:00Z',
+        amount: 99, product_name_raw: 'Pamięć. Trening Interaktywny: Ebook + Druk',
+        source: 'wix', payment_status: 'paid' },
+      { external_order_id: 'x', order_created_at: '2026-10-17T10:00:00Z',
+        amount: 20, product_name_raw: 'Wysyłka + Ubezpieczenie + Paczka',
+        source: 'wix', payment_status: 'paid' },
+    ])
+    expect(order.revenue).toBe(119)
+    expect(order.productAmount).toBe(99)
+    expect(classifyOrder(order).productKey).toBe('memory_pack')
+  })
+
+  it('keeps the view\'s predicate for which rows count at all', () => {
+    expect(isCountableOrder({ source: 'wix', payment_status: 'paid' })).toBe(true)
+    expect(isCountableOrder({ source: 'wix', payment_status: 'refunded' })).toBe(false)
+    expect(isCountableOrder({ source: 'wix', payment_status: 'paid', email: 'a@test.pl' })).toBe(false)
+    expect(isCountableOrder({ source: 'wix', payment_status: 'paid', external_order_id: 'TEST-1' })).toBe(false)
   })
 })

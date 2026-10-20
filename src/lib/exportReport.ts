@@ -259,12 +259,20 @@ function productsSection(i: ReportInput): string {
   // nearly happened — somebody was let into a course they had already paid for
   // elsewhere. No amount is printed, because assigning one (even the catalog
   // price of the course) would turn an opened door into revenue.
-  const grants = d.adminAccessOrdersCount ?? 0
-  const adminAccess = grants > 0
-    ? `- DOSTĘP ADMINISTRACYJNY: ${int(grants)} szt. — ręczne nadania dostępu do kursu `
-      + 'dla osób, które zapłaciły poza sklepem. Nie sprzedaż: bez kwoty, bez marży, '
-      + 'poza przychodem, CPA i ROAS.'
-    : '- DOSTĘP ADMINISTRACYJNY: brak'
+  // Rows that were never sales, one line each. Counts only: assigning a value
+  // — even the catalog price of what was in the cart — would turn a
+  // non-event into revenue. Two of these used to be charged 49 PLN of unit
+  // cost each against zero revenue, which is the same mistake inverted.
+  const nonSaleWhy: Record<string, string> = {
+    empty_cart:   'pozycja odznaczona w formularzu Wix, nic nie wysłano, zero kosztu',
+    lead_magnet:  'darmowe pobranie',
+    admin_access: 'ręczne nadania dostępu dla osób, które zapłaciły poza sklepem',
+  }
+  const nonSaleRows = (d.nonSaleBreakdown ?? []).filter(c => c.orders > 0)
+  const nonSale = nonSaleRows.length > 0
+    ? nonSaleRows.map(c => `- ${c.label.toUpperCase()}: ${int(c.orders)} szt. `
+        + `— ${nonSaleWhy[c.category] ?? 'nie sprzedaż'}. Poza przychodem, marżą, CPA i ROAS.`)
+    : ['- NIE-SPRZEDAŻ (koszyki 0 zł, lead magnety, dostęp administracyjny): brak']
 
   // The gap is named by the product, so the reader knows what to go and ask
   // for rather than being told the shape of a bug.
@@ -278,7 +286,61 @@ function productsSection(i: ReportInput): string {
     ? ['', 'Marża zrealizowana ≠ katalogowa:', ...discounted]
     : []
 
-  return [...head, ...table, ...gaps, ...notes, '', unmapped, excluded, adminAccess].join('\n')
+  return [...head, ...table, ...gaps, ...notes, '', unmapped, excluded, ...nonSale].join('\n')
+}
+
+function discountsSection(i: ReportInput): string {
+  const head = ['## RABATY I ODCHYLENIA', '']
+  if (!i.profit?.ok) {
+    return [...head, 'BRAK DANYCH: profit-data nie odpowiedziało'].join('\n')
+  }
+  const rows = i.profit.discounts ?? []
+  if (rows.length === 0) {
+    return [...head, 'Nic nie zeszło poniżej ceny katalogowej w tym zakresie.'].join('\n')
+  }
+
+  const shortfall = rows.reduce((s, r) => s + (r.listedTotal - r.paidTotal), 0)
+  const marginLost = rows.filter(r => r.marginKnown).reduce((s, r) => s + (r.marginLost ?? 0), 0)
+  const unknown = rows.filter(r => !r.marginKnown)
+
+  // A discount takes its money straight off the margin: the unit cost does not
+  // fall because the price did. So for a product whose margin is known, the
+  // shortfall IS the margin lost. For one whose margin is not known, the
+  // shortfall is still measurable and the margin behind it is not — reported
+  // as a hole rather than folded into the total.
+  const table = [
+    '| produkt | cena kat. | szt. | zapłacono | ubytek | rabat | utrata marży |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+    ...rows.map(r => {
+      const rates = Object.entries(r.rates)
+        .sort((a, b) => b[1] - a[1])
+        .map(([pct, n]) => `−${pct}%×${n}`)
+        .join(' ')
+      return `| ${r.displayName} | ${money(r.catalogPrice)} | ${int(r.units)} `
+        + `| ${money(r.paidTotal)} | ${money(r.listedTotal - r.paidTotal)} | ${rates} `
+        + `| ${r.marginKnown ? money(r.marginLost) : 'NIEZNANA'} |`
+    }),
+  ]
+
+  const sums = [
+    '',
+    `Ubytek przychodu razem: ${money(shortfall)}`,
+    `Utrata marży (tylko produkty ze znaną marżą): ${money(marginLost)}`,
+  ]
+  if (unknown.length > 0) {
+    sums.push(`Utrata marży NIEPOLICZALNA dla: ${unknown.map(r => r.displayName).join(', ')} `
+      + '— marża tych pozycji nie jest ustalona, więc ubytek marży nie jest znany.')
+  }
+
+  // The 10% code is visible in the data (45 from 50, 312,30 from 347). Its
+  // name is not in the export, so it is described by its size, not guessed at.
+  const tenPct = rows.filter(r => Object.keys(r.rates).includes('10'))
+  if (tenPct.length > 0) {
+    sums.push('', `Rabat −10% widoczny na: ${tenPct.map(r => r.displayName).join(', ')}. `
+      + 'Eksport nie podaje nazwy kodu, więc rozpoznany po wysokości, nie po nazwie.')
+  }
+
+  return [...head, ...table, ...sums].join('\n')
 }
 
 function campaignsSection(i: ReportInput): string {
@@ -437,6 +499,7 @@ export function buildReport(i: ReportInput): string {
 
   sections.push(
     '', productsSection(i),
+    '', discountsSection(i),
     '', campaignsSection(i),
     '', goalsSection(i),
     '', alarmsSection(i),

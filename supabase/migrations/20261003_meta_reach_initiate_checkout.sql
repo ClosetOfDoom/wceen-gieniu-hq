@@ -79,3 +79,21 @@ COMMENT ON COLUMN public.meta_ads_daily.initiate_checkout IS
 -- Nie dotykamy meta_ads_daily.date — Meta raportuje w strefie konta reklamowego
 -- i ta kolumna jest już płaską datą. Doba biznesowa Europe/Warsaw dotyczy
 -- `orders`, nie tej tabeli (patrz 20260928_warsaw_business_day.sql).
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- REJESTRACJA — żeby panel MIGRACJE w Diagnostics przestał o tej zmianie krzyczeć
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Odporne na brak rejestru: gdyby ktoś wgrał tę migrację przed
+-- 20261020_applied_migrations.sql, zapis się pominie z komunikatem zamiast
+-- wywrócić całą migrację na nieistniejącej tabeli.
+DO $reg$
+BEGIN
+  IF to_regclass('public.applied_migrations') IS NOT NULL THEN
+    INSERT INTO public.applied_migrations (filename)
+      VALUES ('20261003_meta_reach_initiate_checkout.sql')
+      ON CONFLICT (filename) DO NOTHING;
+  ELSE
+    RAISE NOTICE 'applied_migrations nie istnieje — wgraj 20261020_applied_migrations.sql, zeby panel MIGRACJE zobaczyl te zmiane';
+  END IF;
+END
+$reg$;

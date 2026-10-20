@@ -76,12 +76,30 @@ export interface ProfitData {
   // "N bez mapowania" figure that asks somebody to go and fix something.
   excludedOrdersCount?: number
   excludedRevenue?: number
-  // Manual access grants — 1 PLN, operator Offline, somebody let into a course
-  // they paid for outside the shop. A THIRD state again: not a gap to close
-  // and not a sale deliberately set aside, but something that was never a
-  // transaction. No amount is reported alongside the count on purpose.
-  adminAccessOrdersCount?: number
-  adminAccessRevenue?: number
+  // Rows that were never transactions: emptied carts, lead magnets, manual
+  // access grants. A THIRD state again — not a gap to close and not a sale
+  // deliberately set aside. No amount travels with the counts on purpose.
+  nonSaleOrdersCount?: number
+  nonSaleRevenue?: number
+  nonSaleBreakdown?: Array<{ category: string; label: string; orders: number }>
+  /**
+   * Sold under the listed price. The only job catalogPrice still has — it
+   * classifies nothing.
+   */
+  discounts?: Array<{
+    productKey: string
+    displayName: string
+    catalogPrice: number
+    orders: number
+    units: number
+    listedTotal: number
+    paidTotal: number
+    /** Null when the product's margin is unknown — the loss is then unknowable. */
+    marginLost: number | null
+    marginKnown: boolean
+    /** Discount percentage (rounded) → how many orders came in at it. */
+    rates: Record<string, number>
+  }>
   /** Orders whose UTC day differs from their Warsaw day (daily-view mismatch). */
   dayBoundaryOrders?: number
   excludedBreakdown?: ExcludedBreakdownItem[]

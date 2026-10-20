@@ -27,19 +27,26 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
     fail(`${f} is missing - it is the ONE source of prices, margins and scope`)
   } else {
     const cat = await import(new URL('../netlify/shared/productCatalog.js', import.meta.url))
-    const { PRODUCTS, PRICE_TO_PRODUCTS } = cat
+    const { PRODUCTS } = cat
 
-    // Authoritative business table: price -> product, scope, contribution margin.
+    // Authoritative business table: product -> scope, contribution margin.
+    // NOT keyed on price any more — the catalog holds eight products at 50
+    // PLN, three at 95 and two at 499, so a price names nothing.
     const CATALOG = [
-      [119,  'memory_pack',    'memory',   70],
-      [114,  'language_3t',    'language', 55],
-      [95,   'jezykozak_pack', 'language', 88],
-      [347,  'jzk_ai',         'language', 320],
-      [549,  'jsu_course',     'memory',   500],
+      ['memory_pack',    'memory',   70],
+      ['language_3t',    'language', 55],
+      ['jezykozak_pack', 'language', 88],
+      ['jzk_ai',         'language', 320],
+      ['jsu_course',     'memory',   500],
       // WSZTP's margin is genuinely unknown AND it is excluded from blended.
-      [1250, 'wsztp',          'memory',   null],
-      [3450, 'wsztp',          'memory',   null],
+      ['wsztp',          'memory',   null],
     ]
+    for (const [key, scope, margin] of CATALOG) {
+      const p = PRODUCTS[key]
+      const ok = p && p.scope === scope && p.contributionMargin === margin
+      if (ok) pass(`catalog: ${key}, scope ${scope}, margin ${margin === null ? 'null (not invented)' : margin}`)
+      else fail(`catalog: ${key} must be scope ${scope}, margin ${margin} - got ${p && p.scope} / ${p && p.contributionMargin}`)
+    }
 
     // Cogni is NOT in this table and must never come back. It is sold through
     // Stripe only, so no `orders` row can be one; an entry for it could only
@@ -53,13 +60,20 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
       fail(`catalog: Cogni is back — keys ${cogniKeys.join('/')}, ${cogniScopes.length} with scope cogni`)
     }
 
-    // PSO is reachable by NAME ONLY. A 499 PLN key here would recreate the
-    // original bug pointed at a different product.
-    if (PRICE_TO_PRODUCTS[499] === undefined
-        && !Object.values(PRICE_TO_PRODUCTS).flat().includes('pso')) {
-      pass('catalog: no price resolves to PSO — the name is the only way in')
+    // No price path may exist at all. This used to be a check that 499 did
+    // not resolve to PSO; the map itself is gone, so the check is now that it
+    // has not come back.
+    if (cat.PRICE_TO_PRODUCTS === undefined && cat.soleProductAtPrice === undefined) {
+      pass('catalog: no price->product map exists — the name is the only key')
     } else {
-      fail(`catalog: PSO is reachable by price (499 -> ${(PRICE_TO_PRODUCTS[499] ?? []).join('/')})`)
+      fail('catalog: a price->product path is back (PRICE_TO_PRODUCTS / soleProductAtPrice)')
+    }
+
+    try {
+      cat.assertNoPriceOnlyProducts()
+      pass('catalog: every product is reachable by name, no pattern is shared')
+    } catch (e) {
+      fail(`catalog: ${String(e && e.message).split(String.fromCharCode(10))[0]}`)
     }
 
     // Every entry states its margin or names the gap.
@@ -70,16 +84,9 @@ function exists(rel) { return existsSync(join(rootDir, rel)) }
     } else {
       fail(`catalog: ${vague.map(([k]) => k).join(', ')} have neither a margin nor a named gap`)
     }
-    for (const [price, key, scope, margin] of CATALOG) {
-      const p = PRODUCTS[key]
-      const ok = (PRICE_TO_PRODUCTS[price] ?? []).includes(key) && p && p.scope === scope && p.contributionMargin === margin
-      if (ok) pass(`catalog: ${price} PLN -> ${key}, scope ${scope}, margin ${margin === null ? 'null (not invented)' : margin}`)
-      else fail(`catalog: ${price} PLN must map to ${key}, scope ${scope}, margin ${margin} - got ${(PRICE_TO_PRODUCTS[price] ?? []).join('/')} / ${p && p.scope} / ${p && p.contributionMargin}`)
-    }
-
     // A 99 PLN Pakiet Pamieciowy (shipping line missing from the order) must earn
     // the honest 50, not the full 70 and not zero.
-    const disc = cat.classifyAmount(99, 'Pamiec. Trening Interaktywny')
+    const disc = cat.classifyAmount(99, 'Pamięć. Trening Interaktywny: Ebook + Druk (Wartość: 158 zł)')
     if (disc.productKey === 'memory_pack' && disc.margin === 50) {
       pass('catalog: a 99 PLN PP earns 50, derived from the unit cost - not guessed')
     } else {

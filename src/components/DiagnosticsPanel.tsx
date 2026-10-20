@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import type { DailyPerformance, MetaAdDaily, AutomationRun } from '../services/data'
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import type { SyncHealth } from '../lib/orderWindow'
+import type { OrdersData } from '../lib/ordersData'
 import { fetchDataContract, type DataContractReport } from '../lib/dataAudit'
 import type { OpsWeekReport } from '../lib/opsWeekReport'
 import { fetchDataHealth, type DataHealthReport } from '../lib/dataHealth'
@@ -36,6 +37,10 @@ interface Props {
   profitDataOrders?: number | null
   /** Windows where orders outran the sync. Null while orders-data has not loaded. */
   syncHealth?: SyncHealth | null
+  /** Every .sql in supabase/migrations/ and whether the database has it. */
+  migrations?: OrdersData['migrations']
+  migrationRegisterMissing?: boolean
+  migrationRegisterError?: string | null
 }
 
 function Row({ label, value, ok }: { label: string; value: string; ok?: boolean | null }) {
@@ -48,7 +53,7 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
   )
 }
 
-export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, browserVoiceInfo, englishVoiceCount, lastIntent, lastIntentConfidence, llmConnected, sttLastFinal, sttInterim, sttConfidence, sttStatus, sttRejectionReason, lastRefresh, profitDataDate, profitDataOrders, syncHealth }: Props) {
+export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, browserVoiceInfo, englishVoiceCount, lastIntent, lastIntentConfidence, llmConnected, sttLastFinal, sttInterim, sttConfidence, sttStatus, sttRejectionReason, lastRefresh, profitDataDate, profitDataOrders, syncHealth, migrations, migrationRegisterMissing, migrationRegisterError }: Props) {
   const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
   const [dataHealth, setDataHealth] = useState<DataHealthReport | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
@@ -74,6 +79,58 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
 
   return (
     <div>
+      {/* MIGRACJE — which .sql files in the repo the database actually has.
+          Six were waiting and the only record of that was a chat log. The
+          panel names the files; a count or a dot would send somebody back to
+          the chat log to find out which. */}
+      {migrations && migrations.length > 0 && (() => {
+        const pending = migrations.filter(m => !m.applied)
+        const bad = migrationRegisterMissing || pending.length > 0
+        return (
+          <div className="card" style={{ padding: '18px 20px', marginBottom: '18px',
+            borderLeft: `3px solid ${bad ? 'var(--amber)' : 'var(--emerald)'}` }}>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: '0.74rem', fontWeight: 600,
+              textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text2)', marginBottom: 10 }}>
+              Migracje
+            </div>
+
+            {migrationRegisterMissing && (
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', lineHeight: 1.7,
+                color: 'var(--amber)', marginBottom: 10 }}>
+                Rejestru nie ma w bazie — wgraj najpierw
+                {' '}<b>20261020_applied_migrations.sql</b>.
+                <br />
+                Dopóki go nie ma, każdy plik poniżej czyta się jako niezastosowany,
+                również te, które faktycznie są wgrane.
+                {migrationRegisterError && (
+                  <><br /><span style={{ color: 'var(--muted2)' }}>{migrationRegisterError}</span></>
+                )}
+              </div>
+            )}
+
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', lineHeight: 1.8 }}>
+              {migrations.map(m => (
+                <div key={m.file} style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ color: m.applied ? 'var(--muted2)' : 'var(--amber)', wordBreak: 'break-all' }}>
+                    {m.applied ? '·' : '!'} {m.file}
+                  </span>
+                  <span style={{ color: m.applied ? 'var(--emerald)' : 'var(--amber)', whiteSpace: 'nowrap' }}>
+                    {m.applied ? (m.appliedAt ? m.appliedAt.slice(0, 10) : 'zastosowana') : 'NIEZASTOSOWANA'}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem',
+              color: bad ? 'var(--amber)' : 'var(--emerald)', marginTop: 10, lineHeight: 1.7 }}>
+              {pending.length === 0
+                ? 'Wszystkie migracje z repo są zastosowane.'
+                : `Czeka na wgranie: ${pending.map(m => m.file).join(', ')}`}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Sync health — NOT RENDERED any more. App.tsx passes null since
           2026-10-20: measured against the full Wix export the signal was right
           2 times in 211 flags (0.9% precision), so it was teaching people to

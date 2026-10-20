@@ -310,10 +310,7 @@ export function buildMemoryBundleAnswer(
       lines.push(`   ${u.amount.toFixed(2)} PLN — "${String(u.name).replace(/\n/g, ' / ').slice(0, 64)}"`)
     }
   }
-  const grants = orders.todayHourly?.adminAccess ?? 0
-  if (grants > 0) {
-    lines.push('', `Dostęp administracyjny: ${grants} szt. (ręczne nadania, nie sprzedaż).`)
-  }
+  for (const line of nonSaleLines(orders.todayHourly?.nonSale)) lines.push('', line)
   const floor = orders.todayHourly?.belowFloor
   if (floor && floor.orders > 0) {
     lines.push('', `Odcięte progiem: ${floor.orders} szt. · ${fmtPln(floor.revenue)} (zamówienia testowe).`)
@@ -2052,6 +2049,27 @@ function noMarginNote(d: ProfitData): string {
   ].join('\n')
 }
 
+/**
+ * Lines for rows that were never sales — one per category, never merged.
+ *
+ * Counts only, no amounts. These are not sales, so quoting a value next to
+ * them (even the catalog price of what was in the cart) would read as revenue
+ * that did not happen. Labels come from the catalog so the card, COPY and Q&A
+ * cannot say three different things.
+ */
+function nonSaleLines(nonSale: Record<string, number> | undefined): string[] {
+  const why: Record<string, string> = {
+    empty_cart:   'pozycja odznaczona w formularzu Wix — nic nie wysłano, zero kosztu',
+    lead_magnet:  'darmowe pobranie',
+    admin_access: 'ręczne nadania dostępu dla osób, które zapłaciły poza sklepem',
+  }
+  return Object.entries(nonSale ?? {})
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat, n]) => `${NON_SALE_LABELS[cat as keyof typeof NON_SALE_LABELS] ?? cat}: ${n} szt. `
+      + `(${why[cat] ?? 'nie sprzedaż'} — poza przychodem i marżą).`)
+}
+
 function profitVerdict(profit: number, ordersCount: number): string {
   if (ordersCount === 0) return 'Brak zamówień dziś.'
   if (profit >= 500)     return 'Dobry dzień — wyraźnie do przodu.'
@@ -2131,6 +2149,7 @@ export function buildProfitSpoken(d: ProfitData | null): string {
 // ── Orders in an explicit date range ─────────────────────────────────────────
 
 import type { OrderWindow } from '../lib/orderWindow'
+import { NON_SALE_LABELS } from '../../netlify/shared/productCatalog.js'
 import { checkBreakdownConsistency } from '../lib/orderWindow'
 
 /**
@@ -2207,11 +2226,7 @@ export function buildOrdersInRangeAnswer(w: OrderWindow | null, label: string): 
   // Manual grants and test orders are two different things and get two
   // different lines. Both used to come out as "odcięte progiem", which told
   // somebody that a sale had nearly happened when a door had been opened.
-  if (w.adminAccess > 0) {
-    lines.push('', `Dostęp administracyjny: ${w.adminAccess} szt. `
-      + '(ręczne nadania dostępu do kursu dla osób, które zapłaciły poza sklepem — '
-      + 'nie sprzedaż, bez kwoty i bez marży, poza sumami wyżej).')
-  }
+  for (const line of nonSaleLines(w.nonSale)) lines.push('', line)
 
   if (w.belowFloor.orders > 0) {
     lines.push('', `Odcięte progiem: ${w.belowFloor.orders} szt. · ${w.belowFloor.revenue.toFixed(2)} PLN `

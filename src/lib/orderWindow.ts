@@ -48,14 +48,16 @@ export interface OrderWindow {
   /** Rows the test-order floor removed. Reported, never silently dropped. */
   belowFloor: { orders: number; revenue: number }
   /**
-   * Manual access grants in the window. A count, and only a count.
+   * Rows in the window that were never sales, per category. Counts, and only
+   * counts.
    *
-   * These used to be reported as "odcięte progiem", which was misleading in
+   * They used to be reported as "odcięte progiem", which was misleading in
    * both directions: the 5 PLN floor caught them by accident rather than by
-   * definition, and nothing about them was nearly a sale. They carry no
-   * revenue and no margin on purpose — see ADMIN_ACCESS in productCatalog.js.
+   * definition, and nothing about them was nearly a sale. Worse, the 0 PLN
+   * ones were matched to Pakiet Pamięciowy on the name and charged a unit
+   * cost against zero revenue. See NON_SALE in productCatalog.js.
    */
-  adminAccess: number
+  nonSale: Record<string, number>
 }
 
 /**
@@ -103,9 +105,9 @@ export function countOrdersInWindow(data: OrdersData | null, from: string, to: s
   const byProduct = new Map<string, { orders: number; revenue: number }>()
   const unmappedNames: OrderWindow['unmappedNames'] = []
   const belowFloor = { orders: 0, revenue: 0 }
-  let adminAccess = 0
+  const nonSale: Record<string, number> = {}
 
-  const absorb = (src: Pick<DailySeriesDay, 'products' | 'unmappedNames' | 'belowFloor' | 'adminAccess'>) => {
+  const absorb = (src: Pick<DailySeriesDay, 'products' | 'unmappedNames' | 'belowFloor' | 'nonSale'>) => {
     for (const [key, slice] of Object.entries(src.products ?? {})) {
       const cur = byProduct.get(key) ?? { orders: 0, revenue: 0 }
       cur.orders += slice.orders
@@ -115,7 +117,9 @@ export function countOrdersInWindow(data: OrdersData | null, from: string, to: s
     unmappedNames.push(...(src.unmappedNames ?? []))
     belowFloor.orders += src.belowFloor?.orders ?? 0
     belowFloor.revenue += src.belowFloor?.revenue ?? 0
-    adminAccess += src.adminAccess ?? 0
+    for (const [cat, n] of Object.entries(src.nonSale ?? {})) {
+      nonSale[cat] = (nonSale[cat] ?? 0) + n
+    }
   }
 
   for (const date of days) {
@@ -154,7 +158,7 @@ export function countOrdersInWindow(data: OrdersData | null, from: string, to: s
     : null
 
   return { from, to, days, orders, revenue, partialDay, missingDays, outOfRangeDays,
-           products, unmappedNames, belowFloor, adminAccess }
+           products, unmappedNames, belowFloor, nonSale }
 }
 
 // ── parsing a range out of a question ───────────────────────────────────────

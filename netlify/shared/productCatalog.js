@@ -33,6 +33,7 @@ import { businessDay, businessToday, businessDaysAgo } from './businessDay.js'
 // margin still gets named and counted; its margin is excluded from profit and
 // reported as a hole.
 export const PRODUCTS = {
+  // ── Pozycje z landingów i webinarów (marże ustalone) ────────────────────
   memory_pack: {
     key: 'memory_pack', displayName: 'Pakiet Pamięciowy', shortName: 'PP',
     scope: 'memory', catalogPrice: 119, contributionMargin: 70,
@@ -53,38 +54,118 @@ export const PRODUCTS = {
     key: 'jsu_course', displayName: 'Kurs Jak się uczyć', shortName: 'JSU',
     scope: 'memory', catalogPrice: 549, contributionMargin: 500,
   },
-  // COGNI IS NOT HERE, AND MUST NOT BE ADDED BACK.
-  //
-  // Cogni is never sold through Wix. Its revenue arrives in Stripe and only in
-  // Stripe, so no `orders` row can be a Cogni sale — and an entry for it in
-  // this catalog can therefore only ever mislabel something else. It did: at
-  // 499 PLN it shared a price with Perfect Student Online, and until fd7551b
-  // the price decided, so every PSO sale was reported as "Cogni rocznie" with
-  // a 450 PLN margin it never earned.
-  //
-  // A matching price is NOT a reason to put it back. That is exactly the
-  // evidence that produced the wrong answer last time.
 
-  // Perfect Student Online — the Wix/Velo learning platform (CMS collection
-  // PSO_Progress). Matched by NAME ONLY: 499 is deliberately absent from
-  // PRICE_TO_PRODUCTS below, so an unrecognised 499 PLN order can never fall
-  // into PSO the way it used to fall into Cogni.
+  // ── Sklep eccehomo21.com/shop (marże nieustalone) ───────────────────────
+  szurawski_pack: {
+    key: 'szurawski_pack', displayName: 'Pakiet szkoleń Marka Szurawskiego', shortName: 'Szurawski',
+    scope: 'other', catalogPrice: 499, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  hi_memory: {
+    key: 'hi_memory', displayName: 'Hi Memory! Ucz się i baw.', shortName: 'Hi Memory',
+    scope: 'other', catalogPrice: 420, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  memory_training: {
+    key: 'memory_training', displayName: 'Pamięć. Trening interaktywny', shortName: 'PTI',
+    scope: 'memory', catalogPrice: 95, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  memory_training_pdf: {
+    key: 'memory_training_pdf', displayName: 'Pamięć. Trening interaktywny (PDF)', shortName: 'PTI PDF',
+    scope: 'memory', catalogPrice: 75, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  lang_3t_single: {
+    key: 'lang_3t_single', displayName: '3 zadziwiające techniki nauki języków', shortName: '3T solo',
+    scope: 'language', catalogPrice: 95, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  lang_3t_pdf: {
+    key: 'lang_3t_pdf', displayName: '3 Zadziwiające Techniki Nauki Języków (PDF)', shortName: '3T PDF',
+    scope: 'language', catalogPrice: 60, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  slowoszyt_pdf: {
+    key: 'slowoszyt_pdf', displayName: 'Słowoszyt (PDF)', shortName: 'Słowoszyt',
+    scope: 'other', catalogPrice: 90, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  jsu_book: {
+    key: 'jsu_book', displayName: 'Jak się uczyć', shortName: 'JSU książka',
+    scope: 'memory', catalogPrice: 80, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  jsu_pdf: {
+    key: 'jsu_pdf', displayName: 'Jak się uczyć (PDF)', shortName: 'JSU PDF',
+    scope: 'memory', catalogPrice: 60, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  book_historie: {
+    key: 'book_historie', displayName: 'Historie, które zostają', shortName: 'Historie',
+    scope: 'other', catalogPrice: 50, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  book_mysz: {
+    key: 'book_mysz', displayName: 'Opowieść o skaczącej myszy', shortName: 'Skacząca mysz',
+    scope: 'other', catalogPrice: 50, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  book_ptaki: {
+    key: 'book_ptaki', displayName: 'Jak zapamiętywać głosy ptaków', shortName: 'Głosy ptaków',
+    scope: 'other', catalogPrice: 50, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  book_mysli_chlopiec: {
+    key: 'book_mysli_chlopiec', displayName: 'Bądź dobrej myśli (dla chłopca)', shortName: 'Dobrej myśli ch.',
+    scope: 'other', catalogPrice: 50, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  book_mysli_dziewczynka: {
+    key: 'book_mysli_dziewczynka', displayName: 'Bądź dobrej myśli (dla dziewczynki)', shortName: 'Dobrej myśli dz.',
+    scope: 'other', catalogPrice: 50, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  techniki_przywolujace: {
+    key: 'techniki_przywolujace', displayName: 'Techniki przywołujące', shortName: 'Techniki przyw.',
+    scope: 'other', catalogPrice: 50, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  test_iwm: {
+    key: 'test_iwm', displayName: 'Test na rozpoznanie Indywidualnych Wzorców Myślenia', shortName: 'Test IWM',
+    scope: 'other', catalogPrice: 50, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+  book_8020: {
+    key: 'book_8020', displayName: '80/20, Zasada która ukształtowała świat', shortName: '80/20',
+    scope: 'other', catalogPrice: 50, contributionMargin: null,
+    marginUnknown: true,
+    marginUnknownReason: 'marża nieustalona — czeka na dane od właściciela',
+  },
+
+  // ── Poza lejkami ─────────────────────────────────────────────────────────
   pso: {
     key: 'pso', displayName: 'Perfect Student Online', shortName: 'PSO',
-    // Out of both ad funnels: there is no Meta campaign for PSO, so putting it
-    // in `memory` or `language` would charge it with spend that never chased it.
     scope: 'other', catalogPrice: 499, contributionMargin: null,
     marginUnknown: true,
     marginUnknownReason: 'marża PSO nieznana — brak w briefingu',
   },
-  // WSZTP — Wakacyjna Szkoła Treningu Pamięci. Deposit 1250 / full 3450.
-  //
-  // Its margin is genuinely unknown, so it stays null. But it is ALSO excluded
-  // from every blended figure, and that is a separate decision from the missing
-  // margin: the camp is cut off from the ad funnel, so its orders are not what
-  // the Meta spend bought. One 3450 PLN order lands in a day whose ad spend is
-  // ~500 PLN and drags that day's blended CPA and ROAS somewhere fictional.
-  // Excluded from Est. Profit, Real CPA and Real ROAS; reported on its own line.
   wsztp: {
     key: 'wsztp', displayName: 'WSZTP', shortName: 'WSZTP',
     scope: 'memory', catalogPrice: 3450, contributionMargin: null,
@@ -108,81 +189,43 @@ export function unitCostOf(productKey) {
   return p.catalogPrice - p.contributionMargin
 }
 
-// Price → the products that sell at that price.
+// THE PRICE NEVER PICKS A PRODUCT. There is no price→product map here, and
+// that is deliberate: there used to be one, and every bug it caused was the
+// same bug. 499 PLN was Cogni and Perfect Student Online; now the catalog
+// holds EIGHT products at 50 PLN, three at 95, two at 499, two at 60, plus
+// 119 and 114 from the landing pages sitting next to 470 and 94 from the
+// shop. A price is not evidence of anything.
 //
-// THE NAME DECIDES, NOT THE PRICE. This used to be the other way round, and it
-// put Perfect Student Online into Cogni because both cost 499 PLN. A Wix
-// product name is edited by hand and a price is not, which is why price looked
-// like the safer signal — but a price shared by two products carries no
-// information at all, while a name almost always does.
+// catalogPrice stays on each entry, used for ONE thing: spotting that
+// something sold below its listed price (the RABATY I ODCHYLENIA section).
+// It is never consulted to decide WHAT sold.
 //
-// So: the name is tried first; the price only confirms it, or stands in when
-// the name matched nothing. Where a price has MORE than one candidate and the
-// name did not decide, the order goes to UNMAPPED with the collision spelled
-// out — never the first candidate in the list.
-//
-//   99   = Pakiet Pamięciowy sold without the 20 PLN shipping line (form error)
-//   1250 = WSZTP deposit · 3450 = WSZTP in full
-//
-// 499 IS DELIBERATELY ABSENT. Perfect Student Online sells at 499 and is
-// matched by name alone. Listing it here would mean an unrecognised 499 PLN
-// order resolves to PSO on the price — which is precisely the mechanism that
-// turned PSO sales into "Cogni rocznie" before fd7551b, just pointed at a
-// different product. A 499 PLN order whose name says nothing goes to UNMAPPED.
-//
-// 115 is absent for the same family of reason: both a memory row and a
-// language row have sold at 115 PLN, so the price carries no signal.
-export const PRICE_TO_PRODUCTS = {
-  95:   ['jezykozak_pack'],
-  99:   ['memory_pack'],
-  114:  ['language_3t'],
-  119:  ['memory_pack'],
-  347:  ['jzk_ai'],
-  549:  ['jsu_course'],
-  1250: ['wsztp'],
-  3450: ['wsztp'],
-}
-
-/**
- * The single candidate at a price, or null when there is none or more than one.
- * Kept separate from PRICE_TO_PRODUCTS so a collision can never be silently
- * resolved by taking element zero.
- */
-export function soleProductAtPrice(amount) {
-  const candidates = PRICE_TO_PRODUCTS[amount]
-  return candidates && candidates.length === 1 ? candidates[0] : null
-}
-
-/**
- * Startup check: a price shared by two products is fine ONLY if both of them
- * can be told apart by name. Every product here must therefore own at least
- * one name pattern — otherwise a 499 PLN order with an unhelpful name would be
- * unresolvable, and the catalog would be lying about what it can distinguish.
- *
- * Called at module load. A catalog that cannot do its job should fail the
- * build, not fail quietly at runtime on one order a month.
- */
-export function assertCatalogIsResolvable() {
-  const named = new Set(NAME_PATTERNS.map(([key]) => key))
-  const problems = []
-  for (const [price, keys] of Object.entries(PRICE_TO_PRODUCTS)) {
-    if (keys.length < 2) continue
-    const unnameable = keys.filter(k => !named.has(k))
-    if (unnameable.length > 0) {
-      problems.push(`${price} PLN: ${keys.join(' / ')} share a price, and `
-        + `${unnameable.join(', ')} has no name pattern — such an order could never be resolved`)
-    }
-  }
-  if (problems.length > 0) {
-    throw new Error('productCatalog: unresolvable price collision\n  ' + problems.join('\n  '))
-  }
-}
+// So the name is the only key. No name match → UNMAPPED, carrying the raw Wix
+// name so a human can see exactly what arrived.
 
 // ── Text handling ────────────────────────────────────────────────────────────
 
+/**
+ * The ONE normalisation. Everything that compares a product name — the card,
+ * the COPY report, Q&A, the catalog itself — goes through this, so a name can
+ * never mean two things in two places.
+ *
+ * Flattens case, accents, dashes of every width, brackets, punctuation and
+ * doubled spaces, so "HISTORIE, KTÓRE ZOSTAJĄ – 50 opowieści" and
+ * "historie   ktore zostaja" come out identical.
+ *
+ * Ł IS FOLDED TO L EXPLICITLY. Unicode NFD does not decompose ł — it is a
+ * single codepoint, not l plus a diacritic — so the catch-all below used to
+ * turn it into a SPACE: "głosy" became "g osy", "Słowoszyt" became "s owoszyt"
+ * and "Szkoła" became "szko a". Three patterns silently matched nothing, and
+ * an older pattern in this file had been written as 'szko a treningu' to work
+ * around it rather than fix it. One line here, instead of a trap in every
+ * Polish product name that happens to contain an ł.
+ */
 export function normalizeText(s) {
   return String(s ?? '')
     .toLowerCase()
+    .replace(/ł/g, 'l')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9\s]/g, ' ')
@@ -209,44 +252,60 @@ export function isShippingLine(rawName) {
 //     a bonus is never read as the JSU course.
 //   · WSZTP is matched before the broad 'pamiec' pattern so the high-ticket
 //     product never inherits the PP margin.
-// ── Administrative access grants ────────────────────────────────────────────
+// ── Rows that are not sales ─────────────────────────────────────────────────
 //
-// Somebody paid outside the shop — a transfer, an invoice, a bundle sold in a
-// webinar — and was then let into the "Jak się uczyć" course by hand. Wix
-// records that as a 1 PLN order marked Offline. It is a door being opened, not
-// a transaction: no revenue, no margin, no CPA, no ROAS, no product.
+// Three different things arrive in `orders` that nobody bought, and each one
+// used to be mishandled in its own way:
 //
-// Until now these fell out of the dashboard because 1 PLN is under the 5 PLN
-// test-order floor. The floor caught them by accident, and called them
-// "odcięte progiem", which says the wrong thing: nothing was cut off, nothing
-// was nearly a sale. 34 of them happened between June and October.
+//   KOSZYK PUSTY (0 PLN) — the customer unticked the book line in the Wix
+//       form. Nothing shipped, nothing cost anything. The classifier used to
+//       match these to Pakiet Pamięciowy on the name and then compute
+//       margin = 0 − 49, so two empty carts were quietly removing 98 PLN from
+//       Est. Profit. There is no cost to deduct: a cart that was emptied did
+//       not consume a book.
 //
-// THE AMOUNT ALONE IS NEVER ENOUGH. A real sale at a token price — a 1 PLN
-// trial, a 5 PLN upsell — must not disappear into this category, so a second,
-// independent condition is required on top of the amount.
-export const ADMIN_ACCESS = {
-  /** At or under this, in PLN. A grant is recorded at 1; the floor allows 5. */
-  maxAmount: 5,
+//   LEAD MAGNET (0 PLN, name starts with "GRATIS:") — a free download. Also
+//       not a sale, but a different mechanism, so it gets its own line rather
+//       than being averaged into the carts.
+//
+//   DOSTĘP ADMINISTRACYJNY (≤5 PLN, operator Offline) — somebody paid outside
+//       the shop and was let into the course by hand.
+//
+// ALL THREE ARE RECOGNISED HERE, BY ONE FUNCTION. They were heading towards
+// three conditions in three files, which is how the dashboard and Stanley end
+// up disagreeing about what a row is.
+//
+// None of them has revenue, cost or margin — in either direction. A zero
+// margin is not "earned nothing", it is "was never a transaction".
+export const NON_SALE = {
+  /** A grant is recorded at 1 PLN; the dashboard's test-order floor is 5. */
+  adminMaxAmount: 5,
   /** The payment operator Wix stamps on a manual grant. Normalised. */
-  operator: 'offline',
+  adminOperator: 'offline',
   /**
-   * The exact product name on every one of the 34 grants seen so far.
-   *
-   * This is the STAND-IN for the operator, used only while `orders` has no
-   * column to put an operator in — see paymentProviderKnown() below. It is an
-   * exact match, not a pattern: "Kurs online Jak się uczyć" is the real course
-   * at 549 PLN and must never land here.
+   * The exact product name on every grant seen so far. This is the STAND-IN
+   * for the operator, used only while `orders` has no column to hold one —
+   * see 20261020_payment_provider.sql. Matched exactly, so the real 549 PLN
+   * course ("Kurs online Jak się uczyć") never lands here.
    */
-  grantName: 'jak sie uczyc',
+  adminGrantName: 'jak sie uczyc',
+  /** A free download announces itself in the product name. */
+  leadMagnetPrefix: 'gratis',
+}
+
+/** Human labels, in one place, so the card, COPY and Q&A say the same thing. */
+export const NON_SALE_LABELS = {
+  empty_cart:   'Koszyki 0 zł',
+  lead_magnet:  'Lead magnety',
+  admin_access: 'Dostęp administracyjny',
 }
 
 /**
  * The payment operator on a row, or null when this system cannot know it.
  *
- * `orders` has ten columns and none of them is the operator
- * (supabase/migrations/20261020_payment_provider.sql adds one; it is not
- * applied, and Make does not map it yet). Null here means "unknown", which is
- * deliberately NOT the same as "not Offline".
+ * `orders` has no operator column yet (20261020_payment_provider.sql adds
+ * one). Null means UNKNOWN, which is deliberately NOT the same as
+ * "not Offline".
  */
 export const extractPaymentProvider = (row) =>
   row?.payment_provider ?? row?.payment_operator ?? row?.operator ?? null
@@ -255,93 +314,179 @@ const providerKnown = (provider) =>
   provider != null && String(provider).trim() !== ''
 
 /**
- * Is this row a manual access grant rather than a sale?
+ * Is this row a sale at all?
  *
- * Two necessary conditions, never one. The amount gets a row considered; the
- * second condition decides, and which second condition applied is recorded in
- * the verdict so nobody has to guess later which evidence was available.
+ * @returns {{category: string, evidence: string}} when it is not a sale,
+ *          {{category: null, reason: string|null}} otherwise. A non-null
+ *          `reason` means "this looked like a non-sale and is not one, and
+ *          here is why" — those go to UNMAPPED rather than being guessed at.
  *
- *   amount ≤ 5  +  operator Offline              → grant  (the real rule)
- *   amount ≤ 5  +  operator unknown + exact name → grant  (the stand-in)
- *   amount ≤ 5  +  exact name but operator is X  → NOT a grant, and says why
- *   amount > 5  +  operator Offline              → NOT a grant, and says why
- *   anything with neither Offline nor the exact name → not this category's
- *       business at all; it stays quiet and the ordinary classification runs
+ * ZERO IS CHECKED FIRST, before the grant rules, because 0 ≤ 5 and a 0 PLN
+ * row marked Offline would otherwise read as a grant. Grants are recorded at
+ * 1 PLN; 0 PLN is an emptied cart.
  *
- * The stand-in exists because the operator is not in the database yet and the
- * grants are. It is strictly narrower than the amount alone: it also demands
- * the exact grant name. It disappears by itself the moment Make writes the
- * operator, because then the operator is known and the first branch decides.
+ * The grant rules need TWO conditions, never the amount alone, so a genuine
+ * sale at a token price cannot vanish in here:
  *
- * What the stand-in cannot do: tell a manual grant from a genuine 1 PLN sale
- * of a product *named exactly* "Jak się uczyć" through a real payment
- * provider. That has never happened and would need both a new price point and
- * a renamed product, but it is the gap, and it closes with the migration.
+ *   ≤5 PLN + operator Offline              → grant  (the real rule)
+ *   ≤5 PLN + operator unknown + exact name → grant  (the stand-in)
+ *   ≤5 PLN + exact name but operator is X  → NOT a grant, and says why
+ *   >5 PLN + operator Offline              → NOT a grant, and says why
+ *   neither Offline nor the exact name     → not this function's business;
+ *       it stays quiet and the ordinary classification keeps its own message
  */
-export function adminAccessVerdict(amount, rawName, provider) {
+export function nonSaleVerdict(amount, rawName, provider) {
   const amt = Number(amount)
-  const known = providerKnown(provider)
-  const isOffline = known && normalizeText(provider) === ADMIN_ACCESS.operator
-  const cheap = Number.isFinite(amt) && amt <= ADMIN_ACCESS.maxAmount
-  const nameIsGrant = normalizeText(rawName) === ADMIN_ACCESS.grantName
+  const name = normalizeText(rawName)
 
-  // Nothing about this row points at the category. Say nothing: the ordinary
-  // classification below has a more useful message than "≤ 5 zł but not a
-  // grant" would be, and an 0 PLN row with no name has no business being told
-  // about a category it was never near.
-  if (!isOffline && !nameIsGrant) return { grant: false, reason: null }
+  // ── 0 PLN: nothing was bought, whichever way it got here ────────────────
+  if (Number.isFinite(amt) && amt === 0) {
+    if (name.startsWith(NON_SALE.leadMagnetPrefix)) {
+      return { category: 'lead_magnet', evidence: `0 zł + nazwa zaczyna się od "GRATIS:"` }
+    }
+    return {
+      category: 'empty_cart',
+      evidence: '0 zł — pozycja odznaczona w formularzu Wix, nic nie wysłano',
+    }
+  }
+
+  // ── manual access grants ────────────────────────────────────────────────
+  const known = providerKnown(provider)
+  const isOffline = known && normalizeText(provider) === NON_SALE.adminOperator
+  const cheap = Number.isFinite(amt) && amt <= NON_SALE.adminMaxAmount
+  const nameIsGrant = name === NON_SALE.adminGrantName
+
+  if (!isOffline && !nameIsGrant) return { category: null, reason: null }
 
   if (cheap && isOffline) {
-    return { grant: true, evidence: `kwota ${amt} zł ≤ ${ADMIN_ACCESS.maxAmount} + operator Offline` }
+    return {
+      category: 'admin_access',
+      evidence: `kwota ${amt} zł ≤ ${NON_SALE.adminMaxAmount} + operator Offline`,
+    }
   }
   if (cheap && !known && nameIsGrant) {
     return {
-      grant: true,
-      evidence: `kwota ${amt} zł ≤ ${ADMIN_ACCESS.maxAmount} + nazwa dokładnie "${String(rawName).trim()}"`
+      category: 'admin_access',
+      evidence: `kwota ${amt} zł ≤ ${NON_SALE.adminMaxAmount} + nazwa dokładnie "${String(rawName).trim()}"`
         + ' (operatora nie ma w bazie — patrz 20261020_payment_provider.sql)',
     }
   }
   if (cheap && known && !isOffline) {
     return {
-      grant: false,
-      reason: `kwota ${amt} zł ≤ ${ADMIN_ACCESS.maxAmount}, ale operator to "${String(provider).trim()}", nie Offline `
-        + '— nadanie dostępu wymaga obu warunków, więc tego nie rozstrzygam',
+      category: null,
+      reason: `kwota ${amt} zł ≤ ${NON_SALE.adminMaxAmount}, ale operator to "${String(provider).trim()}", `
+        + 'nie Offline — nadanie dostępu wymaga obu warunków, więc tego nie rozstrzygam',
     }
   }
   if (!cheap && isOffline) {
     return {
-      grant: false,
-      reason: `operator Offline, ale kwota ${amt} zł przekracza ${ADMIN_ACCESS.maxAmount} zł `
+      category: null,
+      reason: `operator Offline, ale kwota ${amt} zł przekracza ${NON_SALE.adminMaxAmount} zł `
         + '— nadanie dostępu jest zapisywane na 1 zł, więc tego nie rozstrzygam',
     }
   }
-  return { grant: false, reason: null }   // nothing to do with this category
+  return { category: null, reason: null }
 }
 
+// Name → product. LONGEST MATCHING PATTERN WINS, which is what lets a variant
+// beat the product it is a variant of.
+//
+// "Jak się uczyć" (80 PLN book) and "Jak się uczyć (PDF)" (60 PLN) differ by
+// three characters, and plain substring matching would read every PDF sale as
+// the book, because the book's name is contained in the PDF's. Ranking by
+// matched length fixes that without special cases: 'jak sie uczyc pdf' is
+// longer than 'jak sie uczyc', so it wins whenever it is present.
+//
+// Order in this list does NOT decide anything any more — length does. The list
+// is grouped for reading only.
+//
+// THREE SHOP LISTINGS HAVE NO ENTRY OF THEIR OWN, ON PURPOSE:
+//   470 "Pakiet Pamięciowy – Pamięć + bonusy (…)" — 39 orders carry this exact
+//       name and 37 of them sold at 119, not 470. Giving it a separate entry
+//       with an unknown margin would move 4 641 PLN of revenue off a KNOWN
+//       margin of 70/unit and cut Est. Profit by 2 730 PLN on the strength of
+//       a price list that the orders contradict.
+//    94 "3 Zadziwiające Techniki Nauki Języków - Pakiet Językowy" — sells at
+//       114 (30 orders) and 99,90 (12). Same situation.
+//    95 "3 zadziwiające techniki nauki języków" — sells at 115.
+// All three resolve to the existing entry whose margin is established. The
+// shop prices are reported as an open question rather than silently adopted.
 const NAME_PATTERNS = [
-  ['wsztp',          ['wsztp', 'wakacyjna', 'treningu pamieci', 'szko a treningu']],
-  // 'kurs online jak sie uczyc' is how Wix actually writes it — the old
-  // 'kurs jak' never matched it, so JSU was being resolved by price alone.
-  // Still requires "kurs", so a PP bundle that lists "Jak się uczyć" as a bonus
-  // is not read as the course.
-  ['jsu_course',     ['kurs online jak sie uczyc', 'kurs jak sie uczyc', 'kurs jak', 'jsu', 'nauka uczenia']],
-  // PSO is name-only — see PRICE_TO_PRODUCTS for why 499 is not a route in.
-  ['pso',            ['perfect student', 'pso']],
-  // Pakiet Językozaka BEFORE Językozak AI: 'jezykozak' is a substring of
-  // 'jezykozaka', so the AI patterns were swallowing the pack.
-  ['jezykozak_pack', ['pakiet jezykozaka', 'jezykozaka']],
-  ['jzk_ai',         ['jezykozak ai', 'jezykozak', 'jzk', 'nauka jezykow', 'nauka jezyk']],
-  ['language_3t',    ['pakiet jezykowy', 'jezykowy', 'zadziwiajace techniki', 'techniki nauki jezyk', '3 zadziwiajace']],
-  ['memory_pack',    ['pakiet pamieciowy', 'trening pamiec', 'trening interaktywny', 'super pamiec', 'pamiec', 'memory pack']],
+  // ── established margins ────────────────────────────────────────────────
+  // The long patterns here are what keep the shop's shorter listings from
+  // stealing these orders: 'pamiec trening interaktywny ebook druk' (38) beats
+  // 'pamiec trening interaktywny' (27).
+  ['memory_pack',     ['pamiec trening interaktywny ebook druk',
+                       'pakiet pamieciowy pamiec bonusy',
+                       'pakiet pamieciowy']],
+  ['language_3t',     ['3 zadziwiajace techniki nauki jezykow pakiet jezykowy',
+                       'zadziwiajace techniki nauki jezykow druk ebook',
+                       'pakiet jezykowy']],
+  ['jezykozak_pack',  ['pakiet jezykozaka']],
+  ['jzk_ai',          ['jezykozak ai', 'jezykozak']],
+  ['jsu_course',      ['kurs online jak sie uczyc', 'kurs jak sie uczyc']],
+
+  // ── shop ───────────────────────────────────────────────────────────────
+  ['szurawski_pack',  ['pakiet szkolen marka szurawskiego', 'szurawskiego']],
+  ['hi_memory',       ['hi memory']],
+  ['memory_training_pdf', ['pamiec trening interaktywny pdf']],
+  ['memory_training', ['pamiec trening interaktywny']],
+  ['lang_3t_pdf',     ['3 zadziwiajace techniki nauki jezykow pdf']],
+  ['lang_3t_single',  ['3 zadziwiajace techniki nauki jezykow',
+                       'zadziwiajace techniki nauki jezykow']],
+  ['slowoszyt_pdf',   ['slowoszyt']],
+  ['jsu_pdf',         ['jak sie uczyc pdf']],
+  ['jsu_book',        ['jak sie uczyc']],
+  ['book_historie',   ['historie ktore zostaja']],
+  ['book_mysz',       ['opowiesc o skaczacej myszy']],
+  ['book_ptaki',      ['jak zapamietywac glosy ptakow']],
+  ['book_mysli_chlopiec',     ['badz dobrej mysli dla chlopca']],
+  ['book_mysli_dziewczynka',  ['badz dobrej mysli dla dziewczynki']],
+  ['techniki_przywolujace',   ['techniki przywolujace']],
+  ['test_iwm',        ['test na rozpoznanie indywidualnych wzorcow mysleni']],
+  ['book_8020',       ['80 20 zasada ktora uksztaltowala swiat', '80 20 zasada']],
+
+  // ── outside the funnels ────────────────────────────────────────────────
+  ['pso',             ['perfect student online', 'perfect student', 'pso']],
+  ['wsztp',           ['wakacyjna szkola treningu pamieci', 'wakacyjna', 'wsztp']],
 ]
 
-export function nameMatchKey(rawName) {
+/**
+ * The best name match, or null.
+ *
+ * Longest pattern wins. A tie between two DIFFERENT products is reported
+ * rather than broken — picking one would be the same coin-flip that sent
+ * every Perfect Student Online sale into Cogni.
+ *
+ * Robust to: case, accents, straight vs typographic dashes, doubled spaces,
+ * brackets, trailing marketing text and a truncated name — all of which
+ * normalizeText() flattens before anything is compared, and none of which
+ * changes which pattern is longest.
+ *
+ * @returns {{key: string|null, pattern: string|null, tie: string[]|null}}
+ */
+export function nameMatch(rawName) {
   const norm = normalizeText(rawName)
-  if (!norm) return null
-  for (const [key, patterns] of NAME_PATTERNS) {
-    if (anyMatch(norm, patterns)) return key
+  if (!norm) return { key: null, pattern: null, tie: null }
+
+  let key = null, pattern = null, best = 0
+  let tied = []
+  for (const [candidate, list] of NAME_PATTERNS) {
+    for (const pat of list) {
+      if (!norm.includes(pat)) continue
+      if (pat.length > best) {
+        key = candidate; pattern = pat; best = pat.length; tied = [candidate]
+      } else if (pat.length === best && !tied.includes(candidate)) {
+        tied.push(candidate)
+      }
+    }
   }
-  return null
+  if (tied.length > 1) return { key: null, pattern: null, tie: tied }
+  return { key, pattern, tie: null }
+}
+
+export function nameMatchKey(rawName) {
+  return nameMatch(rawName).key
 }
 
 // ── Classification ───────────────────────────────────────────────────────────
@@ -363,76 +508,51 @@ export function classifyAmount(amount, rawName, paymentProvider = null) {
   const amt = Number(amount)
 
   // ── 0. IS THIS A SALE AT ALL? ────────────────────────────────────────────
-  // Asked before anything else, so no future name pattern or price entry can
-  // quietly swallow a manual grant and turn an opened door into revenue.
-  const admin = adminAccessVerdict(amt, rawName, paymentProvider)
-  if (admin.grant) {
+  // Asked before anything else, so no name pattern can swallow an emptied
+  // cart or a manual grant and turn it into revenue with a cost attached.
+  const nonSale = nonSaleVerdict(amt, rawName, paymentProvider)
+  if (nonSale.category) {
     return {
-      productKey: null, scope: null, bucket: 'ADMIN_ACCESS', qty: 1, margin: null,
-      matchedBy: admin.evidence, conflict: null, failedField: null,
-      adminAccess: true,
+      productKey: null, scope: null, bucket: 'NON_SALE', qty: 1, margin: null,
+      matchedBy: nonSale.evidence, conflict: null, failedField: null,
+      nonSaleCategory: nonSale.category,
     }
   }
-  if (admin.reason) {
+  if (nonSale.reason) {
     return {
       productKey: null, scope: null, bucket: 'UNMAPPED', qty: null, margin: null,
-      matchedBy: null, conflict: null, failedField: admin.reason,
+      matchedBy: null, conflict: null, failedField: nonSale.reason,
     }
   }
 
-  const nameKey = nameMatchKey(rawName)
-  const candidates = PRICE_TO_PRODUCTS[amt] ?? []
+  // ── THE NAME IS THE ONLY KEY ─────────────────────────────────────────────
+  const match = nameMatch(rawName)
 
-  // ── 1. THE NAME DECIDES ──────────────────────────────────────────────────
-  // A name match is the strongest signal there is: it says which product was
-  // bought, not merely which products cost that much. The price then either
-  // agrees, or is recorded as a conflict and the NAME still wins.
-  if (nameKey) {
-    const priceAgrees = candidates.includes(nameKey)
-    if (priceAgrees) return decide(nameKey, amt, `name + price ${amt}`, null)
-
-    // There used to be a branch here for one product sold at two price points
-    // (Cogni promo 399 / regular 499), where the name reached the family and
-    // only the price could pick the member. Cogni is gone and nothing else in
-    // the catalog has that shape, so the branch was unreachable and is
-    // removed rather than kept as scenery. If a product ever does sell at two
-    // prices under one name, this is where that exception belongs — and it
-    // belongs listed explicitly, never inferred.
-
-    // The name wins and the disagreement is recorded, not resolved
-    // in the price's favour. A Wix name is edited by hand but it still says
-    // which product was bought; a price shared by two products does not.
-    const conflict = candidates.length > 0
-      ? { priceProduct: candidates[0], priceAmount: amt, nameProduct: nameKey }
-      : null
-    return decide(nameKey, amt, 'name', conflict)
-  }
-
-  // ── 2. THE PRICE STANDS IN, but only when it is unambiguous ──────────────
-  const sole = soleProductAtPrice(amt)
-  if (sole) {
-    return decide(sole, amt, 'amount', null)
-  }
-
-  // ── 3. A SHARED PRICE AND NO NAME IS NOT A GUESS ─────────────────────────
-  if (candidates.length > 1) {
-    const names = candidates.map(k => PRODUCTS[k].displayName).join(', ')
+  if (match.tie) {
+    // Two products matched equally well. Picking one would be a coin flip,
+    // and a coin flip is how every Perfect Student Online sale spent four
+    // months being reported as Cogni.
+    const names = match.tie.map(k => PRODUCTS[k].displayName).join(', ')
     return {
       productKey: null, scope: null, bucket: 'UNMAPPED', qty: null, margin: null,
       matchedBy: null, conflict: null,
-      failedField: `kolizja ceny: ${amt} PLN pasuje do ${candidates.length} produktów `
-        + `(${names}), a nazwa "${String(rawName ?? '').slice(0, 40)}" nie rozstrzygnęła`,
-      priceCollision: candidates,
+      failedField: `kolizja nazwy: "${String(rawName ?? '').slice(0, 50)}" pasuje `
+        + `jednakowo dobrze do ${match.tie.length} produktów (${names}) — nie zgaduję`,
+      nameCollision: match.tie,
     }
   }
 
-  // ── 4. nothing matched ───────────────────────────────────────────────────
+  if (match.key) return decide(match.key, amt, `name "${match.pattern}"`, null)
+
+  // Nothing matched. The amount is reported because it is useful context, but
+  // it played no part in the decision and must never start playing one.
   return {
     productKey: null, scope: null, bucket: 'UNMAPPED', qty: null, margin: null,
     matchedBy: null, conflict: null,
     failedField: normalizeText(rawName)
-      ? `amount (${amt} PLN not in PRICE_TO_PRODUCTS) + product_name_raw (no pattern match)`
-      : `amount (${amt} PLN not in PRICE_TO_PRODUCTS) + product_name_raw (empty)`,
+      ? `product_name_raw nie pasuje do żadnego wzorca w katalogu `
+        + `(kwota ${amt} zł jest tylko kontekstem — cena nie klasyfikuje)`
+      : `product_name_raw puste (kwota ${amt} zł nie wystarcza — cena nie klasyfikuje)`,
   }
 }
 
@@ -679,8 +799,45 @@ export function assertCatalogIsComplete() {
   }
 }
 
-// The catalog checks itself on load. A price shared by products that cannot be
-// told apart by name, or an entry that neither states its margin nor admits it
-// does not know it, is a build failure rather than a runtime surprise.
-assertCatalogIsResolvable()
+/**
+ * Startup check: no two products can be told apart only by price.
+ *
+ * After PRICE_TO_PRODUCTS was deleted this is close to a tautology — there is
+ * no price path left, so nothing CAN rely on one. The test is kept anyway,
+ * stated as a property rather than an absence: it fails if a price map ever
+ * reappears, and it fails if two entries share a name pattern, which is the
+ * same ambiguity moved to the only key that is left.
+ */
+export function assertNoPriceOnlyProducts() {
+  const problems = []
+
+  // Every product must be reachable by name. One that is not could only ever
+  // be selected by its price, which is exactly what is forbidden.
+  const named = new Set(NAME_PATTERNS.map(([key]) => key))
+  for (const key of Object.keys(PRODUCTS)) {
+    if (!named.has(key)) problems.push(`${key}: no name pattern — unreachable except by price`)
+  }
+
+  // A pattern owned by two products is ambiguous for every order that matches
+  // it, and the only tiebreaker left would be the price.
+  const owner = new Map()
+  for (const [key, patterns] of NAME_PATTERNS) {
+    for (const pat of patterns) {
+      if (owner.has(pat) && owner.get(pat) !== key) {
+        problems.push(`pattern "${pat}" is claimed by both ${owner.get(pat)} and ${key}`)
+      }
+      owner.set(pat, key)
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new Error('productCatalog: a product would depend on its price\n  ' + problems.join('\n  '))
+  }
+}
+
+// The catalog checks itself on load. A product reachable only by price, a
+// pattern two products both claim, or an entry that neither states its margin
+// nor admits it does not know it — each is a build failure rather than a
+// runtime surprise.
+assertNoPriceOnlyProducts()
 assertCatalogIsComplete()

@@ -33,11 +33,11 @@ export interface DailySeriesDay extends DaySeriesEntry {
   /** Rows the test-order floor removed on this day. */
   belowFloor?: { orders: number; revenue: number }
   /**
-   * Manual access grants on this day — 1 PLN, operator Offline, somebody let
-   * into a course they paid for elsewhere. A count only: these have no sale
-   * value, so attaching an amount would invent one.
+   * Rows on this day that were never sales, counted per category:
+   * `empty_cart`, `lead_magnet`, `admin_access`. Counts only — these have no
+   * sale value, so attaching an amount would invent one.
    */
-  adminAccess?: number
+  nonSale?: Record<string, number>
 }
 
 export interface OrdersData {
@@ -84,7 +84,7 @@ export interface OrdersData {
     products?: DailySeriesDay['products']
     unmappedNames?: DailySeriesDay['unmappedNames']
     belowFloor?: { orders: number; revenue: number }
-    adminAccess?: number
+    nonSale?: Record<string, number>
   }
   /** Creation timestamps of the last 14 days, for the sync-health detector. */
   recentCreatedAt?: string[]
@@ -94,6 +94,20 @@ export interface OrdersData {
   recordStartsOn?: string | null
   /** Orders at or below this amount are test orders and are not counted. */
   orderMinAmount?: number
+  /** Every .sql in supabase/migrations/ and whether the database has it. */
+  migrations?: Array<{
+    file: string
+    applied: boolean
+    appliedAt: string | null
+    note: string | null
+  }>
+  /**
+   * True when public.applied_migrations itself is absent. Separate from the
+   * rows, because "no register" and "nothing applied" look the same from the
+   * rows and mean completely different things.
+   */
+  migrationRegisterMissing?: boolean
+  migrationRegisterError?: string | null
   error?: string
 }
 
