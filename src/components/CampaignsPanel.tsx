@@ -153,12 +153,19 @@ function SpendBarChart({ campaigns }: { campaigns: CampaignEntry[] }) {
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--muted2)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '10px' }}>
         Spend Distribution
       </div>
+      {/* A row Meta reported per campaign carries no creative. Marked, not
+          silently shown as if `ad_name` were an ad — see CampaignEntry.granularity. */}
       {campaigns.map(c => (
         <div key={c.campaign_id + c.ad_name} style={{ marginBottom: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text2)',
               maxWidth: '55%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {c.ad_name}
+              {c.granularity === 'campaign' && (
+                <span style={{ color: 'var(--muted2)', fontStyle: 'italic' }}>
+                  {' '}· dane na poziomie kampanii, bez podziału na reklamy
+                </span>
+              )}
             </span>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted)' }}>
               {c.spend.toFixed(0)} PLN
@@ -211,6 +218,11 @@ function CampaignTable({ campaigns }: { campaigns: CampaignEntry[] }) {
             <tr key={c.campaign_id + c.ad_name + i}>
               <td style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)' }}>
                 {c.ad_name}
+                {c.granularity === 'campaign' && (
+                  <span style={{ color: 'var(--muted2)', fontStyle: 'italic' }}>
+                    {' '}· poziom kampanii
+                  </span>
+                )}
               </td>
               <td><ScopeTag scope={c.funnelScope} /></td>
               <td style={{ textAlign: 'right', color: c.spendShare > 0.5 ? 'var(--orange)' : 'var(--text2)' }}>

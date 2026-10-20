@@ -171,14 +171,14 @@ INSERT INTO public.applied_migrations (filename)
 
 SELECT date, ad_id, count(*) AS copies
 FROM meta_ads_daily
-WHERE ad_id IS NOT NULL
+WHERE ad_id IS NOT NULL AND length(trim(ad_id)) > 0
 GROUP BY date, ad_id
 HAVING count(*) > 1
 ORDER BY copies DESC, date DESC;
 
 CREATE UNIQUE INDEX IF NOT EXISTS meta_ads_daily_date_ad_id_uniq
   ON meta_ads_daily (date, ad_id)
-  WHERE ad_id IS NOT NULL;
+  WHERE ad_id IS NOT NULL AND length(trim(ad_id)) > 0;
 
 SELECT indexname, indexdef
 FROM pg_indexes

@@ -30,6 +30,15 @@ export interface CampaignEntry {
   campaign_id: string
   campaign_name: string
   ad_name: string        // ad_name when available, falls back to campaign_name
+  /**
+   * Whether Meta reported this row per ad or per campaign.
+   *
+   * Four rows — 2026-06-12 and 2026-06-13, two campaigns each — predate the
+   * move to ad granularity and carry no ad_id or ad_name. Their spend is real.
+   * Without this field the panel shows `ad_name` falling back to the campaign
+   * name and the reader cannot tell a creative from a whole campaign.
+   */
+  granularity: 'ad' | 'campaign'
   date: string
   spend: number
   purchases: number
@@ -146,6 +155,16 @@ export function buildCampaignDiagnosis(
     const purchaseShare = totalPurchases > 0 ? purchases / totalPurchases : 0
     const campaignName = r.campaign_name ?? r.campaign_id ?? '?'
     const adName = r.ad_name && r.ad_name !== r.campaign_name ? r.ad_name : campaignName
+    // Trust the server when it says; otherwise read it off the row. An empty
+    // string is as absent as null — it is what these rows actually carry.
+    const granularity: 'ad' | 'campaign' = (r as { granularity?: string }).granularity === 'campaign'
+      ? 'campaign'
+      : (r as { granularity?: string }).granularity === 'ad'
+        ? 'ad'
+        : (String((r as { ad_id?: string }).ad_id ?? '').trim() !== ''
+           || String(r.ad_name ?? '').trim() !== '')
+          ? 'ad'
+          : 'campaign'
     // Scope from ad AND campaign name (a 3T ad may sit under a language campaign).
     const scope = classifyCampaignScope(`${r.ad_name ?? ''} ${r.campaign_name ?? ''}`)
     // Funnel scope by PREFIX — drives CPA thresholds, the efficient/expensive verdict
@@ -155,6 +174,7 @@ export function buildCampaignDiagnosis(
       campaign_id:        r.campaign_id    ?? '',
       campaign_name:      campaignName,
       ad_name:            adName,
+      granularity,
       date:               r.date           ?? usedDate,
       spend,
       purchases,

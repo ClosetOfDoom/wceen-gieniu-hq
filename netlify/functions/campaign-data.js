@@ -53,6 +53,24 @@ export const handler = async (event) => {
     }
   }
 
+/**
+ * Was this row reported per ad, or per campaign?
+ *
+ * Four rows in meta_ads_daily have no ad_id and no ad_name: 2026-06-12 and
+ * 2026-06-13, two campaigns each. They come from the period when the ingest
+ * pulled Meta at CAMPAIGN granularity, before it moved to ad granularity, and
+ * they are the two earliest days in the table. The spend on them is real.
+ *
+ * The dashboard shows creatives, so a day like that would otherwise look like
+ * a day whose ads all vanished. Saying which granularity a row carries lets
+ * the panel say "campaign level, no ad breakdown" instead of showing a gap
+ * that is not there.
+ */
+const rowGranularity = (r) =>
+  String(r?.ad_id ?? '').trim() !== '' || String(r?.ad_name ?? '').trim() !== ''
+    ? 'ad'
+    : 'campaign'
+
   const today = businessToday()
 
   // ── Range mode: /campaign-data?from=YYYY-MM-DD&to=YYYY-MM-DD ───────────────
@@ -81,6 +99,7 @@ export const handler = async (event) => {
         campaign_id: r.campaign_id ?? null,
         campaign_name: r.campaign_name ?? null,
         ad_name: r.ad_name ?? null,
+        granularity: rowGranularity(r),
         spend: 0, impressions: 0, clicks: 0, link_clicks: 0,
         meta_purchases: 0, meta_purchase_value: 0,
       }
@@ -93,6 +112,11 @@ export const handler = async (event) => {
       map.set(key, g)
     }
     const datesPresent = [...dates].sort()
+    // Dates on which Meta was pulled per campaign. Reported as a list, not a
+    // flag: a range can be half one granularity and half the other.
+    const campaignLevelDates = [...new Set(
+      raw.filter(r => rowGranularity(r) === 'campaign' && r.date).map(r => r.date),
+    )].sort()
     const aggRows = [...map.values()]
       .map(g => ({ ...g, date: datesPresent[datesPresent.length - 1] ?? to }))
       .sort((a, b) => b.spend - a.spend)
@@ -108,6 +132,7 @@ export const handler = async (event) => {
         rangeFrom: from,
         rangeTo: to,
         datesPresent,
+        campaignLevelDates,
         rawRowCount: raw.length,
         sourceTable: 'meta_ads_daily',
         aggregateMetaSpendExists: aggRows.length > 0,
