@@ -85,6 +85,21 @@ export interface ProfitData {
   /** Orders whose UTC day differs from their Warsaw day (daily-view mismatch). */
   dayBoundaryOrders?: number
   excludedBreakdown?: ExcludedBreakdownItem[]
+  /**
+   * Products recognised by name whose margin is not known. Shown in PRODUKTY
+   * with their revenue and a named gap where the margin would be — NOT folded
+   * into productBreakdown, which is the mapped-and-costed set.
+   */
+  unknownMarginBreakdown?: Array<{
+    productKey: string
+    displayName: string
+    scope: 'memory' | 'language' | 'other'
+    catalogPrice: number | null
+    orders: number
+    units: number
+    revenue: number
+    marginUnknownReason: string
+  }>
   // Blended = everything except the exclusions. Profit, CPA and ROAS run on
   // these, so one 3450 PLN camp deposit cannot invent a day's ROAS.
   blendedOrdersCount?: number

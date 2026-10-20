@@ -211,7 +211,8 @@ function productsSection(i: ReportInput): string {
   // figure. Where the two differ, the catalog margin is stated underneath rather
   // than quietly dropped.
   const discounted: string[] = []
-  const table = breakdown.length === 0
+  const unknownMargin = d.unknownMarginBreakdown ?? []
+  const table = breakdown.length === 0 && unknownMargin.length === 0
     ? ['(brak zmapowanych zamówień w tym zakresie)']
     : [
         '| produkt | cena | szt. | przychód | marża/szt. | marża razem | scope |',
@@ -229,6 +230,14 @@ function productsSection(i: ReportInput): string {
             + `| ${money(perUnit)} `
             + `| ${money(p.marginTotal)} | ${p.scope ?? 'BRAK'} |`
         }),
+        // Recognised products whose margin nobody knows. They belong in this
+        // table — the sale happened, the revenue is real — but with the gap
+        // named where the margin would be. Printing 0,00 PLN there would read
+        // as "this product earns nothing", which is a different claim.
+        ...unknownMargin.map(p =>
+          `| ${p.displayName} | ${p.catalogPrice != null ? money(p.catalogPrice) : 'BRAK'} `
+          + `| ${int(p.units || p.orders)} | ${money(p.revenue)} `
+          + `| MARŻA NIEZNANA | MARŻA NIEZNANA | ${p.scope ?? 'BRAK'} |`),
       ]
 
   // Two DIFFERENT states, never merged: a gap somebody has to close, and a
@@ -257,11 +266,19 @@ function productsSection(i: ReportInput): string {
       + 'poza przychodem, CPA i ROAS.'
     : '- DOSTĘP ADMINISTRACYJNY: brak'
 
+  // The gap is named by the product, so the reader knows what to go and ask
+  // for rather than being told the shape of a bug.
+  const gaps = unknownMargin.length > 0
+    ? ['', 'MARŻA NIEZNANA — przychód liczony, marża pominięta:',
+       ...unknownMargin.map(p => `  - ${p.displayName}: ${int(p.units || p.orders)} szt., `
+         + `${money(p.revenue)} przychodu — ${p.marginUnknownReason}`)]
+    : []
+
   const notes = discounted.length > 0
     ? ['', 'Marża zrealizowana ≠ katalogowa:', ...discounted]
     : []
 
-  return [...head, ...table, ...notes, '', unmapped, excluded, adminAccess].join('\n')
+  return [...head, ...table, ...gaps, ...notes, '', unmapped, excluded, adminAccess].join('\n')
 }
 
 function campaignsSection(i: ReportInput): string {

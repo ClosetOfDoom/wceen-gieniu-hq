@@ -112,6 +112,11 @@ export const handler = async (event) => {
   const ambiguousOrders = []
   const excludedOrders = []
   const excludedAccum = {}
+  // Products that WERE recognised but whose margin nobody knows. Kept in their
+  // own accumulator, not folded into productAccum: the product belongs in the
+  // PRODUKTY table with its revenue, but its orders must not be counted among
+  // the mapped ones or every bucket total would double-count them.
+  const unknownMarginAccum = {}
   const conflicts = []
   const debugOrders = []
 
@@ -193,6 +198,17 @@ export const handler = async (event) => {
       unknownMarginRevenue += order.revenue
       unknownMarginOrdersCount++
       unknownMarginOrders.push({ ...dbgBase, product: PRODUCTS[d.productKey].displayName, failed_field: d.failedField })
+      if (!unknownMarginAccum[d.productKey]) {
+        const p = PRODUCTS[d.productKey]
+        unknownMarginAccum[d.productKey] = {
+          productKey: d.productKey, displayName: p.displayName, scope: p.scope,
+          catalogPrice: p.catalogPrice, orders: 0, units: 0, revenue: 0,
+          marginUnknownReason: p.marginUnknownReason ?? d.failedField,
+        }
+      }
+      unknownMarginAccum[d.productKey].orders++
+      unknownMarginAccum[d.productKey].units += d.qty ?? 1
+      unknownMarginAccum[d.productKey].revenue += order.revenue
       dbg({ qty: d.qty, margin: 0 })
       continue
     }
@@ -336,6 +352,10 @@ export const handler = async (event) => {
       excludedOrdersCount,
       excludedRevenue,
       excludedBreakdown: Object.values(excludedAccum),
+      // Recognised products with no margin. They belong in the PRODUKTY table
+      // — the sale happened and the revenue is real — but with the margin
+      // columns showing the named gap rather than a number.
+      unknownMarginBreakdown: Object.values(unknownMarginAccum),
       excludedOrders,
       conflictsCount: conflicts.length,
       conflicts,
