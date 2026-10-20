@@ -137,6 +137,35 @@ export function countsAsOrder(amount) {
   return Number(amount) > ALERT_RULES.ORDER_MIN_AMOUNT_PLN
 }
 
+// ── A STATE IS NOT AN EVENT ─────────────────────────────────────────────────
+//
+// The one place that decides which alarms are allowed to interrupt somebody.
+// Not a condition repeated in the panel, the digest and Stanley's context —
+// those three would drift, and the drift would show up as the dashboard and
+// Stanley disagreeing about whether anything is wrong.
+//
+// AMBER IS A STATE. amberBelow is p25 of the rolling-7 distribution, so by
+// construction it is true about a quarter of the time — measured 23.1% over
+// the 130 days to 2026-10-19. Something that is true 30 days out of 130 is a
+// description of where the business sits, not news. Shown as colour on the
+// tile and as a row in the table, it is useful. Written into the day's
+// summary, or said out loud by Stanley, it is noise that trains people to
+// stop reading the summary — and then the red that matters arrives into a
+// habit of ignoring it.
+//
+// RED IS AN EVENT. p10 of the same distribution, three days running for the
+// rolling rule, or two consecutive days at or under 5 orders. Those are rare
+// and worth saying out loud.
+//
+// Changing which severities interrupt is a one-line change HERE. Nothing in
+// the UI gets its own opinion.
+export const NOTIFYING_SEVERITIES = ['red']
+
+/** Does this alarm get to interrupt somebody, or is it only a colour? */
+export function isNotifying(a) {
+  return NOTIFYING_SEVERITIES.includes(a?.severity)
+}
+
 // ── shapes ───────────────────────────────────────────────────────────────────
 //
 // `series` is always an array of FULL Warsaw days, oldest first:
@@ -512,7 +541,12 @@ export function evaluateAlerts({ series = [], cpa = null, cpaRolling7 = null, ro
   ]
   return {
     all,
+    // Everything that is not green. Drives COLOUR — tiles, table rows — and
+    // nothing else, because amber lives in here.
     active: all.filter(a => a.severity === 'red' || a.severity === 'amber'),
+    // Everything allowed to interrupt: the day's summary, Stanley's context,
+    // "what needs attention". See NOTIFYING_SEVERITIES.
+    notifying: all.filter(isNotifying),
     refusals: all.filter(a => a.values?.refusal),
     worst: all.some(a => a.severity === 'red') ? 'red'
          : all.some(a => a.severity === 'amber') ? 'amber' : 'none',

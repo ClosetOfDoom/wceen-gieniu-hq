@@ -26,7 +26,7 @@ import {
   daysInMonthOf, PP_ORDERS_TARGET,
 } from './lib/goalProgress'
 import { businessHoursSinceMidnight, businessToday } from './lib/businessDay'
-import { evaluateAlerts, todayContext, ALERT_RULES } from './lib/alerts'
+import { evaluateAlerts, todayContext, ALERT_RULES, isNotifying } from './lib/alerts'
 import { countOrdersInWindow, assessSyncHealth, SYNC_BACKLOG_DETECTOR_ACTIVE } from './lib/orderWindow'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
@@ -1073,7 +1073,10 @@ export default function App() {
     const latestMetaDate = ads[0]?.date ?? trend.find(r => r.meta_spend > 0)?.date ?? '—'
     const latestWixDate  = trend[0]?.date ?? '—'
     return {
-      alerts: alerts.all.map(a => ({ severity: a.severity, rule: a.rule, message: a.message })),
+      // Only alarms allowed to interrupt. Amber is a state the tiles already
+      // show; having Stanley volunteer it on a quarter of all days is how a
+      // briefing becomes something people stop listening to.
+      alerts: alerts.notifying.map(a => ({ severity: a.severity, rule: a.rule, message: a.message })),
       todayKPIs: perf ? {
         wix_orders: perf.wix_orders,
         wix_revenue: perf.wix_revenue,
@@ -1748,13 +1751,18 @@ export default function App() {
                       Alarmy · pełne doby
                     </div>
 
-                    {alerts.active.length === 0 ? (
+                    {/* RED ONLY. Amber is a state, not an event — it is true about a
+                        quarter of the time by construction, so putting it here would
+                        make this panel permanently non-empty and stop anyone reading
+                        it. See NOTIFYING_SEVERITIES in netlify/shared/alertRules.js;
+                        the split lives there, not in this file. */}
+                    {alerts.notifying.length === 0 ? (
                       <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--emerald)' }}>
                         Brak aktywnych alarmów.
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {alerts.active.map((a, i) => (
+                        {alerts.notifying.map((a, i) => (
                           <div
                             key={`${a.rule}-${i}`}
                             style={{
@@ -1771,6 +1779,20 @@ export default function App() {
                       </div>
                     )}
 
+                    {/* Amber, said quietly and NOT as something to act on. Without
+                        this an amber tile has no explanation anywhere; with it as an
+                        alarm above, the panel would never be empty. */}
+                    {alerts.active.filter(a => !isNotifying(a)).length > 0 && (
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--muted2)', marginTop: '12px', lineHeight: 1.6 }}>
+                        STAN (nie wymaga reakcji):
+                        {alerts.active.filter(a => !isNotifying(a)).map((a, i) => (
+                          <div key={`state-${i}`} style={{ marginTop: 4 }}>
+                            <b>{a.rule}</b> — {a.message}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     {/* The in-progress day: where it sits, with no verdict. */}
                     {todayCtx && (
                       <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--muted2)', marginTop: '12px', lineHeight: 1.6 }}>
@@ -1779,7 +1801,7 @@ export default function App() {
                     )}
 
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: 'var(--muted2)', marginTop: '10px', lineHeight: 1.6 }}>
-                      Progi z pomiaru 2026-10-03 · 114 pełnych dób od 2026-06-11 · zamówienia &gt; {ALERT_RULES.ORDER_MIN_AMOUNT_PLN} zł.
+                      Progi z pomiaru 2026-10-20 · 130 pełnych dób od 2026-06-12 · zamówienia &gt; {ALERT_RULES.ORDER_MIN_AMOUNT_PLN} zł · po deduplikacji 15-20.08.
                       Statyczne: krocząca percentyla spada razem ze sprzedażą, więc powolny zjazd nigdy by nie odpalił alarmu.
                       Przeliczanie ręczne, raz na kwartał (<code>npm run alerts</code>).
                     </div>

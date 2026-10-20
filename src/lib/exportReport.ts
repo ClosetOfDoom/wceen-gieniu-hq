@@ -245,11 +245,23 @@ function productsSection(i: ReportInput): string {
     ? `- WYKLUCZONE (WSZTP, poza blended): ${int(excl)} zamówień, ${money(d.excludedRevenue)}`
     : '- WYKLUCZONE (WSZTP, poza blended): brak'
 
+  // A third state, and the reason it gets its own line: these were being
+  // reported as "odcięte progiem", which says a sale nearly happened. Nothing
+  // nearly happened — somebody was let into a course they had already paid for
+  // elsewhere. No amount is printed, because assigning one (even the catalog
+  // price of the course) would turn an opened door into revenue.
+  const grants = d.adminAccessOrdersCount ?? 0
+  const adminAccess = grants > 0
+    ? `- DOSTĘP ADMINISTRACYJNY: ${int(grants)} szt. — ręczne nadania dostępu do kursu `
+      + 'dla osób, które zapłaciły poza sklepem. Nie sprzedaż: bez kwoty, bez marży, '
+      + 'poza przychodem, CPA i ROAS.'
+    : '- DOSTĘP ADMINISTRACYJNY: brak'
+
   const notes = discounted.length > 0
     ? ['', 'Marża zrealizowana ≠ katalogowa:', ...discounted]
     : []
 
-  return [...head, ...table, ...notes, '', unmapped, excluded].join('\n')
+  return [...head, ...table, ...notes, '', unmapped, excluded, adminAccess].join('\n')
 }
 
 function campaignsSection(i: ReportInput): string {

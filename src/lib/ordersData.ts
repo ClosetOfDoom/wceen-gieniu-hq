@@ -32,6 +32,12 @@ export interface DailySeriesDay extends DaySeriesEntry {
   unmappedNames?: Array<{ name: string; amount: number; failedField?: string | null }>
   /** Rows the test-order floor removed on this day. */
   belowFloor?: { orders: number; revenue: number }
+  /**
+   * Manual access grants on this day — 1 PLN, operator Offline, somebody let
+   * into a course they paid for elsewhere. A count only: these have no sale
+   * value, so attaching an amount would invent one.
+   */
+  adminAccess?: number
 }
 
 export interface OrdersData {
@@ -78,6 +84,7 @@ export interface OrdersData {
     products?: DailySeriesDay['products']
     unmappedNames?: DailySeriesDay['unmappedNames']
     belowFloor?: { orders: number; revenue: number }
+    adminAccess?: number
   }
   /** Creation timestamps of the last 14 days, for the sync-health detector. */
   recentCreatedAt?: string[]

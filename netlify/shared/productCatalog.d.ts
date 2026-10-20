@@ -35,7 +35,10 @@ export function normalizeText(s: unknown): string
 export function isShippingLine(rawName: unknown): boolean
 export function nameMatchKey(rawName: unknown): ProductKey | null
 
-export type Bucket = 'MAPPED' | 'EXCLUDED' | 'UNKNOWN_MARGIN' | 'AMBIGUOUS' | 'UNMAPPED'
+export type Bucket =
+  | 'MAPPED' | 'EXCLUDED' | 'UNKNOWN_MARGIN' | 'AMBIGUOUS' | 'UNMAPPED'
+  /** A manual access grant: 1 PLN, operator Offline. Not a sale at all. */
+  | 'ADMIN_ACCESS'
 
 export interface Decision {
   productKey: ProductKey | null
@@ -54,9 +57,30 @@ export interface Decision {
   priceCollision?: ProductKey[]
   /** Why the product is out of the blended figures. Only on EXCLUDED. */
   excludedReason?: string
+  /** Set on ADMIN_ACCESS. No revenue, no margin, no product — an opened door. */
+  adminAccess?: boolean
 }
 
-export function classifyAmount(amount: number, rawName?: unknown): Decision
+/**
+ * @param paymentProvider Wix's "Operator płatności". Null means UNKNOWN, which
+ *   is deliberately not the same as "not Offline" — see ADMIN_ACCESS.
+ */
+export function classifyAmount(
+  amount: number, rawName?: unknown, paymentProvider?: unknown,
+): Decision
+
+/** The manual-access-grant category, declared in one place. */
+export const ADMIN_ACCESS: {
+  maxAmount: number
+  operator: string
+  grantName: string
+}
+
+export function adminAccessVerdict(
+  amount: number, rawName: unknown, provider: unknown,
+): { grant: true; evidence: string } | { grant: false; reason: string | null }
+
+export function extractPaymentProvider(row: Record<string, unknown> | null | undefined): string | null
 
 export interface AggregatedOrder {
   orderId: string
@@ -68,6 +92,8 @@ export interface AggregatedOrder {
   shippingAmount: number
   productNameRaw: string | null
   email: string
+  /** Wix's payment operator, or null when this system cannot know it. */
+  paymentProvider: string | null
   lineCount: number
   shippingLineCount: number
   raw: Array<Record<string, unknown>>

@@ -310,6 +310,10 @@ export function buildMemoryBundleAnswer(
       lines.push(`   ${u.amount.toFixed(2)} PLN — "${String(u.name).replace(/\n/g, ' / ').slice(0, 64)}"`)
     }
   }
+  const grants = orders.todayHourly?.adminAccess ?? 0
+  if (grants > 0) {
+    lines.push('', `Dostęp administracyjny: ${grants} szt. (ręczne nadania, nie sprzedaż).`)
+  }
   const floor = orders.todayHourly?.belowFloor
   if (floor && floor.orders > 0) {
     lines.push('', `Odcięte progiem: ${floor.orders} szt. · ${fmtPln(floor.revenue)} (zamówienia testowe).`)
@@ -2198,6 +2202,15 @@ export function buildOrdersInRangeAnswer(w: OrderWindow | null, label: string): 
       lines.push(`  ${u.amount.toFixed(2)} PLN — "${String(u.name).replace(/\n/g, ' / ').slice(0, 70)}"`)
     }
     if (w.unmappedNames.length > 12) lines.push(`  …+${w.unmappedNames.length - 12} więcej`)
+  }
+
+  // Manual grants and test orders are two different things and get two
+  // different lines. Both used to come out as "odcięte progiem", which told
+  // somebody that a sale had nearly happened when a door had been opened.
+  if (w.adminAccess > 0) {
+    lines.push('', `Dostęp administracyjny: ${w.adminAccess} szt. `
+      + '(ręczne nadania dostępu do kursu dla osób, które zapłaciły poza sklepem — '
+      + 'nie sprzedaż, bez kwoty i bez marży, poza sumami wyżej).')
   }
 
   if (w.belowFloor.orders > 0) {

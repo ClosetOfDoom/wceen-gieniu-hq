@@ -76,4 +76,16 @@ export function evaluateAlerts(input: {
   adDays?: AdDayRow[]
   /** First day `orders` has any row for. Days before it are prehistory. */
   recordStartsOn?: string | null
-}): { all: AlertResult[]; active: AlertResult[]; refusals: AlertResult[]; worst: Severity }
+}): {
+  all: AlertResult[]
+  /** Not green — drives colour only. Amber lives here. */
+  active: AlertResult[]
+  /** Allowed to interrupt: day summary, Stanley, "what needs attention". */
+  notifying: AlertResult[]
+  refusals: AlertResult[]
+  worst: Severity
+}
+
+/** Severities that may interrupt somebody. Amber is deliberately absent. */
+export const NOTIFYING_SEVERITIES: Severity[]
+export function isNotifying(a: AlertResult | null | undefined): boolean

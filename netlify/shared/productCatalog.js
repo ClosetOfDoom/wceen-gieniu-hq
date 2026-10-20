@@ -219,6 +219,115 @@ export function isShippingLine(rawName) {
 //     a bonus is never read as the JSU course.
 //   · WSZTP is matched before the broad 'pamiec' pattern so the high-ticket
 //     product never inherits the PP margin.
+// ── Administrative access grants ────────────────────────────────────────────
+//
+// Somebody paid outside the shop — a transfer, an invoice, a bundle sold in a
+// webinar — and was then let into the "Jak się uczyć" course by hand. Wix
+// records that as a 1 PLN order marked Offline. It is a door being opened, not
+// a transaction: no revenue, no margin, no CPA, no ROAS, no product.
+//
+// Until now these fell out of the dashboard because 1 PLN is under the 5 PLN
+// test-order floor. The floor caught them by accident, and called them
+// "odcięte progiem", which says the wrong thing: nothing was cut off, nothing
+// was nearly a sale. 34 of them happened between June and October.
+//
+// THE AMOUNT ALONE IS NEVER ENOUGH. A real sale at a token price — a 1 PLN
+// trial, a 5 PLN upsell — must not disappear into this category, so a second,
+// independent condition is required on top of the amount.
+export const ADMIN_ACCESS = {
+  /** At or under this, in PLN. A grant is recorded at 1; the floor allows 5. */
+  maxAmount: 5,
+  /** The payment operator Wix stamps on a manual grant. Normalised. */
+  operator: 'offline',
+  /**
+   * The exact product name on every one of the 34 grants seen so far.
+   *
+   * This is the STAND-IN for the operator, used only while `orders` has no
+   * column to put an operator in — see paymentProviderKnown() below. It is an
+   * exact match, not a pattern: "Kurs online Jak się uczyć" is the real course
+   * at 549 PLN and must never land here.
+   */
+  grantName: 'jak sie uczyc',
+}
+
+/**
+ * The payment operator on a row, or null when this system cannot know it.
+ *
+ * `orders` has ten columns and none of them is the operator
+ * (supabase/migrations/20261020_payment_provider.sql adds one; it is not
+ * applied, and Make does not map it yet). Null here means "unknown", which is
+ * deliberately NOT the same as "not Offline".
+ */
+export const extractPaymentProvider = (row) =>
+  row?.payment_provider ?? row?.payment_operator ?? row?.operator ?? null
+
+const providerKnown = (provider) =>
+  provider != null && String(provider).trim() !== ''
+
+/**
+ * Is this row a manual access grant rather than a sale?
+ *
+ * Two necessary conditions, never one. The amount gets a row considered; the
+ * second condition decides, and which second condition applied is recorded in
+ * the verdict so nobody has to guess later which evidence was available.
+ *
+ *   amount ≤ 5  +  operator Offline              → grant  (the real rule)
+ *   amount ≤ 5  +  operator unknown + exact name → grant  (the stand-in)
+ *   amount ≤ 5  +  exact name but operator is X  → NOT a grant, and says why
+ *   amount > 5  +  operator Offline              → NOT a grant, and says why
+ *   anything with neither Offline nor the exact name → not this category's
+ *       business at all; it stays quiet and the ordinary classification runs
+ *
+ * The stand-in exists because the operator is not in the database yet and the
+ * grants are. It is strictly narrower than the amount alone: it also demands
+ * the exact grant name. It disappears by itself the moment Make writes the
+ * operator, because then the operator is known and the first branch decides.
+ *
+ * What the stand-in cannot do: tell a manual grant from a genuine 1 PLN sale
+ * of a product *named exactly* "Jak się uczyć" through a real payment
+ * provider. That has never happened and would need both a new price point and
+ * a renamed product, but it is the gap, and it closes with the migration.
+ */
+export function adminAccessVerdict(amount, rawName, provider) {
+  const amt = Number(amount)
+  const known = providerKnown(provider)
+  const isOffline = known && normalizeText(provider) === ADMIN_ACCESS.operator
+  const cheap = Number.isFinite(amt) && amt <= ADMIN_ACCESS.maxAmount
+  const nameIsGrant = normalizeText(rawName) === ADMIN_ACCESS.grantName
+
+  // Nothing about this row points at the category. Say nothing: the ordinary
+  // classification below has a more useful message than "≤ 5 zł but not a
+  // grant" would be, and an 0 PLN row with no name has no business being told
+  // about a category it was never near.
+  if (!isOffline && !nameIsGrant) return { grant: false, reason: null }
+
+  if (cheap && isOffline) {
+    return { grant: true, evidence: `kwota ${amt} zł ≤ ${ADMIN_ACCESS.maxAmount} + operator Offline` }
+  }
+  if (cheap && !known && nameIsGrant) {
+    return {
+      grant: true,
+      evidence: `kwota ${amt} zł ≤ ${ADMIN_ACCESS.maxAmount} + nazwa dokładnie "${String(rawName).trim()}"`
+        + ' (operatora nie ma w bazie — patrz 20261020_payment_provider.sql)',
+    }
+  }
+  if (cheap && known && !isOffline) {
+    return {
+      grant: false,
+      reason: `kwota ${amt} zł ≤ ${ADMIN_ACCESS.maxAmount}, ale operator to "${String(provider).trim()}", nie Offline `
+        + '— nadanie dostępu wymaga obu warunków, więc tego nie rozstrzygam',
+    }
+  }
+  if (!cheap && isOffline) {
+    return {
+      grant: false,
+      reason: `operator Offline, ale kwota ${amt} zł przekracza ${ADMIN_ACCESS.maxAmount} zł `
+        + '— nadanie dostępu jest zapisywane na 1 zł, więc tego nie rozstrzygam',
+    }
+  }
+  return { grant: false, reason: null }   // nothing to do with this category
+}
+
 const NAME_PATTERNS = [
   ['wsztp',          ['wsztp', 'wakacyjna', 'treningu pamieci', 'szko a treningu']],
   // 'kurs online jak sie uczyc' is how Wix actually writes it — the old
@@ -260,8 +369,27 @@ export function nameMatchKey(rawName) {
 // by the field it broke on rather than by a shrug.
 const QTY_TOLERANCE = 0.15   // within 15% of a whole multiple of the catalog price
 
-export function classifyAmount(amount, rawName) {
+export function classifyAmount(amount, rawName, paymentProvider = null) {
   const amt = Number(amount)
+
+  // ── 0. IS THIS A SALE AT ALL? ────────────────────────────────────────────
+  // Asked before anything else, so no future name pattern or price entry can
+  // quietly swallow a manual grant and turn an opened door into revenue.
+  const admin = adminAccessVerdict(amt, rawName, paymentProvider)
+  if (admin.grant) {
+    return {
+      productKey: null, scope: null, bucket: 'ADMIN_ACCESS', qty: 1, margin: null,
+      matchedBy: admin.evidence, conflict: null, failedField: null,
+      adminAccess: true,
+    }
+  }
+  if (admin.reason) {
+    return {
+      productKey: null, scope: null, bucket: 'UNMAPPED', qty: null, margin: null,
+      matchedBy: null, conflict: null, failedField: admin.reason,
+    }
+  }
+
   const nameKey = nameMatchKey(rawName)
   const candidates = PRICE_TO_PRODUCTS[amt] ?? []
 
@@ -440,6 +568,9 @@ export function aggregateOrders(rows) {
       shippingAmount,
       productNameRaw: kept.map(r => extractProductNameRaw(r)).filter(Boolean).join(' + ') || null,
       email: extractEmail(first),
+      // Null until Make maps it; adminAccessVerdict() treats null as unknown
+      // rather than as "not Offline".
+      paymentProvider: extractPaymentProvider(first),
       lineCount: lines.length,
       shippingLineCount: shippingLines.length,
       raw: kept,
@@ -450,7 +581,7 @@ export function aggregateOrders(rows) {
 
 /** Classify an aggregated order (from aggregateOrders). */
 export function classifyOrder(order) {
-  return classifyAmount(order.productAmount, order.productNameRaw)
+  return classifyAmount(order.productAmount, order.productNameRaw, order.paymentProvider)
 }
 
 // ── Supabase reads ───────────────────────────────────────────────────────────

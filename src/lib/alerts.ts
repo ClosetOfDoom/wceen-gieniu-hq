@@ -18,6 +18,8 @@ export {
   dataGapAlerts,
   todayContext,
   evaluateAlerts,
+  NOTIFYING_SEVERITIES,
+  isNotifying,
 } from '../../netlify/shared/alertRules.js'
 export type {
   Severity, AlertResult, DaySeriesEntry, AdDayRow, TodayContext,

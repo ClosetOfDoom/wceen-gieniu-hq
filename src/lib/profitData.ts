@@ -76,6 +76,12 @@ export interface ProfitData {
   // "N bez mapowania" figure that asks somebody to go and fix something.
   excludedOrdersCount?: number
   excludedRevenue?: number
+  // Manual access grants — 1 PLN, operator Offline, somebody let into a course
+  // they paid for outside the shop. A THIRD state again: not a gap to close
+  // and not a sale deliberately set aside, but something that was never a
+  // transaction. No amount is reported alongside the count on purpose.
+  adminAccessOrdersCount?: number
+  adminAccessRevenue?: number
   /** Orders whose UTC day differs from their Warsaw day (daily-view mismatch). */
   dayBoundaryOrders?: number
   excludedBreakdown?: ExcludedBreakdownItem[]

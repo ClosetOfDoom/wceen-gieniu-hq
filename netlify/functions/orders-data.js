@@ -62,6 +62,11 @@ function buildDailySeries(orders, today, windowDays) {
   const unmappedNamesByDay = new Map()
   // Rows the test-order floor removed. Reported, never silently dropped.
   const belowFloorByDay = new Map()
+  // Manual access grants — 1 PLN, operator Offline. These used to be counted
+  // as "odcięte progiem", which said the wrong thing: the floor caught them by
+  // accident, and nothing about them was nearly a sale. Counted on their own
+  // line, by name, with no amount attached.
+  const adminAccessByDay = new Map()
 
   const bump = (map, date, key, orders_, revenue) => {
     if (!map.has(date)) map.set(date, {})
@@ -75,6 +80,15 @@ function buildDailySeries(orders, today, windowDays) {
     const ts = o.raw[0]?.order_created_at
     const date = ts ? businessDay(ts) : o.orderDate
     if (!date || date < from || date > today) continue
+
+    // Classified BEFORE the floor, because the two questions are different:
+    // "is this a sale" is answered by the catalog, "is this big enough to
+    // count" by the floor. Asking the floor first is what hid the grants.
+    const cls = classifyOrder(o)
+    if (cls.bucket === 'ADMIN_ACCESS') {
+      adminAccessByDay.set(date, (adminAccessByDay.get(date) ?? 0) + 1)
+      continue
+    }
 
     if (!countsAsOrder(o.revenue)) {
       const e = belowFloorByDay.get(date) ?? { orders: 0, revenue: 0 }
@@ -94,11 +108,12 @@ function buildDailySeries(orders, today, windowDays) {
       : 0
     hourlyByDay.get(date)[hour]++
 
-    // The SAME classifier profit-data uses. No second copy, no hardcoded list:
-    // a product added to productCatalog.js shows up here without a code change,
-    // and one that does not match lands in `unmapped` carrying its raw Wix name
-    // rather than being folded into whichever bucket is nearest.
-    const d = classifyOrder(o)
+    // The SAME classifier profit-data uses, and the same call as above — one
+    // classification per order, not two. No second copy, no hardcoded list: a
+    // product added to productCatalog.js shows up here without a code change,
+    // and one that does not match lands in `unmapped` carrying its raw Wix
+    // name rather than being folded into whichever bucket is nearest.
+    const d = cls
     const key = d.productKey ?? 'unmapped'
     bump(productsByDay, date, key, 1, o.revenue)
     if (!d.productKey) {
@@ -132,6 +147,7 @@ function buildDailySeries(orders, today, windowDays) {
       products: productsByDay.get(date) ?? {},
       unmappedNames: unmappedNamesByDay.get(date) ?? [],
       belowFloor: belowFloorByDay.get(date) ?? { orders: 0, revenue: 0 },
+      adminAccess: adminAccessByDay.get(date) ?? 0,
     })
   }
 
@@ -151,6 +167,7 @@ function buildDailySeries(orders, today, windowDays) {
       products: productsByDay.get(today) ?? {},
       unmappedNames: unmappedNamesByDay.get(today) ?? [],
       belowFloor: belowFloorByDay.get(today) ?? { orders: 0, revenue: 0 },
+      adminAccess: adminAccessByDay.get(today) ?? 0,
     },
   }
 }

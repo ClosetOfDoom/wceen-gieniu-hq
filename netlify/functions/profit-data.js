@@ -101,6 +101,12 @@ export const handler = async (event) => {
   let ambiguousRevenue = 0, ambiguousOrdersCount = 0
   let ambiguousMinMargin = 0
   let excludedRevenue = 0, excludedOrdersCount = 0   // WSZTP — out on purpose
+  // Manual access grants: 1 PLN, operator Offline, somebody being let into a
+  // course they paid for elsewhere. Not a sale, so out of every blended
+  // figure — and NOT folded into the no-margin count, because nothing is
+  // missing and nobody has anything to fix.
+  let adminAccessRevenue = 0, adminAccessOrdersCount = 0
+  const adminAccessOrders = []
   const unmappedOrders = []
   const unknownMarginOrders = []
   const ambiguousOrders = []
@@ -110,7 +116,6 @@ export const handler = async (event) => {
   const debugOrders = []
 
   for (const order of orders) {
-    totalRevenue += order.revenue
     const d = classifyOrder(order)
     const dbgBase = {
       order_id:         order.orderId,
@@ -146,6 +151,18 @@ export const handler = async (event) => {
     const dbg = (extra) => {
       if (debug) debugOrders.push({ ...dbgBase, bucket: d.bucket, product: d.productKey, scope: d.scope, matched_by: d.matchedBy, failed_field: d.failedField, ...extra })
     }
+
+    // ADMIN_ACCESS — an opened door, not a transaction. Counted, named, and
+    // kept out of revenue before revenue is even accumulated.
+    if (d.bucket === 'ADMIN_ACCESS') {
+      adminAccessRevenue += order.revenue
+      adminAccessOrdersCount++
+      adminAccessOrders.push({ ...dbgBase, evidence: d.matchedBy })
+      dbg({ qty: 1, margin: 0 })
+      continue
+    }
+
+    totalRevenue += order.revenue
 
     if (d.bucket === 'UNMAPPED') {
       unknownRevenue += order.revenue
@@ -257,8 +274,13 @@ export const handler = async (event) => {
   // ROAS, profit per order — run on the orders the ad spend could plausibly have
   // bought, i.e. everything except the EXCLUDED ones (WSZTP). A single 3450 PLN
   // camp deposit against ~500 PLN of daily spend would otherwise invent a ROAS.
+  //
+  // Administrative grants are subtracted exactly like WSZTP is: they stay in
+  // `ordersCount` so the count still reconciles with the view (which counts
+  // every paid Wix row, 1 PLN ones included), and they are out of everything
+  // that measures the business.
   const ordersCount             = orders.length
-  const blendedOrdersCount      = ordersCount - excludedOrdersCount
+  const blendedOrdersCount      = ordersCount - excludedOrdersCount - adminAccessOrdersCount
   const blendedRevenue          = totalRevenue - excludedRevenue
   const marginBeforeAds         = knownMargin
   const estimatedProfitAfterAds = knownMargin - adSpend
@@ -291,6 +313,11 @@ export const handler = async (event) => {
       dayBoundaryOrders,
       blendedOrdersCount,
       blendedRevenue,
+      // Manual access grants — reported on their own line, never as sales and
+      // never as a gap to fix. See ADMIN_ACCESS in productCatalog.js.
+      adminAccessOrdersCount,
+      adminAccessRevenue,
+      adminAccessOrders,
       orderRowsFetched: rangeRows.length,
       revenue: totalRevenue,
       adSpend,
