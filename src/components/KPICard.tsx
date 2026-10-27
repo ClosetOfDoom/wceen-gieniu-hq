@@ -29,18 +29,86 @@ function valueFontSize(value: string): string {
 // "42%", "12") and count-ups from 0 → target over 700 ms using ease-out cubic.
 // The non-numeric suffix is preserved and appended after the animated number.
 
-function parseNumericValue(value: string): { numeric: number; prefix: string; suffix: string } | null {
+/** Exposed for tests — the parsing is where the Impressions bug lived. */
+export const parseNumericValueForTest = (v: string) => parseNumericValue(v)
+
+function parseNumericValue(value: string):
+  { numeric: number; prefix: string; suffix: string; decimals: number; locale: string } | null {
   if (value === '—' || value === '') return null
-  // Match: optional leading sign, digits, optional decimal, optional trailing non-digit suffix
-  // Handles "1 234.56 PLN", "3.2x", "42%", "12"
-  const m = value.match(/^([^0-9-]*)(-?[\d\s]+(?:[.,]\d+)?)(.*)$/)
+  // Match: optional leading sign, digits, separators, optional trailing suffix.
+  // Handles "1 234,56 PLN", "5,826", "3.2x", "42%", "12".
+  const m = value.match(/^([^0-9-]*)(-?[\d\s.,]*\d)(.*)$/)
   if (!m) return null
   const prefix = m[1] ?? ''
-  const rawNum = (m[2] ?? '').replace(/\s/g, '').replace(',', '.')
-  const numeric = parseFloat(rawNum)
-  if (isNaN(numeric)) return null
+  const numeric = toNumber(m[2] ?? '')
+  if (numeric == null) return null
   const suffix = m[3] ?? ''
-  return { numeric, prefix, suffix }
+  // Show the same number of decimals mid-animation as the final value has,
+  // read off the string rather than guessed from the suffix. The old rule
+  // ("PLN or a dot-two-digits pattern") gave 0 decimals to "2,88×", so a ROAS
+  // counted up to a flat 3.
+  const dec = decimalsOf(m[2] ?? '')
+  return { numeric, prefix, suffix, decimals: dec.count, locale: dec.locale }
+}
+
+/** How many decimals the formatted string shows, and in which convention. */
+function decimalsOf(raw: string): { count: number; locale: string } {
+  const s = raw.replace(/\s/g, '')
+  const lastComma = s.lastIndexOf(',')
+  const lastDot = s.lastIndexOf('.')
+  const sep = lastComma > lastDot ? lastComma : lastDot
+  if (sep < 0) return { count: 0, locale: raw.includes(' ') ? 'pl-PL' : 'en-US' }
+  const after = s.length - sep - 1
+  // Three digits after a lone separator is a thousands group, not decimals.
+  const grouping = after === 3 && s.indexOf(s[sep]) === sep && sep > 0
+  const locale = lastComma > lastDot || raw.includes(' ') ? 'pl-PL' : 'en-US'
+  return { count: grouping ? 0 : after, locale }
+}
+
+/**
+ * A formatted number back into a number, without assuming which separator is
+ * which.
+ *
+ * This used to be `.replace(',', '.')`, which reads every comma as a decimal
+ * point. The Reklamy — kampanie cards format with en-US, so "5,826"
+ * impressions parsed as 5.826 and the count-up animation rendered it with zero
+ * decimals: the card read **6**. The animation restarts on every re-render, so
+ * it never reached the final `setDisplayed(value)` and the wrong number simply
+ * sat there. CPM on the same card was right, because CPM is computed from the
+ * data and only the display went through here.
+ *
+ * The rule: whichever of `.` or `,` appears LAST is the decimal separator, and
+ * a lone separator followed by exactly three digits is a thousands grouping.
+ * That resolves "1,234" (1234), "1,23" (1.23), "1.234,56" (1234.56) and
+ * "1,234.56" (1234.56) the same way a reader would.
+ */
+function toNumber(raw: string): number | null {
+  const s = raw.replace(/\s/g, '')
+  const lastComma = s.lastIndexOf(',')
+  const lastDot = s.lastIndexOf('.')
+  let cleaned: string
+  if (lastComma >= 0 && lastDot >= 0) {
+    // Both present: the later one is the decimal mark, the other groups.
+    cleaned = lastComma > lastDot
+      ? s.replace(/\./g, '').replace(',', '.')
+      : s.replace(/,/g, '')
+  } else if (lastComma >= 0) {
+    // Only commas. Exactly three digits after a single comma = grouping.
+    const after = s.length - lastComma - 1
+    const onlyOne = s.indexOf(',') === lastComma
+    cleaned = (after === 3 && onlyOne && lastComma > 0) || !onlyOne
+      ? s.replace(/,/g, '')
+      : s.replace(',', '.')
+  } else {
+    // Only dots. Same reasoning, mirrored.
+    const after = s.length - lastDot - 1
+    const onlyOne = s.indexOf('.') === lastDot
+    cleaned = lastDot >= 0 && ((after === 3 && onlyOne && lastDot > 0) || !onlyOne)
+      ? s.replace(/\./g, '')
+      : s
+  }
+  const n = parseFloat(cleaned)
+  return Number.isFinite(n) ? n : null
 }
 
 function easeOutCubic(t: number): number {
@@ -70,11 +138,10 @@ function AnimatedNumber({ value }: { value: string }) {
       const eased = easeOutCubic(t)
       const current = numeric * eased
 
-      // Format the number to match original decimal places
-      const decimals = (parsed!.suffix.trimStart().startsWith('PLN') || /\.\d{2}/.test(value)) ? 2 : 0
-      const formatted = current.toLocaleString('en-US', {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
+      // Same shape as the final value — decimals and locale both read off it.
+      const formatted = current.toLocaleString(parsed!.locale, {
+        minimumFractionDigits: parsed!.decimals,
+        maximumFractionDigits: parsed!.decimals,
       })
       setDisplayed(prefix + formatted + suffix)
 

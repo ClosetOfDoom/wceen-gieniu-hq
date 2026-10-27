@@ -737,6 +737,15 @@ export default function App() {
 
   // Per-range campaign rows for the campaign inspector dropdown.
   const [campaignRows, setCampaignRows] = useState<MetaAdDaily[]>([])
+  /**
+   * Ungrouped ad rows with their real dates — what the alarm rules read.
+   *
+   * campaignRows is grouped per creative and every group carries the window's
+   * LAST date, so filtering it by day answers nothing. The reach refusal did
+   * exactly that and reported "3 wierszy" for TYDZIEŃ and "0 wierszy" for
+   * MIESIĄC, a range that contains that week.
+   */
+  const [campaignDailyRows, setCampaignDailyRows] = useState<MetaAdDaily[]>([])
   const [campaignRowsLoading, setCampaignRowsLoading] = useState(true)
   // Kept so the exported report can say WHY there are no campaign rows rather
   // than printing an empty section that reads like "no spend".
@@ -744,8 +753,15 @@ export default function App() {
   useEffect(() => {
     setCampaignRowsLoading(true)
     fetchCampaignRows(rangeDates(range))
-      .then(r => { setCampaignRows(r.rows); setCampaignFetchError(r.fetchError ?? null) })
-      .catch(e => { setCampaignRows([]); setCampaignFetchError(String(e?.message ?? e)) })
+      .then(r => {
+        setCampaignRows(r.rows)
+        setCampaignDailyRows(r.dailyRows ?? [])
+        setCampaignFetchError(r.fetchError ?? null)
+      })
+      .catch(e => {
+        setCampaignRows([]); setCampaignDailyRows([])
+        setCampaignFetchError(String(e?.message ?? e))
+      })
       .finally(() => setCampaignRowsLoading(false))
   }, [range])
 
@@ -809,6 +825,20 @@ export default function App() {
 
   // Profit data (backend, service role — contribution margin minus ad spend)
   const [profitData, setProfitData] = useState<ProfitData | null>(null)
+  /**
+   * profit-data for the 7 FULL days the alarms judge on — a second window, not
+   * a second definition.
+   *
+   * CPA and ROAS used to be computed twice: the card read profit-data's
+   * realCpa (ad spend ÷ blendedOrdersCount, which leaves out WSZTP and
+   * non-sales), while the goal bar's note quoted a figure App.tsx worked out
+   * itself from dailySeries (orders above the 5 PLN floor, nothing else
+   * excluded). Same screen, same range, two numbers — 44,44 against 45,05 for
+   * the week and 37,15 against 36,71 for the month. The denominators differed.
+   *
+   * There is one definition now and it lives in profit-data.
+   */
+  const [profit7, setProfit7] = useState<ProfitData | null>(null)
 
   // Conversational state
   const [response, setResponse]           = useState('')
@@ -932,6 +962,8 @@ export default function App() {
     try {
       // Profit KPIs follow the selected panel range (same bounds as everything else).
       setProfitData(await fetchProfitData(rangeDates(rangeRef.current)))
+      // The rolling-7 window is fixed, so this does not follow the selector.
+      setProfit7(await fetchProfitData(rangeDates('week')))
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn('GIENIU profit-data failed:', e)
@@ -1479,23 +1511,21 @@ export default function App() {
   // Spend comes from meta_ads_daily.date, which Meta reports in the ad
   // account's own timezone and which this fix deliberately leaves alone.
   const spendOn = (date: string) => rangeRows.find(r => r.date === date)?.meta_spend ?? null
-  const spend7 = sevenComplete
-    ? last7.reduce<number | null>((t, d) => {
-        const sp = spendOn(d.date)
-        return t == null || sp == null ? null : t + sp
-      }, 0)
-    : null
-  const orders7  = sevenComplete ? last7.reduce((t, d) => t + d.orders, 0) : 0
-  const revenue7 = sevenComplete ? last7.reduce((t, d) => t + (d.revenue ?? 0), 0) : 0
-  const cpaRolling7  = spend7 != null && orders7 > 0 ? spend7 / orders7 : null
-  const roasRolling7 = spend7 != null && spend7 > 0 ? revenue7 / spend7 : null
+  // Does the window have spend on every day? Used as a completeness gate only
+  // — the CPA and ROAS themselves come from profit-data below.
+  const spend7Complete = sevenComplete && last7.every(d => spendOn(d.date) != null)
+  // CPA and ROAS for those 7 days come from profit-data, the same module the
+  // card reads — NOT recomputed here. spend7 stays: it is only used to decide
+  // whether the window has complete spend, never to divide by.
+  const cpaRolling7  = spend7Complete && profit7?.ok ? (profit7.realCpa ?? null) : null
+  const roasRolling7 = spend7Complete && profit7?.ok ? (profit7.realRoas ?? null) : null
 
   const alerts = evaluateAlerts({
     series: dailySeries,
     cpa: cpaBlended, cpaRolling7,
     roas: roasBlended, roasRolling7,
     fullDays: rangeFullDays,
-    adDays: campaignRows.filter(r => last7.some(d => d.date === r.date)),
+    adDays: campaignDailyRows.filter(r => last7.some(d => d.date === r.date)),
     recordStartsOn: ordersData?.recordStartsOn ?? null,
   })
   const alertBy = (rule: string) => alerts.all.find(a => a.rule === rule)
@@ -1976,6 +2006,7 @@ export default function App() {
                 rangeLabel={RANGE_LABELS[range]}
                 wixCpa={cpaBlended}
                 wixRoas={roasBlended}
+                globalSpend={displayPerf?.meta_spend ?? null}
               />
 
               {/* ŚWIAT META — built, not shown. meta_ads_daily holds 5 purchases

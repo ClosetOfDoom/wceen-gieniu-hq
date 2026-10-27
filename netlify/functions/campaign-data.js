@@ -133,6 +133,16 @@ const rowGranularity = (r) =>
         rangeTo: to,
         datesPresent,
         campaignLevelDates,
+        // The UNGROUPED rows, one per ad per day, with their real dates.
+        //
+        // `rows` above is grouped per creative and every group is stamped with
+        // the LAST date in the window, which makes it useless for anything
+        // that filters by day. The alarm rules were doing exactly that: they
+        // took campaignRows, kept the ones whose date fell in the last 7 full
+        // days, and so reported "3 wierszy" for TYDZIEŃ and "0 wierszy" for
+        // MIESIĄC — the month's groups were all stamped with today, and today
+        // is not a full day.
+        dailyRows: raw,
         rawRowCount: raw.length,
         sourceTable: 'meta_ads_daily',
         aggregateMetaSpendExists: aggRows.length > 0,

@@ -269,7 +269,16 @@ export function buildCampaignDiagnosis(
 // meta_ads_daily does not affect Campaigns page.
 
 export interface CampaignFetchResult {
+  /** Grouped per creative. Every group carries the LAST date of the window. */
   rows: MetaAdDaily[]
+  /**
+   * Ungrouped, one row per ad per day, with real dates.
+   *
+   * Anything that filters by day must use this. `rows` cannot answer a
+   * question about a particular date, because the grouping threw the dates
+   * away and stamped them all with the window's last one.
+   */
+  dailyRows: MetaAdDaily[]
   usedDate: string
   requestedDate: string
   aggregateMetaSpendExists: boolean
@@ -288,7 +297,7 @@ export interface CampaignFetchResult {
 export async function fetchCampaignRows(range?: { from: string; to: string }): Promise<CampaignFetchResult> {
   const today = businessToday()
   const empty: CampaignFetchResult = {
-    rows: [], usedDate: '', requestedDate: today,
+    rows: [], dailyRows: [], usedDate: '', requestedDate: today,
     aggregateMetaSpendExists: false, aggregateLatestDate: null,
     aggregateSpendTotal: 0, sourceMismatch: false, sourceMismatchExplanation: null,
     fetchError: null,
@@ -316,6 +325,7 @@ export async function fetchCampaignRows(range?: { from: string; to: string }): P
       aggregateSpendTotal: number
       sourceMismatch: boolean
       sourceMismatchExplanation: string | null
+      dailyRows?: MetaAdDaily[]
       datesPresent?: string[]
       rangeFrom?: string
       rangeTo?: string
@@ -332,6 +342,7 @@ export async function fetchCampaignRows(range?: { from: string; to: string }): P
     }
     return {
       rows:                      json.rows ?? [],
+      dailyRows:                 json.dailyRows ?? [],
       usedDate:                  json.usedDate ?? '',
       requestedDate:             json.requestedDate ?? today,
       aggregateMetaSpendExists:  json.aggregateMetaSpendExists ?? false,

@@ -32,6 +32,7 @@
     "assert:paste": "node scripts/gen-paste-bundles.mjs --check",
     "assert:meta-purchases": "node scripts/assert-meta-purchases.mjs",
     "assert:meta-attribution": "node scripts/assert-meta-attribution.mjs",
+    "assert:spend-consistency": "node scripts/assert-spend-consistency.mjs",
     "assert:voice-language": "node scripts/assert-browser-tts-language.mjs",
     "assert:gieniu-command": "node scripts/assert-gieniu-command.mjs",
     "assert:stt-language": "node scripts/assert-stt-language.mjs",
@@ -41,7 +42,7 @@
     "assert:data-source-reads": "node scripts/assert-supabase-reads.mjs",
     "assert:wix-export": "node scripts/assert-wix-export.mjs",
     "prebuild": "npm run verify",
-    "predeploy": "npm run verify && npm run assert:profit-live"
+    "predeploy": "npm run verify && npm run assert:profit-live && npm run assert:spend-consistency"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.4",

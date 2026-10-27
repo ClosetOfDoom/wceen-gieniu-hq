@@ -340,6 +340,13 @@ export const NUMBER_GAP_DETECTOR_ACTIVE = false
  *
  * NOT a judgement that Meta under-reports. That was the old assumption and it
  * is not supported: the gap is on our side of the wire.
+ *
+ * AND NOT because the ingest is campaign-level — it is not. Measured
+ * 2026-10-27, every row for that day carries an ad: PP-COLD-NOWE-WIDEO
+ * (228,24 PLN, 4 600 impressions) and PP-VID<2> (64,55 PLN, 1 226). Spend,
+ * impressions, clicks and the ad names are all per ad already. The one field
+ * missing is the purchase count, which is why this section cannot compute a
+ * CPA worth showing and why the panel says so rather than being absent.
  */
 export const META_WORLD_ACTIVE = false
 

@@ -88,3 +88,28 @@ describe('ŚWIAT META is built and switched off', () => {
     expect(ads[0].zeroDays).toBe(2)
   })
 })
+
+describe('the KPI card parses a formatted number back correctly', () => {
+  // The Impressions bug: fmtNum uses en-US, so 5826 renders as "5,826", and
+  // the count-up animation's parser did `.replace(',', '.')` — 5.826, shown
+  // with zero decimals as **6**. The animation restarts on every re-render,
+  // so it never reached the final value and 6 simply sat there.
+  it.each([
+    ['5,826', 5826],       // en-US thousands — the one that broke
+    ['12 335,73', 12335.73], // pl-PL
+    ['292.79', 292.79],
+    ['2,88', 2.88],        // pl-PL decimal — must NOT become 288
+    ['1,234.56', 1234.56],
+    ['1.234,56', 1234.56],
+    ['266', 266],
+  ])('%s parses to %s', async (text, want) => {
+    const { parseNumericValueForTest } = await import('../../components/KPICard')
+    expect(parseNumericValueForTest(text)?.numeric).toBe(want)
+  })
+
+  it('keeps the decimal count of the original, so a ROAS does not round to 3', async () => {
+    const { parseNumericValueForTest } = await import('../../components/KPICard')
+    expect(parseNumericValueForTest('2,88×')?.decimals).toBe(2)
+    expect(parseNumericValueForTest('5,826')?.decimals).toBe(0)
+  })
+})

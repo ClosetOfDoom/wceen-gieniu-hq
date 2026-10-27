@@ -31,6 +31,9 @@ interface AdAgg {
   adName: string
   campaignName: string
   spend: number
+  impressions: number
+  clicks: number
+  linkClicks: number
   purchases: number
   value: number
   /** Days in range that reported no purchase for this ad. */
@@ -60,10 +63,14 @@ export function aggregateByAd(rows: MetaAdDaily[]): AdAgg[] {
     const key = adId || adName
     const g = map.get(key) ?? {
       adId, adName: adName || adId, campaignName: r.campaign_name ?? '—',
-      spend: 0, purchases: 0, value: 0, zeroDays: 0, days: 0, seen: new Map<string, number>(),
+      spend: 0, impressions: 0, clicks: 0, linkClicks: 0,
+      purchases: 0, value: 0, zeroDays: 0, days: 0, seen: new Map<string, number>(),
     }
     const p = r.meta_purchases ?? r.purchases ?? 0
     g.spend += r.spend ?? 0
+    g.impressions += r.impressions ?? 0
+    g.clicks += r.clicks ?? 0
+    g.linkClicks += r.link_clicks ?? 0
     g.purchases += p
     g.value += r.meta_purchase_value ?? 0
     if (r.date) g.seen.set(r.date, (g.seen.get(r.date) ?? 0) + p)
@@ -110,6 +117,10 @@ export function MetaWorldPanel({ rows, rangeLabel }: { rows: MetaAdDaily[]; rang
           <tr style={{ color: 'var(--muted2)', textAlign: 'left' }}>
             <th>reklama</th><th>kampania</th>
             <th style={{ textAlign: 'right' }}>wydatek</th>
+            <th style={{ textAlign: 'right' }}>wyświetlenia</th>
+            <th style={{ textAlign: 'right' }}>CTR</th>
+            <th style={{ textAlign: 'right' }}>CPC</th>
+            <th style={{ textAlign: 'right' }}>CPM</th>
             <th style={{ textAlign: 'right' }}>zakupy</th>
             <th style={{ textAlign: 'right' }}>CPA</th>
             <th style={{ textAlign: 'right' }}>ROAS</th>
@@ -122,6 +133,16 @@ export function MetaWorldPanel({ rows, rangeLabel }: { rows: MetaAdDaily[]; rang
               <td style={{ color: 'var(--text2)' }}>{a.adName}</td>
               <td style={{ color: 'var(--muted2)' }}>{a.campaignName}</td>
               <td style={{ textAlign: 'right' }}>{a.spend.toFixed(2)}</td>
+              <td style={{ textAlign: 'right' }}>{a.impressions.toLocaleString('pl-PL')}</td>
+              <td style={{ textAlign: 'right' }}>
+                {a.impressions > 0 ? (a.linkClicks / a.impressions * 100).toFixed(2) + '%' : '—'}
+              </td>
+              <td style={{ textAlign: 'right' }}>
+                {a.clicks > 0 ? (a.spend / a.clicks).toFixed(2) : '—'}
+              </td>
+              <td style={{ textAlign: 'right' }}>
+                {a.impressions > 0 ? (a.spend / a.impressions * 1000).toFixed(2) : '—'}
+              </td>
               <td style={{ textAlign: 'right' }}>{a.purchases}</td>
               <td style={{ textAlign: 'right' }}>
                 {a.purchases > 0 ? (a.spend / a.purchases).toFixed(2) : '—'}

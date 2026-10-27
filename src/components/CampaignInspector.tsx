@@ -83,7 +83,7 @@ function aggregateAll(list: CampaignAgg[]): CampaignAgg {
 }
 
 export function CampaignInspector({
-  rows, loading, rangeLabel, wixCpa, wixRoas,
+  rows, loading, rangeLabel, wixCpa, wixRoas, globalSpend,
 }: {
   rows: MetaAdDaily[]
   loading: boolean
@@ -92,6 +92,18 @@ export function CampaignInspector({
   wixCpa?: number | null
   /** Blended ROAS from Wix for the same range — whole account, not this campaign. */
   wixRoas?: number | null
+  /**
+   * The Ad Spend the global KPI card shows for this same range.
+   *
+   * Both numbers come from meta_ads_daily — the global one through
+   * v_daily_wix_meta_performance, which is a sum of it — so they agree by
+   * construction. They can still differ ON SCREEN, because they are two
+   * independent fetches and a day in progress gains spend between them. That
+   * is worth saying out loud rather than leaving two silent numbers on one
+   * page: on 2026-10-27 they read 280,75 and 292,79, twelve złoty apart, and
+   * nothing explained it.
+   */
+  globalSpend?: number | null
 }) {
   const campaigns = useMemo(() => groupByCampaign(rows), [rows])
   const [sel, setSel] = useState<string>(ALL)
@@ -171,6 +183,15 @@ export function CampaignInspector({
             <KPICard label="CPM" value={fmtPln(cpm)} dim sublabel={rangeLabel} />
             <KPICard label="Impressions" value={fmtNum(current.impressions)} dim sublabel={rangeLabel} />
           </div>
+          {sel === ALL && globalSpend != null && Math.abs(globalSpend - current.spend) > 0.01 && (
+            <div style={{ marginTop: '10px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem',
+              color: 'var(--amber)', lineHeight: 1.6 }}>
+              Karta globalna pokazuje {fmtPln(globalSpend)}, ta sekcja {fmtPln(current.spend)} —
+              różnica {fmtPln(Math.abs(globalSpend - current.spend))}. To jedno źródło
+              (meta_ads_daily) pobrane dwa razy w różnych momentach; doba w toku rośnie
+              między jednym pobraniem a drugim. Dla dób zamkniętych obie liczby są równe.
+            </div>
+          )}
           <div style={{ marginTop: '10px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted2)', lineHeight: 1.6 }}>
             {dayStats.zero > 0 && (
               <>
