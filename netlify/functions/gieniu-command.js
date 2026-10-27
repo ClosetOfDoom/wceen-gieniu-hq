@@ -1057,7 +1057,9 @@ function buildContextText(context, serverAds = [], creativeAnalyticsText = '') {
     lines.push('')
     lines.push('--- Today\'s Ads / Creatives (service-role, meta_ads_daily) ---')
     lines.push('NOTE: meta_purchases and meta_CPA below come from Meta\'s own attribution.')
-    lines.push('      They typically undercount vs Wix. Quote them as "per Meta" not as ground truth.')
+    lines.push('      They measure something else than Wix (pixel attribution, view-through,')
+    lines.push('      no UTM) and the ingest is not fetching the purchase field, so they are')
+    lines.push('      currently near zero. Quote them as "per Meta" and never as ground truth.')
     lines.push('      Ads with <20 PLN spend: too early to evaluate — do NOT flag as wasting budget.')
     const totalAdSpend = serverAds.reduce((s, a) => s + (a.spend ?? 0), 0)
     serverAds.slice(0, 15).forEach(a => {

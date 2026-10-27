@@ -15,6 +15,7 @@ import type { ProfitData } from './profitData'
 import type { GoalResult } from './goalProgress'
 import type { TimeRange } from './timeRange'
 import { RANGE_LABELS } from './timeRange'
+import { META_PURCHASES_FIXED_ON } from './orderWindow'
 import { classifyCampaignScope } from './campaignDiagnosis'
 import { fmtPln, fmtNum, fmtRoas } from '../utils/format'
 import type { AlertResult, TodayContext } from './alerts'
@@ -108,12 +109,15 @@ function datesBetween(from: string, to: string): string[] {
 // ── sections ─────────────────────────────────────────────────────────────────
 
 const RULES = `## ZASADY DANYCH (czytaj przed analizą)
-- Wix = jedyne źródło prawdy transakcyjnej. Meta zaniża konwersje.
+- Wix = jedyne źródło prawdy transakcyjnej. Liczby Meta pochodzą z piksela
+  i mierzą co innego: inne okno atrybucji, view-through, brak UTM. Nie są
+  z definicji zaniżone — po prostu nie liczą tego samego.
 - Zamówienia nie niosą UTM → atrybucja per reklama jest NIEMOŻLIWA.
   Wszystkie CPA i ROAS są blended (cały ad spend ÷ całość).
-- meta_purchases i initiate_checkout to liczby Meta (pixel): zaniżone, bez UTM,
+- meta_purchases i initiate_checkout to liczby Meta (pixel): bez UTM,
   niełączalne z zamówieniem Wix. Wskaźnik trendu w jednym lejku — nigdy
   atrybucja i nigdy mianownik konwersji liczonej przeciw Wixowi.
+- ${metaPurchasesNote()}
 - reach NIE jest addytywny: suma dobowych zasięgów to nie zasięg zakresu.
 - Marże są szacunkowe, z katalogu produktów, nie z faktur.
 - Dane brakujące są nazwane wprost. Nie uzupełniaj ich estymacją.`
@@ -193,6 +197,24 @@ function dailySection(i: ReportInput): string {
     '| --- | --- | --- | --- | --- | --- |',
     ...lines,
   ].join('\n')
+}
+
+/**
+ * What meta_purchases is worth right now.
+ *
+ * A zero in that column is not "nobody bought" — it is "we did not ask". Until
+ * META_PURCHASES_FIXED_ON is set, every period predates the fix and the report
+ * must say so rather than printing a zero that reads like a result.
+ */
+export function metaPurchasesNote(): string {
+  if (META_PURCHASES_FIXED_ON == null) {
+    return 'meta_purchases: NIEPOBIERANE. Ingest nie ściąga tego pola z Meta — '
+      + 'zmierzone 2026-10-27: Business Manager pokazuje 46 zakupów za 20-26.10, '
+      + 'baza ma 5. Zero w tej kolumnie NIE znaczy "brak zakupów", tylko '
+      + '"nie wiemy". Nie licz z niej CPA, ROAS ani konwersji.'
+  }
+  return `meta_purchases: pobierane od ${META_PURCHASES_FIXED_ON}. `
+    + 'Wcześniejsze doby pozostają NIEPOBIERANE — zero w nich nie znaczy zera zakupów.'
 }
 
 function productsSection(i: ReportInput): string {

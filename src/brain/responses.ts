@@ -677,7 +677,9 @@ export function buildOpsBriefing(
   if (metaPurchases > 0 && orders !== metaPurchases) {
     const diff = orders - metaPurchases
     if (diff > 0) {
-      lines.push(`Meta attributes ${metaPurchases} purchases — ${diff} real Wix orders are unattributed. Tracking is undercounting.`)
+      lines.push(`Meta attributes ${metaPurchases} purchases, Wix recorded ${orders} orders. `
+        + 'The two count different things and the ingest is not fetching the purchase field, '
+        + 'so the gap says nothing about either.')
     } else {
       lines.push(`Meta attributes ${metaPurchases} purchases but Wix shows only ${orders} real orders. Possible tracking overcount.`)
     }
@@ -838,7 +840,9 @@ export function buildMetaVsWix(
   if (metaPurchases > 0) {
     const diff = orders - metaPurchases
     if (diff > 0) {
-      lines.push(`Discrepancy: ${diff} Wix orders have no Meta attribution. Meta is undercounting conversions.`)
+      lines.push(`Discrepancy: ${diff} Wix orders carry no Meta attribution. `
+        + 'Not evidence that Meta under-counts: the ingest is not fetching the purchase '
+        + 'field, and the two systems measure different things in any case.')
     } else if (diff < 0) {
       lines.push(`Discrepancy: Meta claims ${Math.abs(diff)} more purchases than Wix recorded. Possible view-through inflation or pixel misfire.`)
     } else {

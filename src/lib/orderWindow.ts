@@ -322,6 +322,49 @@ export const SYNC_BACKLOG_DETECTOR_ACTIVE = false
  */
 export const NUMBER_GAP_DETECTOR_ACTIVE = false
 
+/**
+ * The ŚWIAT META section — purchases, CPA and ROAS per ad, straight from
+ * Meta's pixel. Built, not shown.
+ *
+ * Meta's own Business Manager reports 46 purchases for PP-22.06.2026 over
+ * 2026-10-20…26, split across two ads with different CPAs (70,05 and 82,82).
+ * `meta_ads_daily` holds 5 for the same window, all of them on the last day:
+ *
+ *     20.10 → 0   21.10 → 0   22.10 → 0   23.10 → 0
+ *     24.10 → 0   25.10 → 0   26.10 → 5
+ *
+ * A section whose whole subject is Meta's numbers cannot be shown while the
+ * numbers are a ninth of what Meta itself reports. It is written and tested so
+ * that flipping this flag is the only step left once the ingest is fixed and
+ * scripts/assert-meta-purchases.mjs agrees with Business Manager.
+ *
+ * NOT a judgement that Meta under-reports. That was the old assumption and it
+ * is not supported: the gap is on our side of the wire.
+ */
+export const META_WORLD_ACTIVE = false
+
+/**
+ * The day meta_purchases started being fetched properly. Null while it is not.
+ *
+ * A zero in this column does NOT mean nobody bought. It means the ingest did
+ * not ask Meta for the number — measured 2026-10-27, six of seven days in
+ * 2026-10-20…26 read zero against 46 purchases in Business Manager.
+ *
+ * "0 zakupów" and "nie wiemy, ile zakupów" are different statements and only
+ * one of them is true. Everything that reports on this column checks here
+ * first and says the second one.
+ *
+ * Set this to the first day Make writes the field correctly — verified with
+ * `npm run assert:meta-purchases -- --from … --to … --expect …` against a
+ * figure read off Business Manager. Not before.
+ */
+export const META_PURCHASES_FIXED_ON: string | null = null
+
+/** Is Meta's purchase count worth reading for a range ending on this day? */
+export function metaPurchasesAreCollected(day: string): boolean {
+  return META_PURCHASES_FIXED_ON != null && day >= META_PURCHASES_FIXED_ON
+}
+
 export interface SyncBacklogWindow {
   /** Start of the 15-minute window, as an ISO timestamp. */
   window: string

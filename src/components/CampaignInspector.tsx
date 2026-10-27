@@ -1,7 +1,25 @@
-// Campaign inspector — a dropdown to pick a specific Meta campaign (or "All") and
-// see its metrics for the panel's selected time range. Groups raw per-ad rows by
-// campaign and aggregates spend / impressions / clicks / purchases → CTR, CPC, CPM,
-// ROAS, CPA. Uses only real rows from meta_ads_daily for the chosen range.
+// Campaign inspector — a dropdown to pick a specific Meta campaign (or "All")
+// and see its DELIVERY metrics for the panel's selected range: spend,
+// impressions, clicks, CTR, CPC, CPM. Only real rows from meta_ads_daily.
+//
+// CPA (Meta) AND ROAS (Meta) WERE REMOVED ON 2026-10-27, deliberately, and
+// must not come back until the ingest is fixed.
+//
+// Both divided by meta_purchases. Meta's own Business Manager reports 46
+// purchases for PP-22.06.2026 over 2026-10-20…26; meta_ads_daily holds 5 for
+// the same window, every one of them on the last day. Dividing real spend by
+// a denominator that is a ninth of the truth does not produce an
+// approximation of CPA — it produces an artefact of the division. The card
+// read 1 762,25 PLN against a real Wix CPA of about 40, and it read it in
+// red, which this dashboard reserves for a signal somebody should act on.
+//
+// Annotating it harder was the wrong fix and had already been tried: the old
+// footnote said the purchases were under-reported, and the number stayed on
+// screen anyway. A figure nobody should read does not belong on a card.
+//
+// Purchases itself STAYS, as a raw Meta count with its provenance and the
+// number of days in the range on which it is zero — so the reader can see
+// what the figure stands on.
 
 import { useMemo, useState, useEffect } from 'react'
 import type { MetaAdDaily } from '../services/data'
@@ -65,11 +83,15 @@ function aggregateAll(list: CampaignAgg[]): CampaignAgg {
 }
 
 export function CampaignInspector({
-  rows, loading, rangeLabel,
+  rows, loading, rangeLabel, wixCpa, wixRoas,
 }: {
   rows: MetaAdDaily[]
   loading: boolean
   rangeLabel: string
+  /** Blended CPA from Wix for the same range — whole account, not this campaign. */
+  wixCpa?: number | null
+  /** Blended ROAS from Wix for the same range — whole account, not this campaign. */
+  wixRoas?: number | null
 }) {
   const campaigns = useMemo(() => groupByCampaign(rows), [rows])
   const [sel, setSel] = useState<string>(ALL)
@@ -87,8 +109,24 @@ export function CampaignInspector({
   const ctr  = current && current.impressions > 0 ? current.linkClicks / current.impressions * 100 : null
   const cpc  = current && current.clicks > 0      ? current.spend / current.clicks : null
   const cpm  = current && current.impressions > 0 ? current.spend / current.impressions * 1000 : null
-  const roas = current && current.spend > 0       ? current.value / current.spend : null
-  const cpa  = current && current.purchases > 0   ? current.spend / current.purchases : null
+  // No ROAS, no CPA. See the header: both divide by meta_purchases, which is
+  // not what Meta itself reports. `current.value` and `current.purchases` are
+  // still aggregated because Purchases is shown raw, and because the ŚWIAT
+  // META section will need them once the ingest is fixed.
+
+  // How many days in this range reported no purchases at all. The point of
+  // the figure is to show what the Purchases number stands on: 6 zero-days
+  // out of 7 is not a quiet week, it is a broken feed.
+  const dayStats = useMemo(() => {
+    const byDay = new Map<string, number>()
+    for (const r of rows) {
+      if (!r.date) continue
+      if (sel !== ALL && (r.campaign_name ?? r.campaign_id ?? '—') !== sel) continue
+      byDay.set(r.date, (byDay.get(r.date) ?? 0) + (r.meta_purchases ?? r.purchases ?? 0))
+    }
+    const days = [...byDay.values()]
+    return { total: days.length, zero: days.filter(n => n === 0).length }
+  }, [rows, sel])
 
   return (
     <div className="panel-illuminate card">
@@ -122,18 +160,47 @@ export function CampaignInspector({
       ) : (
         <>
           <div className="kpi-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-            <KPICard label="Ad Spend" value={fmtPln(current.spend)} accent sublabel={sel === ALL ? 'All campaigns' : current.name} />
-            <KPICard label="ROAS (Meta)" value={fmtRoas(roas)} sublabel="Purchase value ÷ spend" />
-            <KPICard label="CPA (Meta)" value={fmtPln(cpa)} warning={cpa != null && cpa > 50} sublabel="Spend ÷ purchases" />
-            <KPICard label="Purchases" value={fmtNum(current.purchases)} sublabel="Meta-reported" />
-            <KPICard label="CTR" value={fmtPct(ctr)} sublabel="Link clicks / impressions" />
-            <KPICard label="CPC" value={fmtPln(cpc)} sublabel="Spend / clicks" />
-            <KPICard label="CPM" value={fmtPln(cpm)} dim sublabel="Spend / 1 000 impr." />
+            {/* Every card carries the same range sublabel. AD SPEND used to
+                show the campaign name here while IMPRESSIONS showed the range,
+                so two cards side by side looked like two different periods. */}
+            <KPICard label="Ad Spend" value={fmtPln(current.spend)} accent sublabel={rangeLabel} />
+            <KPICard label="Purchases" value={fmtNum(current.purchases)}
+              sublabel="Meta-reported · nie łączy się z zamówieniami Wix" />
+            <KPICard label="CTR" value={fmtPct(ctr)} sublabel={rangeLabel} />
+            <KPICard label="CPC" value={fmtPln(cpc)} sublabel={rangeLabel} />
+            <KPICard label="CPM" value={fmtPln(cpm)} dim sublabel={rangeLabel} />
             <KPICard label="Impressions" value={fmtNum(current.impressions)} dim sublabel={rangeLabel} />
           </div>
           <div style={{ marginTop: '10px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted2)', lineHeight: 1.6 }}>
-            ROAS/CPA/Purchases = atrybucja Meta z meta_ads_daily (sync Make) — zaniża realne konwersje
-            (zakupy zapisane jako 0 w większości dni). Prawda transakcyjna: Wix orders/revenue. Zakres: {rangeLabel}.
+            {dayStats.zero > 0 && (
+              <>
+                <span style={{ color: 'var(--amber)' }}>
+                  Purchases = {current.purchases} przy {dayStats.zero} z {dayStats.total} dób
+                  zakresu raportujących zero.
+                </span>{' '}
+                Ingest nie pobiera tego pola z Meta — liczby w Business Managerze są wyższe.
+                Dopóki to nie jest naprawione, Purchases nie mierzy sprzedaży.
+                <br />
+              </>
+            )}
+            Purchases pochodzi z piksela Meta (meta_ads_daily, sync Make) i mierzy co innego
+            niż Wix: inne okno atrybucji, brak UTM, brak połączenia z konkretnym zamówieniem.
+            Nie jest porównywalne z Wixem w żadną stronę. Prawda transakcyjna: Wix orders/revenue.
+            {/* CPA i ROAS per kampania są NIEMOŻLIWE i nie będą tu dodane: zamówienia
+                Wix nie niosą UTM, więc żadnego zamówienia nie da się przypisać do
+                kampanii. Blended, dla całego konta, podane niżej. */}
+            <br />
+            {sel === ALL ? (
+              <>
+                Realne CPA i ROAS z Wix dla tego zakresu:{' '}
+                <span style={{ color: 'var(--text2)' }}>
+                  CPA {fmtPln(wixCpa)} · ROAS {fmtRoas(wixRoas)}
+                </span>{' '}
+                — blended, całe konto, nie ta kampania.
+              </>
+            ) : (
+              <>CPA per kampania niemożliwe: zamówienia nie niosą UTM.</>
+            )}
           </div>
         </>
       )}

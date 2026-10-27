@@ -20,6 +20,7 @@ import { CampaignsPanel } from './components/CampaignsPanel'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { StanleyOwl } from './components/StanleyOwl'
 import { CampaignInspector } from './components/CampaignInspector'
+import { MetaWorldPanel } from './components/MetaWorldPanel'
 import { GoalBar } from './components/GoalBar'
 import {
   ppOrdersGoal, revenueGoal, cpaGoal, roasGoal, MONTHLY_REVENUE_TARGET,
@@ -27,7 +28,7 @@ import {
 } from './lib/goalProgress'
 import { businessHoursSinceMidnight, businessToday } from './lib/businessDay'
 import { evaluateAlerts, todayContext, ALERT_RULES, isNotifying } from './lib/alerts'
-import { countOrdersInWindow, assessSyncHealth, SYNC_BACKLOG_DETECTOR_ACTIVE } from './lib/orderWindow'
+import { countOrdersInWindow, assessSyncHealth, SYNC_BACKLOG_DETECTOR_ACTIVE, META_WORLD_ACTIVE } from './lib/orderWindow'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
   fetchRecentPerformance, fetchMetaStatsToday, fetchPerformanceBetween,
@@ -1973,7 +1974,17 @@ export default function App() {
                 rows={campaignRows}
                 loading={campaignRowsLoading}
                 rangeLabel={RANGE_LABELS[range]}
+                wixCpa={cpaBlended}
+                wixRoas={roasBlended}
               />
+
+              {/* ŚWIAT META — built, not shown. meta_ads_daily holds 5 purchases
+                  where Business Manager reports 46 for the same week, so the
+                  section would be a panel of wrong numbers. See
+                  META_WORLD_ACTIVE in lib/orderWindow.ts. */}
+              {META_WORLD_ACTIVE && (
+                <MetaWorldPanel rows={campaignRows} rangeLabel={RANGE_LABELS[range]} />
+              )}
 
               <div className="panel-illuminate card">
                 <div className="section-title section-title-gold" style={{ marginBottom: '10px' }}>Revenue Trend · {RANGE_LABELS[range]} ({rangeFrom} → {rangeTo})</div>
