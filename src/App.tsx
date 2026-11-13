@@ -28,7 +28,7 @@ import {
 } from './lib/goalProgress'
 import { businessHoursSinceMidnight, businessToday } from './lib/businessDay'
 import { evaluateAlerts, todayContext, ALERT_RULES, isNotifying } from './lib/alerts'
-import { totalSpendOf } from './lib/adSpend'
+import { totalSpendOf, CREATIVE_ALARM_NOTE } from './lib/adSpend'
 import { countOrdersInWindow, assessSyncHealth, SYNC_BACKLOG_DETECTOR_ACTIVE, META_WORLD_ACTIVE } from './lib/orderWindow'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
@@ -1552,6 +1552,10 @@ export default function App() {
     recordStartsOn: ordersData?.recordStartsOn ?? null,
   })
   const alertBy = (rule: string) => alerts.all.find(a => a.rule === rule)
+  const creativeLeftOutMap = alerts.all.find(a => a.rule === 'KREACJA_CTR')?.values?.leftOut as Record<string, number> | undefined
+  const creativeLeftOut = creativeLeftOutMap && Object.keys(creativeLeftOutMap).length > 0
+    ? Object.entries(creativeLeftOutMap).map(([sc, n]) => `${sc} ${n}`).join(', ')
+    : ''
 
   // Where the in-progress day sits against the same hour on past days. Context,
   // never a colour — this is what replaced "18 × hours/24".
@@ -1871,6 +1875,14 @@ export default function App() {
                       Progi z pomiaru 2026-10-20 · 130 pełnych dób od 2026-06-12 · zamówienia &gt; {ALERT_RULES.ORDER_MIN_AMOUNT_PLN} zł · po deduplikacji 15-20.08.
                       Statyczne: krocząca percentyla spada razem ze sprzedażą, więc powolny zjazd nigdy by nie odpalił alarmu.
                       Przeliczanie ręczne, raz na kwartał (<code>npm run alerts</code>).
+                    </div>
+
+                    {/* Which campaigns the creative alarms (CTR, frequency, click→checkout)
+                        read — their thresholds were measured on PP. Always shown, so a
+                        quiet line is not read as "every campaign checked". */}
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: 'var(--muted2)', marginTop: '6px', lineHeight: 1.6 }}>
+                      {CREATIVE_ALARM_NOTE}
+                      {creativeLeftOut ? ` — pominięto wiersze: ${creativeLeftOut}` : ''}
                     </div>
 
                     {/* Rules that cannot run, named rather than silently absent. */}

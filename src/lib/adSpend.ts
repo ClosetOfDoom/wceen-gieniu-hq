@@ -16,6 +16,9 @@ export {
   formatZl,
   excludedSpendLines,
   excludedSpendSentence,
+  CREATIVE_ALARM_EXCLUDED_SCOPES,
+  CREATIVE_ALARM_NOTE,
+  creativeAlarmRows,
 } from '../../netlify/shared/adSpend.js'
 import type { ExcludedCampaign } from '../../netlify/shared/adSpend.js'
 export type {

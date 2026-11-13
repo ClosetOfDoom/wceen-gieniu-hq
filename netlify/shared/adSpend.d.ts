@@ -34,3 +34,10 @@ export function splitAdSpendByDay(rows: AdSpendRow[] | null | undefined): Array<
 export function formatZl(n: number | null | undefined): string
 export function excludedSpendLines(split: AdSpendSplit | null | undefined): string[]
 export function excludedSpendSentence(split: AdSpendSplit | null | undefined): string
+
+/** Scopes with no creative-alarm thresholds of their own (CTR / frequency / click→checkout). */
+export const CREATIVE_ALARM_EXCLUDED_SCOPES: AdScope[]
+export const CREATIVE_ALARM_NOTE: string
+export function creativeAlarmRows<T extends { campaign_name?: string | null; ad_name?: string | null }>(
+  adDays: T[] | null | undefined,
+): { rows: T[]; leftOut: Partial<Record<AdScope, number>> }

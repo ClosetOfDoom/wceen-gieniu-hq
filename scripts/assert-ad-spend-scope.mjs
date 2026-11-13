@@ -135,6 +135,53 @@ if (!existsSync(sharedPath)) {
   }
 }
 
+// ── 6: the creative alarms (CTR, frequency, click→checkout) ──────────────────
+// Their thresholds were measured on PP, so they read only campaigns that have
+// thresholds. The filter sits INSIDE each exported alarm, not in a caller, so a
+// direct call and evaluateAlerts() cannot disagree and no new caller can feed
+// them Cogni rows. Scope comes from adSpend.js; alertRules.js names no campaign.
+{
+  const alertsSrc = readFileSync(join(rootDir, 'netlify/shared/alertRules.js'), 'utf8')
+  if (/import\s*\{[^}]*\bcreativeAlarmRows\b[^}]*\}\s*from\s*['"]\.\/adSpend\.js['"]/.test(alertsSrc)) {
+    pass('alertRules.js takes creativeAlarmRows from the shared ad-spend module')
+  } else {
+    fail('alertRules.js does not import creativeAlarmRows from ./adSpend.js')
+  }
+  for (const [fn, rule] of [
+    ['creativeCtrAlert', 'KREACJA_CTR'],
+    ['frequencyAlert', 'CZĘSTOTLIWOŚĆ'],
+    ['clickToCheckoutAlert', 'KLIK_DO_KASY'],
+  ]) {
+    const re = new RegExp(`export function ${fn}\\(adDays\\)\\s*\\{\\s*return onCreativeScopes\\('${rule}'`)
+    if (re.test(alertsSrc)) pass(`${fn} reads its rows only through the scope filter`)
+    else fail(`${fn} in alertRules.js is not wrapped in onCreativeScopes() — it could read Cogni rows`)
+  }
+  // The un-filtered inner functions must stay private.
+  if (/export\s+function\s+(?:creativeCtrOn|frequencyOn|clickToCheckoutOn)\b/.test(alertsSrc)) {
+    fail('an un-filtered creative alarm is exported from alertRules.js')
+  } else {
+    pass('the un-filtered creative alarm functions are not exported')
+  }
+  const sharedSrc = readFileSync(join(rootDir, SHARED), 'utf8')
+  for (const needle of [/export const CREATIVE_ALARM_EXCLUDED_SCOPES\b/, /export function creativeAlarmRows\b/, /export const CREATIVE_ALARM_NOTE\b/]) {
+    if (needle.test(sharedSrc)) pass(`${SHARED} has ${needle.source}`)
+    else fail(`${SHARED} lost ${needle.source}`)
+  }
+  // Nobody else may call the alarms with ad-day rows except through evaluateAlerts
+  // or the alarm functions themselves — and none of them filters by hand.
+  let handFiltered = 0
+  for (const f of files) {
+    const src = readFileSync(join(rootDir, f), 'utf8')
+    if (!/\b(?:creativeCtrAlert|frequencyAlert|clickToCheckoutAlert|evaluateAlerts)\b/.test(src)) continue
+    for (const [n, line] of code(src)) {
+      if (/adDays\s*:.*\.filter\(.*(?:campaign_name|ad_name)/.test(line)) {
+        fail(`${f}:${n} filters creative-alarm rows by campaign by hand: ${line.trim()}`); handFiltered++
+      }
+    }
+  }
+  if (handFiltered === 0) pass('no caller filters creative-alarm rows by campaign itself')
+}
+
 // The browser's one overlay must go through applySpendSplit().
 const dataTs = readFileSync(join(rootDir, 'src/services/data.ts'), 'utf8')
 if (/applySpendSplit\(rows, days\)/.test(dataTs)) pass('src/services/data.ts overlays the split through applySpendSplit()')

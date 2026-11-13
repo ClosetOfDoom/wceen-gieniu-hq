@@ -23,6 +23,8 @@
 // 2026-06-11 (the first day `orders` has rows for) — see the "Cele vs alarmy"
 // section of the operational brain for the figures behind each one.
 // ═══════════════════════════════════════════════════════════════════════════════
+import { creativeAlarmRows, CREATIVE_ALARM_NOTE } from './adSpend.js'
+
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -290,7 +292,7 @@ function thresholdAlert(rule, value, rolling7, fullDays, need, grade, fmt) {
  * @param adDays  per-ad, per-day rows for the last 7 full days:
  *                { date, ad_name, spend, impressions, clicks, link_clicks }
  */
-export function creativeCtrAlert(adDays) {
+function creativeCtrOn(adDays) {
   const R = ALERT_RULES.CREATIVE_CTR
   if (!adDays || adDays.length === 0) {
     return alert('none', 'KREACJA_CTR', 'brak wierszy meta_ads_daily dla okna 7 pełnych dób')
@@ -364,7 +366,7 @@ function coverage(adDays, field) {
  * judges the worst SINGLE day rather than inventing a window-level reach —
  * and says that is what it is doing.
  */
-export function frequencyAlert(adDays) {
+function frequencyOn(adDays) {
   const { rows, withValue, values } = coverage(adDays, 'reach')
   if (withValue === 0) {
     return alert('none', 'CZĘSTOTLIWOŚĆ',
@@ -406,7 +408,7 @@ export function frequencyAlert(adDays) {
  * (checkout ÷ link clicks, both from Meta) so it is never silently read as a
  * conversion rate against Wix.
  */
-export function clickToCheckoutAlert(adDays) {
+function clickToCheckoutOn(adDays) {
   const { rows, withValue, values } = coverage(adDays, 'initiate_checkout')
   if (withValue === 0) {
     return alert('none', 'KLIK_DO_KASY',
@@ -517,6 +519,37 @@ export function todayContext(ordersSoFar, hour, history) {
       : `${ordersSoFar} do godz. ${hour}:00 — percentyl ${percentile} z ${atThisHour.length} pełnych dób; `
         + `doby, które o tej porze miały nie więcej, kończyły medianą ${medianFinal}`,
   }
+}
+
+// ── creative alarms read only campaigns that have thresholds ────────────────
+//
+// The three alarms below judge ad-day rows against ONE set of thresholds, and
+// those were measured on PP. The filter is applied HERE, inside each exported
+// alarm, so no caller can hand them Cogni rows by accident — evaluateAlerts()
+// and a direct call behave the same. Which scopes are left out is decided in
+// adSpend.js (creativeAlarmRows); this file names no campaign and no prefix.
+
+function onCreativeScopes(rule, evaluate, adDays) {
+  const { rows, leftOut } = creativeAlarmRows(adDays)
+  const left = Object.keys(leftOut).length > 0
+  if (rows.length === 0 && left) {
+    const what = Object.entries(leftOut).map(([sc, n]) => `${sc} ${n}`).join(', ')
+    return alert('none', rule,
+      `wszystkie wiersze okna są poza progami (${what}) — ${CREATIVE_ALARM_NOTE}`,
+      { leftOut })
+  }
+  const a = evaluate(rows)
+  return left ? { ...a, values: { ...a.values, leftOut } } : a
+}
+
+export function creativeCtrAlert(adDays) {
+  return onCreativeScopes('KREACJA_CTR', creativeCtrOn, adDays)
+}
+export function frequencyAlert(adDays) {
+  return onCreativeScopes('CZĘSTOTLIWOŚĆ', frequencyOn, adDays)
+}
+export function clickToCheckoutAlert(adDays) {
+  return onCreativeScopes('KLIK_DO_KASY', clickToCheckoutOn, adDays)
 }
 
 // ── everything at once ──────────────────────────────────────────────────────

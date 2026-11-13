@@ -19,6 +19,7 @@ export interface DaySeriesEntry {
 
 export interface AdDayRow {
   date: string
+  campaign_name?: string | null
   ad_name?: string | null
   ad_id?: string | null
   spend?: number | null

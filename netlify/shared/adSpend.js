@@ -182,3 +182,45 @@ export function excludedSpendSentence(split) {
     + 'nie przechodzi przez Wix, więc nie może być mianownikiem dla zamówień Wix. '
     + `Luka, której nie umiem zamknąć: ${gaps || 'brak przychodu w bazie'}.`
 }
+
+// ── Creative alarms: which campaigns' rows they may read ─────────────────────
+//
+// The creative alarms (top-spender CTR, frequency, click→checkout) have ONE set
+// of thresholds each, in ALERT_RULES — and those thresholds were measured on PP
+// (memory). Applying them to a campaign from another funnel is a verdict made
+// with a yardstick that was never calibrated on it: Cogni's audience, offer and
+// checkout (Stripe) differ, so a CTR floor taken from PP says nothing about it.
+//
+//   memory    thresholds exist                       → read
+//   language  no creative thresholds exist (3T has CPA bands only) → not read
+//   cogni     no thresholds, revenue outside Stanley  → not read
+//   unknown   unrecognised name → NOT dropped: a new campaign keeps its alarms
+//             until somebody says otherwise, and silencing what we cannot name
+//             would hide exactly the campaign nobody is watching yet.
+//
+// The scope itself still comes from adScopeOf() above — this is only the list of
+// scopes that have no creative thresholds. Nothing is deleted: rows that are not
+// read are counted and reported by creativeAlarmRows().
+
+/** Scopes with no creative-alarm thresholds of their own. */
+export const CREATIVE_ALARM_EXCLUDED_SCOPES = ['cogni', 'language']
+
+/** Said the same way on the dashboard and in the report. */
+export const CREATIVE_ALARM_NOTE = 'Alarmy kreacji: tylko kampanie z progami (Cogni poza progami)'
+
+/**
+ * The ad-day rows a creative alarm may read, and what was left out.
+ *
+ * @param {Array<{campaign_name?: string|null, ad_name?: string|null}>} adDays
+ * @returns {{ rows: Array, leftOut: Record<string, number> }}  leftOut: scope → rows
+ */
+export function creativeAlarmRows(adDays) {
+  const rows = []
+  const leftOut = {}
+  for (const r of adDays ?? []) {
+    const scope = adScopeOf(r.campaign_name, r.ad_name)
+    if (CREATIVE_ALARM_EXCLUDED_SCOPES.includes(scope)) leftOut[scope] = (leftOut[scope] ?? 0) + 1
+    else rows.push(r)
+  }
+  return { rows, leftOut }
+}

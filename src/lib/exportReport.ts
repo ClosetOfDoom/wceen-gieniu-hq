@@ -18,7 +18,7 @@ import { RANGE_LABELS } from './timeRange'
 import { META_PURCHASES_FIXED_ON } from './orderWindow'
 import { classifyCampaignScope } from './campaignDiagnosis'
 import {
-  adScopeOf, isExcludedFromWixBlended, excludedSpendLines, totalSpendOf,
+  adScopeOf, isExcludedFromWixBlended, excludedSpendLines, totalSpendOf, CREATIVE_ALARM_NOTE,
 } from './adSpend'
 import { fmtPln, fmtNum, fmtRoas } from '../utils/format'
 import type { AlertResult, TodayContext } from './alerts'
@@ -504,7 +504,15 @@ function alarmsSection(i: ReportInput): string {
        ...refusals.map(a => `- ${a.rule} — ${a.message}`)]
     : []
 
-  return [...head, ...lines, ...ctx, ...cannotRun].join('\n')
+  // Which rows the creative alarms did not read. Said every time, so a quiet
+  // CTR line is never read as "all campaigns checked".
+  const leftOut = all.find(a => a.rule === 'KREACJA_CTR')?.values?.leftOut as Record<string, number> | undefined
+  const leftOutText = leftOut && Object.keys(leftOut).length > 0
+    ? ` — pominięto wiersze: ${Object.entries(leftOut).map(([sc, n]) => `${sc} ${n}`).join(', ')}`
+    : ''
+  const creativeNote = ['', `${CREATIVE_ALARM_NOTE}${leftOutText}`]
+
+  return [...head, ...lines, ...ctx, ...cannotRun, ...creativeNote].join('\n')
 }
 
 function gapsSection(i: ReportInput): string {
