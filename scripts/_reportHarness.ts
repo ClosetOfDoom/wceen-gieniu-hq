@@ -147,7 +147,9 @@ export async function runForRange(range: TimeRange): Promise<{ report: string; c
     ['PP orders',    `${ppOrdersRange ?? '—'} / ${Math.max(1, Math.round(ppExpected))}`],
   ]
   const reportCell = (metric: string): string => {
-    const row = report.split('\n').find(l => l.startsWith(`| ${metric} |`))
+    // A label may carry a qualifier: "est. profit (bez Cogni)", "real CPA (blended)".
+    const row = report.split('\n').find(l =>
+      l.startsWith(`| ${metric} |`) || l.startsWith(`| ${metric} (`))
     // The ad-spend cell carries the split in a trailing "(blended … + wyłączone …)";
     // the card shows the total, which is the figure before that note.
     return row ? row.split('|')[2].trim().replace(/\s*\((?:blended|podział).*$/, '') : '(brak wiersza)'
@@ -170,7 +172,7 @@ export async function runForRange(range: TimeRange): Promise<{ report: string; c
     } else {
       // PP orders lives in REALIZACJA CELÓW, not in the summary table.
       const l = report.split('\n').find(x => x.startsWith('- PP orders:')) ?? ''
-      inReport = l.replace('- PP orders: ', '').replace(/\s*\(.*$/, '').trim()
+      inReport = l.replace('- PP orders: ', '').replace(/\s+—.*$/, '').replace(/\s*\(.*$/, '').trim()
     }
     const ok = cardValue === inReport
     if (!ok) allMatch = false

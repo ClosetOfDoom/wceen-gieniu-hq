@@ -163,3 +163,36 @@ describe('buildWeekToDate', () => {
     expect(result).not.toContain('2026-06-21')
   })
 })
+
+describe('Stanley on CPA when Cogni spent', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  // 7 days: blended 3 754,50 zł, Cogni 953,91 zł, 87 orders.
+  const week = () => {
+    const spend = [500.5, 520, 540, 560, 540, 550, 544]
+    const cogni = [0, 0, 200, 250.91, 250, 253, 0]
+    const orders = [12, 13, 12, 12, 13, 12, 13]
+    return orders.map((o, i) => makeRow(`2026-06-${String(18 + i).padStart(2, '0')}`, {
+      meta_spend: spend[i], meta_spend_excluded: cogni[i],
+      meta_spend_excluded_campaigns: cogni[i] > 0
+        ? [{ campaign: 'COGNI-TEST-09.11', scope: 'cogni', spend: cogni[i] }] : [],
+      spend_split: 'applied', wix_orders: o, wix_revenue: o * 200,
+      real_cpa: spend[i] / o,
+    }))
+  }
+
+  it('reports the blended CPA, says Cogni is excluded and names the gap', () => {
+    vi.useFakeTimers(); vi.setSystemTime(FIXED_NOW)
+    const out = buildLast7Days(week())
+    expect(out).toContain('43.16')              // blended, not 54.12
+    expect(out).not.toContain('54.12')
+    expect(out).toContain('COGNI-TEST-09.11')
+    expect(out).toContain('no Stripe revenue in the database')   // the gap, named (Polish answers say: brak przychodu Stripe w bazie)
+  })
+
+  it('says nothing about Cogni for a week without it', () => {
+    vi.useFakeTimers(); vi.setSystemTime(FIXED_NOW)
+    const rows = week().map(r => ({ ...r, meta_spend_excluded: 0, meta_spend_excluded_campaigns: [] }))
+    expect(buildLast7Days(rows)).not.toMatch(/Stripe|COGNI/i)
+  })
+})
