@@ -3,7 +3,10 @@ import type { LlmMeta } from '../types'
 
 export interface TrendRow {
   date: string
+  /** BLENDED — what CPA divides by. */
   meta_spend: number
+  /** Kept out of blended (Cogni). */
+  meta_spend_excluded?: number
   wix_orders: number
   wix_revenue: number
   real_cpa: number | null
@@ -22,7 +25,12 @@ export interface GieniuCommandContext {
   todayKPIs: {
     wix_orders?: number | null
     wix_revenue?: number | null
+    /** BLENDED — what CPA divides by. */
     meta_spend?: number | null
+    /** Kept out of blended (Cogni). */
+    meta_spend_excluded?: number | null
+    /** 'unavailable' = the split could not be fetched, so meta_spend may include Cogni. */
+    spend_split?: 'applied' | 'unavailable' | null
     real_cpa?: number | null
     real_roas?: number | null
     date?: string | null
@@ -32,7 +40,14 @@ export interface GieniuCommandContext {
   profitData: {
     ok: boolean
     marginBeforeAds?: number
+    /** BLENDED ad spend — profit, CPA and ROAS use this. */
     adSpend?: number
+    adSpendTotal?: number | null
+    adSpendExcluded?: number
+    adSpendExcludedCampaigns?: Array<{ campaign: string; scope: string; spend: number }>
+    adSpendSplitAvailable?: boolean | null
+    /** 'bez Cogni' when est. profit leaves Cogni's spend out. */
+    estimatedProfitBasis?: string | null
     estimatedProfitAfterAds?: number
     estimatedProfitPerOrder?: number | null
     unknownRevenue?: number

@@ -22,6 +22,7 @@ import {
   warsawToday,
 } from '../shared/productCatalog.js'
 import { readTable } from '../shared/supabaseRead.js'
+import { splitAdSpend, excludedSpendLines } from '../shared/adSpend.js'
 import { toWarsawDate } from '../shared/productCatalog.js'
 import { businessWallClock } from '../shared/businessDay.js'
 
@@ -295,36 +296,59 @@ export const handler = async (event) => {
   }
 
   // ── Ad spend over the range ───────────────────────────────────────────────
-  let adSpend = 0
+  //
+  // Read from meta_ads_daily, per campaign, and split by splitAdSpend() — the
+  // single place that decides which spend may be a denominator for Wix orders.
+  //
+  // It used to read v_daily_wix_meta_performance, which hands back one
+  // meta_spend per day: the sum of EVERYTHING Meta spent. That cannot be split
+  // afterwards, and on 2026-11-09 COGNI-TEST-09.11 started — a Stripe-only
+  // campaign whose money is not a cost of acquiring any Wix order. Folded in,
+  // it turned an amber week (43,16 zł) into a red one (54,12 zł).
+  //
+  // The view is still read, but only as the fallback when meta_ads_daily cannot
+  // be — and then the split is reported as UNAVAILABLE rather than assumed
+  // empty, because "I could not tell" and "there was no Cogni" are not the same.
+  let spendSplit = null            // { total, blended, excluded, excludedCampaigns, … }
   let adSpendSource = 'none'
+  let adSpendSplitAvailable = false
   try {
-    const perfRows = await readTable(supabaseUrl, serviceKey, 'v_daily_wix_meta_performance', {
-      select:  'date,meta_spend',
-      order:   'date.asc',
+    const adRows = await readTable(supabaseUrl, serviceKey, 'meta_ads_daily', {
+      select:  'date,campaign_name,ad_name,spend',
+      // Date alone leaves ties between a day's rows, and offset paging over
+      // tied rows can drop or repeat one across a page boundary.
+      order:   'date.asc,ad_id.asc,campaign_id.asc',
       filters: { date: [`gte.${from}`, `lte.${to}`] },
     })
-    if (perfRows.length > 0) {
-      adSpend = perfRows.reduce((s, r) => s + (Number(r.meta_spend) || 0), 0)
-      adSpendSource = 'v_daily_wix_meta_performance'
+    if (adRows.length > 0) {
+      spendSplit = splitAdSpend(adRows)
+      adSpendSource = 'meta_ads_daily'
+      adSpendSplitAvailable = true
     }
   } catch (e) {
-    errors.push(`v_daily_wix_meta_performance: ${String(e?.message ?? e)}`)
+    errors.push(`meta_ads_daily: ${String(e?.message ?? e)}`)
   }
-  if (adSpendSource === 'none') {
+  if (!spendSplit) {
     try {
-      const adsRows = await readTable(supabaseUrl, serviceKey, 'meta_ads_daily', {
-        select:  'spend',
+      const perfRows = await readTable(supabaseUrl, serviceKey, 'v_daily_wix_meta_performance', {
+        select:  'date,meta_spend',
         order:   'date.asc',
         filters: { date: [`gte.${from}`, `lte.${to}`] },
       })
-      if (adsRows.length > 0) {
-        adSpend = adsRows.reduce((s, r) => s + (Number(r.spend) || 0), 0)
-        adSpendSource = 'meta_ads_daily'
+      if (perfRows.length > 0) {
+        const total = perfRows.reduce((s2, r) => s2 + (Number(r.meta_spend) || 0), 0)
+        // Total only. Nothing is claimed about what part of it was Cogni.
+        spendSplit = { total, blended: total, excluded: 0, byScope: {}, excludedCampaigns: [] }
+        adSpendSource = 'v_daily_wix_meta_performance'
       }
     } catch (e) {
-      errors.push(`meta_ads_daily: ${String(e?.message ?? e)}`)
+      errors.push(`v_daily_wix_meta_performance: ${String(e?.message ?? e)}`)
     }
   }
+  const adSpendTotal    = spendSplit?.total ?? 0
+  const adSpendExcluded = spendSplit?.excluded ?? 0
+  // BLENDED: the only figure CPA, ROAS and profit may use.
+  const adSpend         = spendSplit?.blended ?? 0
 
   // ── Profit ────────────────────────────────────────────────────────────────
   // Only margins that are actually known are counted. Orders without a margin
@@ -386,7 +410,18 @@ export const handler = async (event) => {
       discounts: Object.values(discountAccum).sort((a, b) => (b.listedTotal - b.paidTotal) - (a.listedTotal - a.paidTotal)),
       orderRowsFetched: rangeRows.length,
       revenue: totalRevenue,
+      // BLENDED ad spend — the part allowed to be a denominator for Wix
+      // orders. Everything below (profit, CPA, ROAS) uses this one.
       adSpend,
+      // What Meta actually spent, and the part kept out. adSpend + adSpendExcluded
+      // = adSpendTotal, to the grosz. Reported so the dashboard can show both
+      // instead of a number that quietly differs from the Meta invoice.
+      adSpendTotal,
+      adSpendExcluded,
+      adSpendExcludedCampaigns: spendSplit?.excludedCampaigns ?? [],
+      // false when meta_ads_daily could not be read and only the view's total
+      // was available: the split is then UNKNOWN, not zero.
+      adSpendSplitAvailable,
       adSpendSource,
       knownMargin,
       unknownRevenue,
@@ -411,6 +446,11 @@ export const handler = async (event) => {
       conflicts,
       marginBeforeAds,
       estimatedProfitAfterAds,
+      // Said out loud on the card: this profit does not subtract Cogni's spend.
+      // Null when nothing was excluded, so a range without Cogni stays quiet.
+      estimatedProfitBasis: adSpendExcluded > 0 ? 'bez Cogni' : null,
+      // The report lines, built by the same module that decided the split.
+      adSpendExcludedLines: excludedSpendLines(spendSplit),
       estimatedProfitPerOrder,
       realCpa,
       realRoas,

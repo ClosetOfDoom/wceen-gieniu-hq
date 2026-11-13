@@ -17,13 +17,34 @@ export function aggregatePerf(rows: DailyPerformance[]): DailyPerformance | null
   if (rows.length === 0) return null
   const orders  = sumField(rows, 'wix_orders')
   const revenue = sumField(rows, 'wix_revenue')
+  // BLENDED — the rows' meta_spend is already the blended figure once
+  // withSpendSplit() ran, so this sum is too. CPA and ROAS below divide by it.
   const spend   = sumField(rows, 'meta_spend')
   const sorted  = [...rows].sort((a, b) => a.date.localeCompare(b.date))
+
+  // One campaign appears on many days; merge per campaign so the line reads
+  // "COGNI-TEST-09.11 — 953,91 zł", not four lines of 238.
+  const excl = new Map<string, { campaign: string; scope: string; spend: number }>()
+  for (const r of rows) {
+    for (const c of r.meta_spend_excluded_campaigns ?? []) {
+      const e = excl.get(c.campaign) ?? { campaign: c.campaign, scope: c.scope, spend: 0 }
+      e.spend = Math.round((e.spend + c.spend) * 100) / 100
+      excl.set(c.campaign, e)
+    }
+  }
+  // 'unavailable' wins: one day without a split makes the range's split unknown.
+  const split: DailyPerformance['spend_split'] = rows.some(r => r.spend_split === 'unavailable')
+    ? 'unavailable'
+    : rows.every(r => r.spend_split === 'applied') ? 'applied' : undefined
+
   return {
     date: `${sorted[0].date} → ${sorted[sorted.length - 1].date}`,
     wix_orders: orders,
     wix_revenue: revenue,
     meta_spend: spend,
+    meta_spend_excluded: Math.round(sumField(rows, 'meta_spend_excluded') * 100) / 100,
+    meta_spend_excluded_campaigns: [...excl.values()].sort((a, b) => b.spend - a.spend) as never,
+    spend_split: split,
     real_cpa:  orders > 0 ? spend / orders : null,
     real_roas: spend > 0 ? revenue / spend : null,
     impressions: sumField(rows, 'impressions'),

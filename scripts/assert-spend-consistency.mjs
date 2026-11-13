@@ -53,7 +53,8 @@ for (const [label, from, to, inProgress] of RANGES) {
 
   // The campaign section sums meta_ads_daily; the global card reads the view.
   const cardSpend = (cd.rows ?? []).reduce((s, r) => s + (r.spend ?? 0), 0)
-  const viewSpend = pd.adSpend ?? 0
+  // adSpend is BLENDED (Cogni kept out); the campaign section lists every campaign, so the TOTAL is its witness.
+  const viewSpend = pd.adSpendTotal ?? pd.adSpend ?? 0
   const gap = Math.abs(cardSpend - viewSpend)
 
   if (gap <= 0.01) {

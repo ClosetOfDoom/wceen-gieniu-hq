@@ -5,6 +5,7 @@
 
 import { readTable } from '../shared/supabaseRead.js'
 import { businessToday } from '../shared/businessDay.js'
+import { splitAdSpend } from '../shared/adSpend.js'
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -143,6 +144,11 @@ const rowGranularity = (r) =>
         // MIESIĄC — the month's groups were all stamped with today, and today
         // is not a full day.
         dailyRows: raw,
+        // The same split every other figure uses, made from the same rows:
+        // how much of this range's spend may be a denominator for Wix orders
+        // and how much may not (Cogni). The panel shows both rather than one
+        // number that silently differs from the global card's blended figure.
+        spendSplit: splitAdSpend(raw),
         rawRowCount: raw.length,
         sourceTable: 'meta_ads_daily',
         aggregateMetaSpendExists: aggRows.length > 0,

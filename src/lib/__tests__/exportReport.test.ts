@@ -176,7 +176,7 @@ describe('products — a gap and a decision are different states', () => {
     expect(r).toContain('- NIEZMAPOWANE: brak')
     // The excluded revenue must not leak into the blended figures.
     expect(r).not.toContain('3,450.00 PLN |')
-    expect(r).toContain('| real ROAS | 2.98x |')
+    expect(r).toContain('| real ROAS (blended) | 2.98x |')
   })
 
   it('says the endpoint is missing rather than printing an empty product table', () => {
@@ -237,8 +237,8 @@ describe('summary and goals', () => {
     const r = buildReport(input())
     expect(r).toContain('- PP orders: 10 / 10 — cel osiągnięty — 10/10')
     expect(r).toContain('- przychód: 1,190.00 PLN / 1,000.00 PLN — ')
-    expect(r).toContain('- CPA: 40.00 PLN — ')
-    expect(r).toContain('- ROAS: 2.98x — ')
+    expect(r).toContain('- CPA (blended): 40.00 PLN — ')
+    expect(r).toContain('- ROAS (blended): 2.98x — ')
     // The goals block must not carry a verdict at all any more.
     expect(r.split('## ALARMY')[0]).not.toMatch(/on pace|behind pace|abnormally low/i)
   })
@@ -275,12 +275,72 @@ describe('no invented numbers', () => {
     expect(r).toContain('| zamówienia | BRAK |')
     expect(r).toContain('| przychód | BRAK |')
     expect(r).toContain('| ad spend | BRAK |')
-    expect(r).toContain('| real CPA | BRAK |')
-    expect(r).toContain('| real ROAS | BRAK |')
+    expect(r).toContain('| real CPA (blended) | BRAK |')
+    expect(r).toContain('| real ROAS (blended) | BRAK |')
     expect(r).not.toMatch(/\| (zamówienia|przychód|ad spend) \| 0/)
   })
 
   it('ends with a newline so the clipboard paste is clean', () => {
     expect(buildReport(input()).endsWith('\n')).toBe(true)
+  })
+})
+
+describe('Cogni is outside the blended figures', () => {
+  // The week 2026-11-06…12: PP spent 3 754,50 against 87 orders; Cogni another 953,91.
+  const withCogni = () => {
+    const perf = {
+      ...day('2026-11-12', 87, 17400, 3754.5),
+      real_cpa: 43.16, real_roas: 4.63,
+      meta_spend_excluded: 953.91,
+      meta_spend_excluded_campaigns: [{ campaign: 'COGNI-TEST-09.11', scope: 'cogni', spend: 953.91 }],
+      spend_split: 'applied' as const,
+    } as DailyPerformance
+    return input({
+      range: 'week', from: '2026-11-06', to: '2026-11-12',
+      perf, prevPerf: null, dailyRows: [perf], cpa: 43.16, roas: 4.63,
+      profit: profit({
+        adSpend: 3754.5, adSpendTotal: 4708.41, adSpendExcluded: 953.91,
+        adSpendSplitAvailable: true, estimatedProfitBasis: 'bez Cogni',
+      } as Partial<ProfitData>),
+      campaignRows: [
+        { date: '2026-11-12', campaign_name: 'PP-22.06.2026',   ad_name: 'PP-ad-1', spend: 3754.5 },
+        { date: '2026-11-12', campaign_name: 'COGNI-TEST-09.11', ad_name: 'c-1',     spend: 953.91 },
+      ] as MetaAdDaily[],
+    })
+  }
+
+  it('prints the WYKLUCZONE line with the amount and the reason', () => {
+    const r = buildReport(withCogni())
+    expect(r).toContain(
+      'WYKLUCZONE z blended: COGNI-TEST-09.11 — 953,91 zł (przychód Cogni w Stripe, poza Stanleyem)')
+  })
+
+  it('shows total and split on the ad-spend row, CPA as blended, profit as "bez Cogni"', () => {
+    const r = buildReport(withCogni())
+    expect(r).toContain('| ad spend | 4,708.41 PLN (blended 3,754.50 PLN + wyłączone 953.91 PLN) |')
+    expect(r).toContain('| real CPA (blended) | 43.16 PLN |')
+    expect(r).toContain('| est. profit (bez Cogni) |')
+  })
+
+  it('labels the campaign scope "cogni (poza blended)"', () => {
+    expect(buildReport(withCogni())).toContain('| COGNI-TEST-09.11 | 953.91 PLN |')
+    expect(buildReport(withCogni())).toContain('cogni (poza blended)')
+  })
+
+  it('says nothing about Cogni when the range had none', () => {
+    const r = buildReport(input())
+    expect(r).not.toContain('WYKLUCZONE z blended')
+    expect(r).not.toContain('bez Cogni')
+  })
+
+  it('says the split is unknown instead of printing a range with no exclusions', () => {
+    const base = withCogni()
+    const r = buildReport({
+      ...base,
+      perf: { ...base.perf!, spend_split: 'unavailable', meta_spend_excluded: undefined,
+              meta_spend_excluded_campaigns: undefined },
+    })
+    expect(r).toContain('NIEDOSTĘPNY')
+    expect(r).toContain('brak przychodu Stripe w bazie')
   })
 })

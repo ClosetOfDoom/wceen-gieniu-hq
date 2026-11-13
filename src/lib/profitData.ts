@@ -54,7 +54,26 @@ export interface ProfitData {
   dateWarsaw: string
   ordersCount: number
   revenue: number
+  /**
+   * BLENDED ad spend: the part allowed to be a denominator for Wix orders.
+   * Profit, CPA and ROAS all use this one. Cogni's spend is not in it —
+   * Cogni's revenue is in Stripe and never reaches `orders`.
+   */
   adSpend: number
+  /** What Meta actually spent: adSpend + adSpendExcluded, to the grosz. */
+  adSpendTotal?: number
+  /** Spend kept out of the blended figures (Cogni). */
+  adSpendExcluded?: number
+  adSpendExcludedCampaigns?: Array<{ campaign: string; scope: string; spend: number }>
+  /** Ready-made report lines: "WYKLUCZONE z blended: … — N zł (…)". Empty when nothing was excluded. */
+  adSpendExcludedLines?: string[]
+  /**
+   * false when meta_ads_daily could not be read and only the view's total was
+   * available — the split is then UNKNOWN, not zero.
+   */
+  adSpendSplitAvailable?: boolean
+  /** 'bez Cogni' when spend was excluded from est. profit, null when none was. */
+  estimatedProfitBasis?: string | null
   adSpendSource: string
   knownMargin: number
   unknownRevenue: number

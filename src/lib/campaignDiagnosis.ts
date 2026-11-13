@@ -1,6 +1,7 @@
 import { businessToday } from './businessDay'
 import type { MetaAdDaily } from '../services/data'
 import { bustUrl } from '../utils/cacheBust'
+import { adScopeOf, isExcludedFromWixBlended, type AdScope, type AdSpendSplit } from './adSpend'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -8,22 +9,26 @@ export type CampaignScope = 'JSU' | 'JZK' | 'ALL'
 export type CampaignStatus = 'efficient' | 'expensive' | 'zero-attribution' | 'needs-watch' | 'unclassified'
 
 // Funnel scope by campaign_name PREFIX (auto-catches new creatives; no hardcoded
-// name list). PP-* → memory, 3T-* → language, anything else → unknown (marked in
-// the UI, no diagnosis — we do not guess).
-export type FunnelScope = 'memory' | 'language' | 'unknown'
+// name list). PP-* → memory, 3T-* → language, COGNI-* → cogni, anything else →
+// unknown (marked in the UI, no diagnosis — we do not guess).
+//
+// The prefixes live in netlify/shared/adSpend.js, not here: the same rule has
+// to decide which spend is blended on the server, and two copies of a prefix
+// table is how a campaign ends up "cogni" in one place and "unknown" in the next.
+export type FunnelScope = AdScope
 
 export interface ScopeThresholds { target: number; alarm: number; noScale: number | null }
 export const SCOPE_THRESHOLDS: Record<FunnelScope, ScopeThresholds | null> = {
   memory:   { target: 40, alarm: 50, noScale: 60 },   // Pakiet Pamięciowy
   language: { target: 25, alarm: 35, noScale: null }, // Pakiet Językowy / 3T
+  // Cogni is sold through Stripe: no Wix order can ever be attributed to it, so
+  // a CPA threshold for it would be a number with nothing to be compared to.
+  cogni:    null,
   unknown:  null,
 }
 
 export function funnelScope(campaignName: string | null | undefined): FunnelScope {
-  const n = String(campaignName ?? '').trim()
-  if (/^pp[-\s]/i.test(n)) return 'memory'
-  if (/^3t[-\s]/i.test(n)) return 'language'
-  return 'unknown'
+  return adScopeOf(campaignName)
 }
 
 export interface CampaignEntry {
@@ -116,6 +121,10 @@ function classifyStatus(
   spendShare: number,
   scope: FunnelScope = 'unknown',
 ): CampaignStatus {
+  // Cogni sells through Stripe, so the Wix/Meta purchase event never fires for
+  // it. "Zero attribution — burning budget" would be a verdict on a measurement
+  // that does not apply, so it gets none.
+  if (isExcludedFromWixBlended(scope)) return 'unclassified'
   if (spend > 10 && purchases === 0) return 'zero-attribution'
   if (purchases > 0 && metaCpa !== null) {
     const t = SCOPE_THRESHOLDS[scope]
@@ -279,6 +288,8 @@ export interface CampaignFetchResult {
    * away and stamped them all with the window's last one.
    */
   dailyRows: MetaAdDaily[]
+  /** The blended / excluded split of this range's campaign spend. Null in single-day mode. */
+  spendSplit?: AdSpendSplit | null
   usedDate: string
   requestedDate: string
   aggregateMetaSpendExists: boolean
@@ -326,6 +337,7 @@ export async function fetchCampaignRows(range?: { from: string; to: string }): P
       sourceMismatch: boolean
       sourceMismatchExplanation: string | null
       dailyRows?: MetaAdDaily[]
+      spendSplit?: AdSpendSplit | null
       datesPresent?: string[]
       rangeFrom?: string
       rangeTo?: string
@@ -343,6 +355,7 @@ export async function fetchCampaignRows(range?: { from: string; to: string }): P
     return {
       rows:                      json.rows ?? [],
       dailyRows:                 json.dailyRows ?? [],
+      spendSplit:                json.spendSplit ?? null,
       usedDate:                  json.usedDate ?? '',
       requestedDate:             json.requestedDate ?? today,
       aggregateMetaSpendExists:  json.aggregateMetaSpendExists ?? false,

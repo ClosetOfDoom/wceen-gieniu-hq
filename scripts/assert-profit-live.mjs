@@ -126,7 +126,7 @@ async function checkRange(label, from, to) {
   console.log('')
   console.log(`  orders            = ${d.ordersCount}          (view: ${v.orders})`)
   console.log(`  revenue           = ${pln(d.revenue)}   (view: ${pln(v.revenue)})`)
-  console.log(`  ad spend          = ${pln(d.adSpend)}   (view: ${pln(v.spend)})  source: ${d.adSpendSource}`)
+  console.log(`  ad spend          = ${pln(d.adSpend)} blended + ${pln(d.adSpendExcluded ?? 0)} excluded = ${pln(d.adSpendTotal ?? d.adSpend)}   (view: ${pln(v.spend)})  source: ${d.adSpendSource}`)
   console.log(`  margin total      = ${pln(d.marginBeforeAds)}`)
   console.log(`  EST. PROFIT       = ${pln(d.estimatedProfitAfterAds)}`)
   console.log(`  no-margin orders  = ${d.noMarginOrdersCount ?? 0}  (revenue ${pln(d.noMarginRevenue)})`)
@@ -208,10 +208,22 @@ async function checkRange(label, from, to) {
     fail(`RECONCILE ${label}: profit-data revenue ${pln(d.revenue)} vs view ${pln(v.revenue)} `
        + `(gap ${pln(revGap)}), beyond the ${pln(revSlack)} the day boundary can explain`)
   }
-  if (Math.abs(d.adSpend - v.spend) < 0.01) {
-    pass(`${label}: ad spend matches the view (${pln(d.adSpend)})`)
+  // The view's spend is EVERYTHING Meta spent. profit-data's adSpend is the
+  // BLENDED part (Cogni kept out), so the witness is adSpendTotal, and the two
+  // halves must add up to it to the grosz.
+  const totalSpend = d.adSpendTotal ?? d.adSpend
+  if (Math.abs(totalSpend - v.spend) < 0.01) {
+    pass(`${label}: total ad spend matches the view (${pln(totalSpend)})`)
   } else {
-    fail(`${label}: profit-data ad spend ${pln(d.adSpend)} vs view ${pln(v.spend)}`)
+    fail(`${label}: profit-data total ad spend ${pln(totalSpend)} vs view ${pln(v.spend)}`)
+  }
+  if (d.adSpendSplitAvailable !== false) {
+    const sum = Math.round((d.adSpend + (d.adSpendExcluded ?? 0)) * 100) / 100
+    if (Math.abs(sum - totalSpend) < 0.005) {
+      pass(`${label}: blended ${pln(d.adSpend)} + excluded ${pln(d.adSpendExcluded ?? 0)} = total ${pln(totalSpend)}`)
+    } else {
+      fail(`${label}: blended ${pln(d.adSpend)} + excluded ${pln(d.adSpendExcluded ?? 0)} ≠ total ${pln(totalSpend)}`)
+    }
   }
 
   // Est. Profit exactly equal to −(ad spend) with orders on the books is the

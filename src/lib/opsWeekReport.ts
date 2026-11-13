@@ -122,7 +122,13 @@ export interface OpsWeekReport {
   orders: OpsWeekOrders
   attribution: OpsWeekAttribution
   meta: {
+    /** Total Meta spent this week. */
     this_week_spend: number
+    /** The part allowed to be a denominator for Wix orders. Null = split unknown. */
+    this_week_spend_blended?: number | null
+    /** The part kept out of blended figures (Cogni). Null = split unknown. */
+    this_week_spend_excluded?: number | null
+    this_week_spend_excluded_campaigns?: Array<{ campaign: string; scope: string; spend: number }>
     this_week_impressions: number
   }
   summary: OpsWeekSummary

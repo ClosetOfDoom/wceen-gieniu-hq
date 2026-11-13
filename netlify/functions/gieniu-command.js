@@ -7,6 +7,7 @@
 // Funding radar snapshot (same data as src/data/funding.ts, copied from dashboard.html).
 import { FUNDING_RADAR } from '../shared/funding.js'
 import { readTable } from '../shared/supabaseRead.js'
+import { adScopeOf, excludedSpendSentence } from '../shared/adSpend.js'
 import { fetchOrdersInRange } from '../shared/productCatalog.js'
 import { businessDay, businessToday, businessDaysAgo, businessWeekStart } from '../shared/businessDay.js'
 
@@ -226,6 +227,30 @@ function fmt(n, digits = 2) {
   return n != null ? n.toFixed(digits) : '—'
 }
 
+// ── Spend that was kept out of CPA / ROAS / profit ───────────────────────────
+// A trend row's meta_spend is BLENDED — what CPA divides by — and the part left
+// out (Cogni) rides beside it as meta_spend_excluded. These say so in the
+// deterministic answers, from amounts the browser got from splitAdSpend().
+const exclOf = (rows) => rows.reduce((s, r) => s + (r?.meta_spend_excluded ?? 0), 0)
+const splitUnknown = (rows) => rows.some(r => r?.spend_split === 'unavailable')
+
+function spendWithSplit(blended, excluded, unknown) {
+  if (unknown) return `${fmt(blended)} PLN (blended / excluded split UNKNOWN)`
+  if (excluded > 0) return `${fmt(blended + excluded)} PLN (blended ${fmt(blended)} + excluded ${fmt(excluded)})`
+  return `${fmt(blended)} PLN`
+}
+
+function exclNote(excluded, unknown) {
+  if (unknown) {
+    return 'Note: the blended / excluded spend split is unavailable, so CPA may include Cogni spend. '
+      + 'The gap I cannot close: no Stripe revenue in the database.'
+  }
+  if (!(excluded > 0)) return ''
+  return `Note: CPA, ROAS and profit EXCLUDE Cogni spend (${fmt(excluded)} PLN). Cogni revenue is in Stripe, `
+    + 'outside what I can see, so that spend is not a cost of any Wix order. '
+    + 'The gap I cannot close: no Stripe revenue in the database.'
+}
+
 function buildRevenueAnswer(ctx) {
   const kpi = ctx.todayKPIs
   if (!kpi) {
@@ -243,9 +268,12 @@ function buildRevenueAnswer(ctx) {
     return { text: msg, speech: msg, sources: ['todayKPIs'], warnings: ['no orders today'] }
   }
 
+  const excl = kpi.meta_spend_excluded ?? 0
+  const unk  = kpi.spend_split === 'unavailable'
+  const note = exclNote(excl, unk)
   return {
-    text: `${orders} orders | ${fmt(revenue)} PLN revenue\nMeta spend: ${fmt(spend)} PLN\nReal ROAS: ${roas} | Real CPA: ${cpa}`,
-    speech: `${orders} orders, ${fmt(revenue)} PLN revenue today. Meta spend: ${fmt(spend)} PLN.`,
+    text: `${orders} orders | ${fmt(revenue)} PLN revenue\nMeta spend: ${spendWithSplit(spend, excl, unk)}\nReal ROAS: ${roas} | Real CPA: ${cpa}${note ? '\n' + note : ''}`,
+    speech: `${orders} orders, ${fmt(revenue)} PLN revenue today. Meta spend: ${fmt(spend)} PLN${excl > 0 ? ' blended' : ''}.${excl > 0 ? ` Cogni spend of ${fmt(excl, 0)} PLN is excluded from CPA: its revenue is in Stripe, which I cannot see.` : ''}`,
     sources: ['todayKPIs'],
     warnings: [],
   }
@@ -263,9 +291,12 @@ function buildProfitAnswer(ctx) {
     ? `\n⚠ ${fmt(p.unknownRevenue)} PLN unmapped revenue excluded from profit.`
     : ''
 
+  const pExcl = p.adSpendExcluded ?? 0
+  const pUnk  = p.adSpendSplitAvailable === false
+  const pNote = exclNote(pExcl, pUnk)
   return {
-    text: `${verdict}\nContribution margin: ${fmt(p.marginBeforeAds)} PLN\nMeta spend: ${fmt(p.adSpend)} PLN\nEst. profit: ${fmt(profit)} PLN\nProfit/order: ${fmt(p.estimatedProfitPerOrder)} PLN${unknown}`,
-    speech: `${verdict} Margin: ${fmt(p.marginBeforeAds)} PLN. Spend: ${fmt(p.adSpend)} PLN. Estimated profit: ${fmt(profit)} PLN.`,
+    text: `${verdict}\nContribution margin: ${fmt(p.marginBeforeAds)} PLN\nMeta spend (blended): ${fmt(p.adSpend)} PLN\nEst. profit${p.estimatedProfitBasis ? ` (${p.estimatedProfitBasis})` : ''}: ${fmt(profit)} PLN\nProfit/order: ${fmt(p.estimatedProfitPerOrder)} PLN${unknown}${pNote ? '\n' + pNote : ''}`,
+    speech: `${verdict} Margin: ${fmt(p.marginBeforeAds)} PLN. Spend: ${fmt(p.adSpend)} PLN${pExcl > 0 ? ' without Cogni' : ''}. Estimated profit: ${fmt(profit)} PLN.${pExcl > 0 ? ' Cogni spend is excluded: its revenue is in Stripe, which I cannot see.' : ''}`,
     sources: ['profitData'],
     warnings: unknown ? ['unmapped revenue excluded'] : [],
   }
@@ -797,10 +828,11 @@ function buildWeekSummaryAnswer(ctx) {
     `— THIS WEEK (${rows.length} day${rows.length > 1 ? 's' : ''}, since ${weekStartStr}) —`, '',
     `Total orders: ${totalOrders}`,
     `Total revenue: ${fmt(totalRevenue)} PLN`,
-    `Total Meta spend: ${fmt(totalSpend)} PLN`,
+    `Total Meta spend: ${spendWithSplit(totalSpend, exclOf(rows), splitUnknown(rows))}`,
   ]
   if (wtdCPA)  lines.push(`WTD CPA: ${fmt(wtdCPA)} PLN`)
   if (wtdROAS) lines.push(`WTD ROAS: ${fmt(wtdROAS)}x`)
+  { const note = exclNote(exclOf(rows), splitUnknown(rows)); if (note) lines.push('', note) }
   lines.push('', `${rows.length} day${rows.length > 1 ? 's' : ''} with data: ${rows.map(r => r.date).join(', ')}.`)
   const speech = `This week: ${totalOrders} orders, ${fmt(totalRevenue, 0)} PLN revenue, ${fmt(totalSpend, 0)} PLN spend.${wtdROAS != null ? ` ROAS ${fmt(wtdROAS)}x.` : ''}`
   return { text: lines.join('\n'), speech, sources: ['recentTrend'], warnings: [] }
@@ -824,10 +856,11 @@ function buildLast7Answer(ctx) {
     `— LAST 7 DAYS (${rows[0]?.date} → ${rows[rows.length - 1]?.date}) —`, '',
     `Total orders: ${totalOrders}`,
     `Total revenue: ${fmt(totalRevenue)} PLN`,
-    `Total Meta spend: ${fmt(totalSpend)} PLN`,
+    `Total Meta spend: ${spendWithSplit(totalSpend, exclOf(rows), splitUnknown(rows))}`,
   ]
   if (avgCPA)  lines.push(`Average CPA: ${fmt(avgCPA)} PLN`)
   if (avgROAS) lines.push(`Average ROAS: ${fmt(avgROAS)}x`)
+  { const note = exclNote(exclOf(rows), splitUnknown(rows)); if (note) lines.push('', note) }
   lines.push('')
   rows.forEach(r => {
     const cpaStr  = r.real_cpa  != null ? `  CPA: ${fmt(r.real_cpa)}`   : ''
@@ -984,20 +1017,47 @@ function buildContextText(context, serverAds = [], creativeAnalyticsText = '') {
     lines.push('--- Today KPIs (Wix + Meta) ---')
     lines.push(`Wix Orders: ${kpi.wix_orders ?? '—'}`)
     lines.push(`Wix Revenue: ${fmt(kpi.wix_revenue)} PLN`)
-    lines.push(`Meta Ad Spend: ${fmt(kpi.meta_spend)} PLN`)
-    lines.push(`Real CPA (spend / wix orders): ${kpi.real_cpa != null ? fmt(kpi.real_cpa) + ' PLN' : 'N/A'}`)
+    lines.push(`Meta Ad Spend (BLENDED — excludes Cogni): ${fmt(kpi.meta_spend)} PLN`)
+    if ((kpi.meta_spend_excluded ?? 0) > 0) {
+      lines.push(`Excluded from blended (Cogni, revenue in Stripe): ${fmt(kpi.meta_spend_excluded)} PLN — total Meta spend ${fmt((kpi.meta_spend ?? 0) + kpi.meta_spend_excluded)} PLN`)
+    }
+    if (kpi.spend_split === 'unavailable') {
+      lines.push('Blended / excluded split: UNAVAILABLE — meta_spend above may include Cogni spend.')
+    }
+    lines.push(`Real CPA (blended spend / wix orders): ${kpi.real_cpa != null ? fmt(kpi.real_cpa) + ' PLN' : 'N/A'}`)
     lines.push(`Real ROAS (wix revenue / meta spend): ${kpi.real_roas != null ? fmt(kpi.real_roas) + 'x' : 'N/A'}`)
     lines.push(`Data date: ${kpi.date ?? 'unknown'}`)
   } else {
     lines.push('Today KPIs: NOT AVAILABLE')
   }
 
+  // Always present, whether or not any Cogni spend fell in this range: the model
+  // must know the rule before it is asked, not only when the figure shows up.
+  lines.push('')
+  lines.push('--- SPEND SCOPE (what CPA, ROAS and profit divide by) ---')
+  lines.push('  CPA, ROAS and est. profit use BLENDED spend: every campaign EXCEPT COGNI-*.')
+  lines.push('  Cogni revenue is in Stripe, which this system cannot see, so Cogni spend is not a cost of any Wix order.')
+  lines.push('  The gap, to be named when relevant: no Stripe revenue in the database.')
+  {
+    const exSentence = excludedSpendSentence({
+      excluded: p?.adSpendExcluded ?? kpi?.meta_spend_excluded ?? 0,
+      excludedCampaigns: p?.adSpendExcludedCampaigns ?? [],
+    })
+    if (exSentence) lines.push(`  THIS RANGE: ${exSentence}`)
+  }
+
   lines.push('')
   if (p?.ok) {
     lines.push('--- Profit Data (contribution margin model) ---')
     lines.push(`Contribution margin (known products only): ${fmt(p.marginBeforeAds)} PLN`)
-    lines.push(`Meta ad spend: ${fmt(p.adSpend)} PLN`)
-    lines.push(`Estimated profit after ads: ${fmt(p.estimatedProfitAfterAds)} PLN`)
+    lines.push(`Meta ad spend (BLENDED — excludes Cogni): ${fmt(p.adSpend)} PLN`)
+    if ((p.adSpendExcluded ?? 0) > 0) {
+      lines.push(`Excluded from blended: ${(p.adSpendExcludedCampaigns ?? []).map(c => `${c.campaign} ${fmt(c.spend)} PLN`).join(', ') || fmt(p.adSpendExcluded) + ' PLN'} (revenue in Stripe, not in the database)`)
+    }
+    if (p.adSpendSplitAvailable === false) {
+      lines.push('Blended / excluded split: UNAVAILABLE — spend above may include Cogni.')
+    }
+    lines.push(`Estimated profit after ads${p.estimatedProfitBasis ? ` (${p.estimatedProfitBasis})` : ''}: ${fmt(p.estimatedProfitAfterAds)} PLN`)
     lines.push(`Profit per order: ${fmt(p.estimatedProfitPerOrder)} PLN`)
     lines.push(`Orders counted: ${p.ordersCount ?? '—'}`)
     lines.push(`Unmapped/unknown revenue (excluded): ${fmt(p.unknownRevenue)} PLN`)
@@ -1096,7 +1156,8 @@ function buildContextText(context, serverAds = [], creativeAnalyticsText = '') {
       const cpaStr  = r.real_cpa  != null ? `  CPA: ${fmt(r.real_cpa)} PLN` : ''
       const roasStr = r.real_roas != null ? `  ROAS: ${fmt(r.real_roas)}x` : ''
       const purchStr = (r.meta_purchases ?? 0) > 0 ? `  meta_purchases: ${r.meta_purchases}` : ''
-      lines.push(`  ${r.date}: ${r.wix_orders ?? 0} orders | ${fmt(r.wix_revenue ?? 0)} PLN revenue | spend ${fmt(r.meta_spend ?? 0)} PLN${cpaStr}${roasStr}${purchStr}`)
+      const exStr = (r.meta_spend_excluded ?? 0) > 0 ? ` (+ ${fmt(r.meta_spend_excluded)} excluded)` : ''
+      lines.push(`  ${r.date}: ${r.wix_orders ?? 0} orders | ${fmt(r.wix_revenue ?? 0)} PLN revenue | blended spend ${fmt(r.meta_spend ?? 0)} PLN${exStr}${cpaStr}${roasStr}${purchStr}`)
     })
 
     // Scaling readiness — derived from recent CPA/ROAS stability (blended, all products).
@@ -1132,11 +1193,11 @@ function buildContextText(context, serverAds = [], creativeAnalyticsText = '') {
 
 const warsawTodayStr = businessToday
 const daysAgoStr = (base, n) => businessDaysAgo(n, base)
+// Delegates. This file used to carry its own copy of the PP-/3T- prefix table,
+// which is how a third place came to decide what a campaign is: when COGNI-*
+// was added it would have read "unknown" here and "cogni" everywhere else.
 function scopeOf(campaignName) {
-  const n = String(campaignName || '').trim()
-  if (/^pp[-\s]/i.test(n)) return 'memory'
-  if (/^3t[-\s]/i.test(n)) return 'language'
-  return 'unknown'
+  return adScopeOf(campaignName)
 }
 function num(v) { const n = Number(v); return isNaN(n) ? 0 : n }
 function f2(n) { return n != null && !isNaN(n) ? (Math.round(n * 100) / 100).toFixed(2) : 'N/A' }
@@ -1693,7 +1754,12 @@ Character pillars:
 2. SEPARATE THESE ALWAYS — they are not interchangeable:
    • Revenue (Wix) = money received from customers
    • Contribution margin = revenue minus variable product costs (known products only)
-   • Ad spend = Meta campaign cost
+   • Ad spend = Meta campaign cost. CPA, ROAS and profit use BLENDED ad spend, which leaves
+     out COGNI-* campaigns: Cogni is sold through Stripe, so its revenue never reaches the
+     orders table and its spend is not a cost of any Wix order. When asked about CPA, ROAS
+     or profit, SAY that Cogni spend is excluded, give the amount from the context, and
+     name the gap: there is no Stripe revenue in the database. Never fold it back in, and
+     never estimate Cogni's revenue.
    • Estimated profit = contribution margin minus ad spend (unmapped products excluded)
    • Revenue minus ad spend ≠ profit. Never conflate.
 3. SOURCE HIERARCHY:

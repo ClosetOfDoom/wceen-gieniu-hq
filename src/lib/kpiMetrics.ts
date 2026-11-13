@@ -11,6 +11,7 @@
 // drawing an empty chart.
 
 import type { DailyPerformance, MetaAdDaily } from '../services/data'
+import { totalSpendOf } from './adSpend'
 
 export type MetricUnit = 'pln' | 'num' | 'x' | 'pct'
 
@@ -56,8 +57,12 @@ export const KPI_METRICS: Record<string, KpiMetric> = {
     missingField: 'przychód Wix nie jest przypisany do kampanii (brak wix_revenue per campaign_id)',
   },
   meta_spend: {
+    // TOTAL: what Meta spent, which is what the card and the per-campaign
+    // breakdown beside this series both add up to. r.meta_spend alone is the
+    // BLENDED part and would plot a line that undershoots the card by Cogni's
+    // share.
     id: 'meta_spend', label: 'Ad Spend', unit: 'pln',
-    daily: r => num(r.meta_spend),
+    daily: r => totalSpendOf(r),
     campaign: c => c.spend,
   },
   // Composite — computed PER DAY from that day's components -------------------------
@@ -78,12 +83,14 @@ export const KPI_METRICS: Record<string, KpiMetric> = {
   },
   cpc: {
     id: 'cpc', label: 'CPC', unit: 'pln',
-    daily: r => num(r.clicks) > 0 ? num(r.meta_spend) / num(r.clicks) : null,
+    // Delivery metric: the clicks on the row include Cogni's, so the spend has
+    // to as well. CPA and ROAS above stay on r.meta_spend, the blended figure.
+    daily: r => num(r.clicks) > 0 ? totalSpendOf(r) / num(r.clicks) : null,
     campaign: c => c.clicks > 0 ? c.spend / c.clicks : null,
   },
   cpm: {
     id: 'cpm', label: 'CPM', unit: 'pln',
-    daily: r => num(r.impressions) > 0 ? num(r.meta_spend) / num(r.impressions) * 1000 : null,
+    daily: r => num(r.impressions) > 0 ? totalSpendOf(r) / num(r.impressions) * 1000 : null,
     campaign: c => c.impressions > 0 ? c.spend / c.impressions * 1000 : null,
   },
   clicks: {

@@ -17,6 +17,9 @@ import type { TimeRange } from './timeRange'
 import { RANGE_LABELS } from './timeRange'
 import { META_PURCHASES_FIXED_ON } from './orderWindow'
 import { classifyCampaignScope } from './campaignDiagnosis'
+import {
+  adScopeOf, isExcludedFromWixBlended, excludedSpendLines, totalSpendOf,
+} from './adSpend'
 import { fmtPln, fmtNum, fmtRoas } from '../utils/format'
 import type { AlertResult, TodayContext } from './alerts'
 import type { OrderWindow } from './orderWindow'
@@ -113,7 +116,11 @@ const RULES = `## ZASADY DANYCH (czytaj przed analizą)
   i mierzą co innego: inne okno atrybucji, view-through, brak UTM. Nie są
   z definicji zaniżone — po prostu nie liczą tego samego.
 - Zamówienia nie niosą UTM → atrybucja per reklama jest NIEMOŻLIWA.
-  Wszystkie CPA i ROAS są blended (cały ad spend ÷ całość).
+  Wszystkie CPA i ROAS są blended: wydatek scope'ów niewyłączonych ÷ całość.
+- Cogni: przychód wyłącznie w Stripe, poza zasięgiem Stanleya. Wydatek kampanii
+  COGNI-* NIE jest mianownikiem dla zamówień Wix — CPA, ROAS i est. profit są
+  liczone bez niego, a jego kwota jest podana osobno. Luka, której nie da się
+  zamknąć z tej bazy: brak przychodu Stripe.
 - meta_purchases i initiate_checkout to liczby Meta (pixel): bez UTM,
   niełączalne z zamówieniem Wix. Wskaźnik trendu w jednym lejku — nigdy
   atrybucja i nigdy mianownik konwersji liczonej przeciw Wixowi.
@@ -130,6 +137,30 @@ const TARGETS = `## PROGI I CELE
 - ROAS: ≥2,0x zdrowy
 - Budżet: max +15–20% naraz, jedna zmiana na tydzień`
 
+/**
+ * What was kept out of the blended figures for this range, said once.
+ *
+ * Read from the range's aggregated perf row, which carries what splitAdSpend()
+ * returned — this file decides nothing about what Cogni is. When the split could
+ * not be fetched the report says the split is UNKNOWN instead of printing a
+ * range with no exclusions as though there had been none.
+ */
+function exclusionInfo(i: ReportInput): {
+  excluded: number
+  lines: string[]
+  unknown: boolean
+} {
+  const p = i.perf
+  if (p?.spend_split === 'unavailable') return { excluded: 0, lines: [], unknown: true }
+  const campaigns = p?.meta_spend_excluded_campaigns ?? []
+  const lines = campaigns.length > 0
+    ? excludedSpendLines({ excludedCampaigns: campaigns } as never)
+    // The perf row carried no split — fall back to profit-data's own lines,
+    // which come from the same function over the same rows.
+    : (i.profit?.ok ? (i.profit.adSpendExcludedLines ?? []) : [])
+  return { excluded: p?.meta_spend_excluded ?? i.profit?.adSpendExcluded ?? 0, lines, unknown: false }
+}
+
 function summarySection(i: ReportInput): string {
   // Stated before the table, because a total that includes an unfinished day
   // is not comparable with one that does not.
@@ -138,8 +169,15 @@ function summarySection(i: ReportInput): string {
   const prev = i.prevPerf
   const orders = p?.wix_orders ?? null
   const revenue = p?.wix_revenue ?? null
-  const spend = p?.meta_spend ?? null
+  // `meta_spend` on the range row is the BLENDED spend; the TOTAL is blended
+  // plus what was kept out. The table shows the total and says how it divides.
+  const excl = exclusionInfo(i)
+  const spend = p ? totalSpendOf(p) : null
+  const spendDetail = p && excl.excluded > 0
+    ? ` (blended ${money(p.meta_spend)} + wyłączone ${money(excl.excluded)})`
+    : p?.spend_split === 'unavailable' ? ' (podział blended / wyłączone NIEDOSTĘPNY)' : ''
   const profit = i.profit?.ok ? i.profit.estimatedProfitAfterAds : null
+  const profitBasis = i.profit?.ok && i.profit.estimatedProfitBasis ? ` (${i.profit.estimatedProfitBasis})` : ''
   const prevOrders = prev?.wix_orders ?? null
   // AOV is revenue ÷ orders — stated only when both exist.
   const aov = revenue != null && orders != null && orders > 0 ? revenue / orders : null
@@ -149,13 +187,14 @@ function summarySection(i: ReportInput): string {
   const rows: Array<[string, string, string]> = [
     ['zamówienia',  int(orders),      delta(orders, prevOrders, n => int(n))],
     ['przychód',    money(revenue),   delta(revenue, prev?.wix_revenue, n => money(n))],
-    ['ad spend',    money(spend),     delta(spend, prev?.meta_spend, n => money(n))],
+    ['ad spend',    `${money(spend)}${spendDetail}`,
+                    delta(spend, prev ? totalSpendOf(prev) : null, n => money(n))],
     // Est. profit for the previous period is not loaded (profit-data is fetched
     // for the selected range only), so it is not compared rather than compared
     // against a number that does not exist.
-    ['est. profit', money(profit),    'BRAK DANYCH: profit-data dla poprzedniego zakresu'],
-    ['real CPA',    money(i.cpa),     delta(i.cpa, prev?.real_cpa, n => money(n))],
-    ['real ROAS',   roasFmt(i.roas),  delta(i.roas, prev?.real_roas, n => fmtRoas(n))],
+    ['est. profit' + profitBasis, money(profit),    'BRAK DANYCH: profit-data dla poprzedniego zakresu'],
+    ['real CPA (blended)',  money(i.cpa),     delta(i.cpa, prev?.real_cpa, n => money(n))],
+    ['real ROAS (blended)', roasFmt(i.roas),  delta(i.roas, prev?.real_roas, n => fmtRoas(n))],
     ['AOV',         money(aov),       delta(aov, prevAov, n => money(n))],
   ]
 
@@ -170,6 +209,13 @@ function summarySection(i: ReportInput): string {
     '| metryka | wartość | vs poprzedni zakres |',
     '| --- | --- | --- |',
     ...rows.map(([k, v, d]) => `| ${k} | ${v} | ${d} |`),
+    // Spend that was kept out, by name. A range with no Cogni prints nothing
+    // here; a range whose split is unknown says so rather than staying silent.
+    ...(excl.lines.length > 0 ? ['', ...excl.lines.map(l => `- ${l}`)] : []),
+    ...(excl.unknown
+      ? ['', '- podział wydatku na blended / wyłączone NIEDOSTĘPNY (spend-split nie odpowiedział) — '
+          + 'CPA i ROAS mogą zawierać wydatek Cogni; luka: brak przychodu Stripe w bazie']
+      : []),
   ].join('\n')
 }
 
@@ -184,17 +230,19 @@ function dailySection(i: ReportInput): string {
   const byDate = new Map(i.dailyRows.map(r => [r.date, r]))
   const lines = datesBetween(i.from, i.to).map(date => {
     const r = byDate.get(date)
-    if (!r) return `| ${date} | BRAK DANYCH: v_daily_wix_meta_performance | | | | |`
+    if (!r) return `| ${date} | BRAK DANYCH: v_daily_wix_meta_performance | | | | | |`
+    // meta_spend is the blended figure, so CPA = spend ÷ orders closes on the row.
     const cpa  = r.real_cpa  ?? (r.wix_orders > 0 ? r.meta_spend / r.wix_orders : null)
     const roas = r.real_roas ?? (r.meta_spend > 0 ? r.wix_revenue / r.meta_spend : null)
-    return `| ${date} | ${int(r.wix_orders)} | ${money(r.wix_revenue)} | ${money(r.meta_spend)} | ${money(cpa)} | ${roasFmt(roas)} |`
+    const excluded = r.spend_split === 'unavailable' ? 'NIEZNANE' : money(r.meta_spend_excluded ?? 0)
+    return `| ${date} | ${int(r.wix_orders)} | ${money(r.wix_revenue)} | ${money(r.meta_spend)} | ${excluded} | ${money(cpa)} | ${roasFmt(roas)} |`
   })
 
   return [
     '## DZIEŃ PO DNIU',
     '',
-    '| data | zam. | przychód | ad spend | CPA | ROAS |',
-    '| --- | --- | --- | --- | --- | --- |',
+    '| data | zam. | przychód | ad spend (blended) | wyłączone | CPA | ROAS |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
     ...lines,
   ].join('\n')
 }
@@ -382,7 +430,11 @@ function campaignsSection(i: ReportInput): string {
   const byCampaign = new Map<string, { spend: number; scope: string }>()
   for (const r of i.campaignRows) {
     const name = r.campaign_name ?? r.campaign_id ?? 'BRAK DANYCH: campaign_name'
-    const scope = classifyCampaignScope(`${r.ad_name ?? ''} ${r.campaign_name ?? ''}`)
+    // A campaign that is outside the blended figures says so; the rest keep the
+    // keyword scope the panel has always used.
+    const scope = isExcludedFromWixBlended(adScopeOf(r.campaign_name, r.ad_name))
+      ? adScopeOf(r.campaign_name, r.ad_name)
+      : classifyCampaignScope(`${r.ad_name ?? ''} ${r.campaign_name ?? ''}`)
     const prev = byCampaign.get(name)
     byCampaign.set(name, {
       spend: (prev?.spend ?? 0) + (r.spend ?? 0),
@@ -392,7 +444,10 @@ function campaignsSection(i: ReportInput): string {
   }
 
   const total = [...byCampaign.values()].reduce((s, c) => s + c.spend, 0)
-  const SCOPE_LABEL: Record<string, string> = { JSU: 'PP-', JZK: '3T-', ALL: 'unknown' }
+  const SCOPE_LABEL: Record<string, string> = {
+    JSU: 'PP-', JZK: '3T-', ALL: 'unknown',
+    cogni: 'cogni (poza blended)',
+  }
 
   const rows = [...byCampaign.entries()]
     .sort((a, b) => b[1].spend - a[1].spend)
@@ -400,7 +455,7 @@ function campaignsSection(i: ReportInput): string {
       `| ${name} | ${money(c.spend)} | ${total > 0 ? pct(c.spend / total) : 'BRAK'} | ${SCOPE_LABEL[c.scope] ?? c.scope} |`)
 
   return [...head,
-    '| kampania | wydatek | udział % | scope (PP-/3T-/unknown) |',
+    '| kampania | wydatek | udział % | scope (PP-/3T-/cogni/unknown) |',
     '| --- | --- | --- | --- |',
     ...rows,
     '',
@@ -420,8 +475,8 @@ function goalsSection(i: ReportInput): string {
     '',
     `- PP orders: ${ppValue} / ${int(g.ppTarget)} — ${g.pp.note}`,
     `- przychód: ${money(i.perf?.wix_revenue)} / ${money(g.revenueTarget)} — ${g.revenue.note}`,
-    `- CPA: ${money(i.cpa)} — ${g.cpa.note}`,
-    `- ROAS: ${roasFmt(i.roas)} — ${g.roas.note}`,
+    `- CPA (blended${exclusionInfo(i).excluded > 0 ? ', bez Cogni' : ''}): ${money(i.cpa)} — ${g.cpa.note}`,
+    `- ROAS (blended${exclusionInfo(i).excluded > 0 ? ', bez Cogni' : ''}): ${roasFmt(i.roas)} — ${g.roas.note}`,
   ].join('\n')
 }
 

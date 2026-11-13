@@ -120,6 +120,10 @@ export function resolveIntent(query: string, ctx: IntentContext): GieniuResponse
       ]
       if (cpa  != null) lines.push(`  Real CPA: ${cpa.toFixed(2)} PLN`)
       if (roas != null) lines.push(`  Real ROAS: ${roas.toFixed(2)}x`)
+      if ((latest.meta_spend_excluded ?? 0) > 0) {
+        lines.push(`  (CPA and ROAS exclude Cogni spend, ${(latest.meta_spend_excluded ?? 0).toFixed(2)} PLN — `
+          + 'its revenue is in Stripe, which I cannot see.)')
+      }
       lines.push('', 'Ask: "how was yesterday?" or "last 7 days" for a full picture.')
       const spoken = `No today data yet, Lifidi. Latest from ${lDate}: ${orders} orders, ${revenue.toFixed(0)} Polish zloty revenue, ${spend.toFixed(0)} zloty spend.${cpa != null ? ` C P A was ${cpa.toFixed(0)} zloty.` : ''} Ask me about yesterday or the last 7 days for context.`
       result = w(lines.join('\n'), spoken)

@@ -6,6 +6,7 @@ import {
 } from '../lib/campaignDiagnosis'
 import type { MetaAdDaily } from '../services/data'
 import { RangeSwitcher } from './RangeSwitcher'
+import { EXCLUDED_GAP, EXCLUDED_REASON, isExcludedFromWixBlended } from '../lib/adSpend'
 import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from '../lib/timeRange'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -32,11 +33,17 @@ const STATUS_COLORS: Record<string, string> = {
 const SCOPE_META: Record<FunnelScope, { label: string; color: string }> = {
   memory:   { label: 'memory',   color: 'var(--gold)' },
   language: { label: 'language', color: 'var(--teal)' },
+  // Said in the tag itself: this campaign's spend is not in the blended CPA.
+  cogni:    { label: 'cogni (poza blended)', color: 'var(--muted2)' },
   unknown:  { label: 'unknown',  color: 'var(--muted2)' },
 }
 
 function scopeThresholdText(scope: FunnelScope): string {
   const t = SCOPE_THRESHOLDS[scope]
+  if (isExcludedFromWixBlended(scope)) {
+    return `${EXCLUDED_REASON[scope] ?? 'poza zasięgiem Stanleya'}. Wydatek wyłączony z blended CPA/ROAS `
+      + `(${EXCLUDED_GAP[scope] ?? 'brak przychodu w bazie'}).`
+  }
   if (!t) return 'brak progu'
   return `cel <${t.target} · alarm >${t.alarm}${t.noScale ? ` · nie skaluj >${t.noScale}` : ''}`
 }

@@ -6,6 +6,7 @@ import { normalizeProduct, productFromQuery, type ProductTag } from '../lib/webi
 import { PRODUCT_CLASSIFICATION_REASON } from '../lib/productClassifier'
 import type { OpsWeekReport } from '../lib/opsWeekReport'
 import type { OrdersData } from '../lib/ordersData'
+import { formatZl, EXCLUDED_REASON, type AdScope } from '../lib/adSpend'
 import {
   pickPhrase,
   OPENERS, GOOD_VERDICTS, HIGH_CPA_VERDICTS, SALES_WARNING_VERDICTS,
@@ -34,6 +35,74 @@ function fmtPln(n: number | null | undefined): string {
 function fmtNum(n: number | null | undefined): string {
   if (n == null) return '—'
   return n.toLocaleString('en-US')
+}
+
+// ── Spend that was kept out of CPA / ROAS / profit ───────────────────────────
+//
+// A DailyPerformance row's meta_spend is the BLENDED figure — what CPA divides
+// by — and the part left out (Cogni) rides beside it. These helpers say so in
+// Stanley's answers, from numbers splitAdSpend() already produced; nothing
+// here decides what Cogni is.
+
+type SpendRow = Pick<DailyPerformance,
+  'meta_spend' | 'meta_spend_excluded' | 'meta_spend_excluded_campaigns' | 'spend_split'>
+
+function spendView(rows: Array<SpendRow | null | undefined>) {
+  const live = rows.filter((r): r is SpendRow => r != null)
+  const blended = live.reduce((t, r) => t + (r.meta_spend ?? 0), 0)
+  const excluded = live.reduce((t, r) => t + (r.meta_spend_excluded ?? 0), 0)
+  const merged = new Map<string, { campaign: string; spend: number }>()
+  for (const r of live) {
+    for (const c of r.meta_spend_excluded_campaigns ?? []) {
+      const e = merged.get(c.campaign) ?? { campaign: c.campaign, spend: 0 }
+      e.spend += c.spend
+      merged.set(c.campaign, e)
+    }
+  }
+  return {
+    blended, excluded, total: blended + excluded,
+    unknown: live.some(r => r.spend_split === 'unavailable'),
+    campaigns: [...merged.values()].sort((a, b) => b.spend - a.spend),
+  }
+}
+
+/** "4708.41 PLN (blended 3754.50 PLN + Cogni excluded 953.91 PLN)" — or a plain figure. */
+function spendText(rows: Array<SpendRow | null | undefined>): string {
+  const v = spendView(rows)
+  if (v.unknown) return `${fmtPln(v.blended)} (split blended / excluded UNKNOWN)`
+  if (v.excluded > 0) {
+    return `${fmtPln(v.total)} (blended ${fmtPln(v.blended)} + excluded ${fmtPln(v.excluded)})`
+  }
+  return fmtPln(v.blended)
+}
+
+/** The sentence Stanley says about CPA when spend was kept out. '' when none was. */
+function cogniNote(rows: Array<SpendRow | null | undefined>): string {
+  const v = spendView(rows)
+  if (v.unknown) {
+    return 'Note: the blended / excluded spend split is unavailable, so CPA may include Cogni spend. '
+      + 'The gap I cannot close: no Stripe revenue in the database.'
+  }
+  if (v.excluded <= 0) return ''
+  const names = v.campaigns.map(c => `${c.campaign} (${fmtPln(c.spend)})`).join(', ')
+  return `Note: CPA, ROAS and profit EXCLUDE Cogni spend — ${names}. Cogni revenue is in Stripe, `
+    + 'outside what I can see, so that spend is not a cost of any Wix order. '
+    + 'The gap I cannot close: no Stripe revenue in the database.'
+}
+
+/** As a pair of lines to spread into a builder's output, or nothing. */
+function cogniLines(rows: Array<SpendRow | null | undefined>): string[] {
+  const n = cogniNote(rows)
+  return n ? ['', n] : []
+}
+
+/** A short spoken form — read aloud, so no table, no names, no złoty with decimals. */
+function cogniSpoken(rows: Array<SpendRow | null | undefined>): string {
+  const v = spendView(rows)
+  if (v.unknown) return 'The split between blended and Cogni spend is unavailable, so C P A may include Cogni.'
+  if (v.excluded <= 0) return ''
+  return `Cogni spend of ${v.excluded.toFixed(0)} zloty is excluded from C P A. `
+    + 'Its revenue is in Stripe, which I cannot see.'
 }
 
 function statusLabel(s: DataStatus): string {
@@ -120,7 +189,6 @@ export function buildRevenueReport(
 
   const orders = perf?.wix_orders ?? 0
   const revenue = perf?.wix_revenue ?? 0
-  const spend = perf?.meta_spend ?? 0
   const cpa = perf?.real_cpa ?? null
   const roas = perf?.real_roas ?? null
 
@@ -142,9 +210,10 @@ export function buildRevenueReport(
     '',
     `Wix orders: ${orders}`,
     `Wix revenue: ${fmtPln(revenue)}`,
-    `Meta ad spend: ${fmtPln(spend)}`,
+    `Meta ad spend: ${spendText([perf])}`,
     `Real CPA: ${cpa != null ? fmtPln(cpa) : '—'}`,
     `Real ROAS: ${roas != null ? fmt(roas, 2, 'x') : '—'}`,
+    ...cogniLines([perf]),
     '',
     `Next move: ${nextMove}`,
   ]
@@ -168,11 +237,12 @@ export function buildOperationalReport(
     '',
     `Wix orders: ${perf.wix_orders}`,
     `Revenue: ${fmtPln(perf.wix_revenue)}`,
-    `Meta ad spend: ${fmtPln(perf.meta_spend)}`,
+    `Meta ad spend: ${spendText([perf])}`,
     `Impressions: ${fmtNum(perf.impressions)}`,
     `Link clicks: ${fmtNum(perf.link_clicks)}`,
     `Real CPA: ${perf.real_cpa != null ? fmtPln(perf.real_cpa) : '—'}`,
     `Real ROAS: ${perf.real_roas != null ? fmt(perf.real_roas, 2, 'x') : '—'}`,
+    ...cogniLines([perf]),
     `Active ads: ${perf.ads_count ?? '—'}`,
     '',
     `Status: ${statusLabel(status)}`,
@@ -208,7 +278,11 @@ Do not scale: above 60 PLN
 Loss territory: above 70 PLN (unless LTV justifies it)
 
 Net profit formula:
-Number of purchases × 70 PLN − Meta ad spend = net profit after ads`
+Number of purchases × 70 PLN − Meta ad spend = net profit after ads
+
+What is in "Meta ad spend" here: everything EXCEPT Cogni. Cogni revenue is in Stripe,
+outside what I can see, so a COGNI-* campaign's spend is not a cost of any Wix order and
+is left out of CPA, ROAS and profit. The gap I cannot close: no Stripe revenue in the database.`
 }
 
 export function buildCPAThresholdsLang(): string {
@@ -659,20 +733,20 @@ export function buildOpsBriefing(
 
   const orders  = perf.wix_orders
   const revenue = perf.wix_revenue
-  const spend   = perf.meta_spend
   const cpa     = perf.real_cpa
   const roas    = perf.real_roas
   const metaPurchases = metaStats?.meta_purchases ?? 0
 
   const lines: string[] = [pickPhrase(OPENERS), '']
 
-  lines.push(`Today: ${orders} Wix orders, ${fmtPln(revenue)} revenue, ${fmtPln(spend)} Meta ad spend.`)
+  lines.push(`Today: ${orders} Wix orders, ${fmtPln(revenue)} revenue, ${spendText([perf])} Meta ad spend.`)
 
   if (cpa != null && roas != null) {
     lines.push(`Real CPA: ${fmtPln(cpa)}. Real ROAS: ${fmt(roas, 2, 'x')}.`)
   } else if (cpa != null) {
     lines.push(`Real CPA: ${fmtPln(cpa)}.`)
   }
+  lines.push(...cogniLines([perf]))
 
   if (metaPurchases > 0 && orders !== metaPurchases) {
     const diff = orders - metaPurchases
@@ -824,7 +898,7 @@ export function buildMetaVsWix(
   const lines = [
     pickPhrase(OPENERS), '',
     '— META vs WIX —', '',
-    `Meta ad spend: ${fmtPln(spend)}`,
+    `Meta ad spend: ${spendText([perf])}`,
     `Wix real orders: ${orders}`,
     `Wix real revenue: ${fmtPln(revenue)}`,
     `Meta-attributed purchases: ${metaPurchases}`,
@@ -834,6 +908,7 @@ export function buildMetaVsWix(
   if (spend > 0 && orders > 0) {
     if (cpa != null) lines.push(`Real CPA (spend ÷ Wix orders): ${fmtPln(cpa)}`)
     if (roas != null) lines.push(`Real ROAS (Wix revenue ÷ spend): ${fmt(roas, 2, 'x')}`)
+    lines.push(...cogniLines([perf]))
     lines.push('')
   }
 
@@ -866,7 +941,7 @@ export function buildMetaVsWix(
 function dailySummaryBlock(row: DailyPerformance, label: string): string {
   const lines = [
     `${label} (${row.date}):`,
-    `  Orders: ${row.wix_orders}  |  Revenue: ${fmtPln(row.wix_revenue)}  |  Spend: ${fmtPln(row.meta_spend)}`,
+    `  Orders: ${row.wix_orders}  |  Revenue: ${fmtPln(row.wix_revenue)}  |  Spend: ${spendText([row])}`,
   ]
   if (row.real_cpa != null)  lines.push(`  CPA: ${fmtPln(row.real_cpa)}  |  ROAS: ${row.real_roas != null ? fmt(row.real_roas, 2, 'x') : '—'}`)
   return lines.join('\n')
@@ -891,11 +966,12 @@ export function buildYesterdaySummary(trend: DailyPerformance[]): string {
     `— YESTERDAY — ${row.date} —`, '',
     `Orders: ${orders}`,
     `Revenue: ${fmtPln(revenue)}`,
-    `Meta spend: ${fmtPln(spend)}`,
+    `Meta spend: ${spendText([row])}`,
   ]
 
   if (cpa != null)  lines.push(`Real CPA: ${fmtPln(cpa)}`)
   if (roas != null) lines.push(`Real ROAS: ${fmt(roas, 2, 'x')}`)
+  lines.push(...cogniLines([row]))
 
   if (spend > 0 && orders === 0) {
     lines.push('\nMoney went out, nothing came back. Something broke in the funnel yesterday.')
@@ -931,11 +1007,12 @@ export function buildWeekToDate(trend: DailyPerformance[]): string {
     `— WEEK SO FAR — (${rows.length} day${rows.length > 1 ? 's' : ''}, since ${weekStart}) —`, '',
     `Total orders: ${totalOrders}`,
     `Total revenue: ${fmtPln(totalRevenue)}`,
-    `Total Meta spend: ${fmtPln(totalSpend)}`,
+    `Total Meta spend: ${spendText(rows)}`,
   ]
 
   if (wtdCPA != null)  lines.push(`Avg CPA: ${fmtPln(wtdCPA)}`)
   if (wtdROAS != null) lines.push(`Avg ROAS: ${fmt(wtdROAS, 2, 'x')}`)
+  lines.push(...cogniLines(rows))
 
   const best   = rows.reduce((a, b) => (b.wix_revenue ?? 0) > (a.wix_revenue ?? 0) ? b : a)
   const worst  = rows.reduce((a, b) => (b.wix_revenue ?? 0) < (a.wix_revenue ?? 0) ? b : a)
@@ -975,11 +1052,12 @@ export function buildLastWeekSummary(trend: DailyPerformance[]): string {
     `— LAST WEEK — (${rows.length} day${rows.length > 1 ? 's' : ''} visible, ${lastStart}–${lastEnd}) —`, '',
     `Total orders: ${totalOrders}`,
     `Total revenue: ${fmtPln(totalRevenue)}`,
-    `Total Meta spend: ${fmtPln(totalSpend)}`,
+    `Total Meta spend: ${spendText(rows)}`,
   ]
 
   if (lwCPA != null)  lines.push(`Avg CPA: ${fmtPln(lwCPA)}`)
   if (lwROAS != null) lines.push(`Avg ROAS: ${fmt(lwROAS, 2, 'x')}`)
+  lines.push(...cogniLines(rows))
 
   if (rows.length < 7) {
     lines.push(`\n(Only ${rows.length} of 7 last-week days are in the 7-day window. Earlier days are not visible.)`)
@@ -1009,12 +1087,13 @@ export function buildLast7Days(trend: DailyPerformance[]): string {
     `— LAST 7 DAYS — (${from} → ${to}) —`, '',
     `Total orders: ${totalOrders}`,
     `Total revenue: ${fmtPln(totalRevenue)}`,
-    `Total Meta spend: ${fmtPln(totalSpend)}`,
+    `Total Meta spend: ${spendText(sorted)}`,
     `Daily avg revenue: ${fmtPln(dailyAvgRev)}`,
   ]
 
   if (avgCPA != null)  lines.push(`Avg CPA: ${fmtPln(avgCPA)}`)
   if (avgROAS != null) lines.push(`Avg ROAS: ${fmt(avgROAS, 2, 'x')}`)
+  lines.push(...cogniLines(sorted))
 
   const best  = sorted.reduce((a, b) => (b.wix_revenue ?? 0) > (a.wix_revenue ?? 0) ? b : a)
   const worst = sorted.reduce((a, b) => (b.wix_revenue ?? 0) < (a.wix_revenue ?? 0) ? b : a)
@@ -1071,6 +1150,7 @@ export function buildPeriodComparison(
       lines.push('No yesterday data in the 7-day window.')
     }
 
+    lines.push(...cogniLines([todayRow, yRow]))
     return lines.join('\n')
   }
 
@@ -1095,7 +1175,7 @@ export function buildPeriodComparison(
   const lines = [pickPhrase(OPENERS), '', '— THIS WEEK vs LAST WEEK —', '']
 
   lines.push(`This week (${tw.days} days, from ${weekStart}):`)
-  lines.push(`  Orders: ${tw.orders}  |  Revenue: ${fmtPln(tw.revenue)}  |  Spend: ${fmtPln(tw.spend)}`)
+  lines.push(`  Orders: ${tw.orders}  |  Revenue: ${fmtPln(tw.revenue)}  |  Spend: ${spendText(twRows)}`)
   const twCPA  = tw.spend > 0 && tw.orders > 0 ? tw.spend / tw.orders : null
   const twROAS = tw.spend > 0 ? tw.revenue / tw.spend : null
   if (twCPA)  lines.push(`  CPA: ${fmtPln(twCPA)}`)
@@ -1104,7 +1184,7 @@ export function buildPeriodComparison(
 
   if (lw.days > 0) {
     lines.push(`Last week (${lw.days} day${lw.days > 1 ? 's' : ''} visible, from ${lastStart}):`)
-    lines.push(`  Orders: ${lw.orders}  |  Revenue: ${fmtPln(lw.revenue)}  |  Spend: ${fmtPln(lw.spend)}`)
+    lines.push(`  Orders: ${lw.orders}  |  Revenue: ${fmtPln(lw.revenue)}  |  Spend: ${spendText(lwRows)}`)
     const lwCPA  = lw.spend > 0 && lw.orders > 0 ? lw.spend / lw.orders : null
     const lwROAS = lw.spend > 0 ? lw.revenue / lw.spend : null
     if (lwCPA)  lines.push(`  CPA: ${fmtPln(lwCPA)}`)
@@ -1128,6 +1208,7 @@ export function buildPeriodComparison(
     lines.push('Last week is outside the 7-day history window — cannot compare.')
   }
 
+  lines.push(...cogniLines([...twRows, ...lwRows]))
   return lines.join('\n')
 }
 
@@ -1291,6 +1372,7 @@ export function buildYesterdaySpoken(trend: DailyPerformance[]): string {
     `Yesterday on ${row.date}: ${orders} Wix orders, ${revenue.toFixed(0)} Polish zloty revenue, ${spend.toFixed(0)} zloty Meta spend.`,
   ]
   if (cpa != null) parts.push(`Real C P A was ${cpa.toFixed(0)} zloty.`)
+  { const n = cogniSpoken([row]); if (n) parts.push(n) }
   if (spend > 0 && orders === 0) {
     parts.push('Money went out and nothing came back. Something broke in the funnel yesterday.')
   } else if (cpa != null && cpa > 50) {
@@ -1324,6 +1406,7 @@ export function buildOpsBriefingSpoken(
     `Lifidi, today: ${orders} Wix orders, ${revenue.toFixed(0)} Polish zloty revenue, ${spend.toFixed(0)} zloty Meta spend.`,
   ]
   if (cpa != null) parts.push(`Real C P A is ${cpa.toFixed(0)} zloty.`)
+  { const n = cogniSpoken([perf]); if (n) parts.push(n) }
   if (status === 'SALES_WARNING') {
     parts.push('Warning: ad spend is running but Wix shows zero orders. Check the landing page, checkout flow, and pixel.')
   } else if (status === 'META_NOT_LIVE') {
@@ -1475,6 +1558,7 @@ export function buildPeriodComparisonSpoken(
       if (tCPA != null) parts.push(`Real C P A is ${tCPA.toFixed(0)} zloty.`)
     }
 
+    { const n = cogniSpoken([today, yesterday]); if (n) parts.push(n) }
     parts.push('Comparison chart is on screen.')
     return parts.join(' ')
   }
@@ -1514,6 +1598,7 @@ export function buildWeekToDateSpoken(trend: DailyPerformance[]): string {
   ]
   if (wtdCPA != null) parts.push(`Average C P A is ${wtdCPA.toFixed(0)} zloty.`)
   if (wtdROAS != null) parts.push(`Average R O A S is ${wtdROAS.toFixed(2)}.`)
+  { const n = cogniSpoken(rows); if (n) parts.push(n) }
   parts.push(`Best day was ${best.date} with ${(best.wix_revenue ?? 0).toFixed(0)} zloty and ${best.wix_orders} orders.`)
   if (rows.length > 1 && worst.date !== best.date) {
     parts.push(`Weakest day was ${worst.date} with ${(worst.wix_revenue ?? 0).toFixed(0)} zloty and ${worst.wix_orders} orders.`)
@@ -1665,6 +1750,12 @@ export function buildJsuWeekReport(r: OpsWeekReport | null): string {
 
   if (r.meta.this_week_spend > 0) {
     lines.push('', `Meta spend this week: ${r.meta.this_week_spend.toFixed(2)} PLN`)
+    // Said here too: this is a plain spend line, not a CPA, but a reader will
+    // lay it next to the weekly CPA and the two must not look like they differ.
+    for (const c of r.meta.this_week_spend_excluded_campaigns ?? []) {
+      lines.push(`  WYKLUCZONE z blended: ${c.campaign} — ${formatZl(c.spend)} `
+        + `(${EXCLUDED_REASON[c.scope as AdScope] ?? 'poza zasięgiem Stanleya'})`)
+    }
   }
 
   return lines.join('\n')
@@ -2106,9 +2197,13 @@ export function buildProfitAnswer(d: ProfitData | null): GieniuResponse {
     `Zamówienia:         ${d.ordersCount}`,
     `Przychód:           ${fmtPln(d.revenue)}`,
     `Marża przed reklamą: ${fmtPln(d.marginBeforeAds)}`,
-    `Ad Spend:           ${fmtPln(d.adSpend)} (${d.adSpendSource})`,
+    `Ad Spend (blended): ${fmtPln(d.adSpend)} (${d.adSpendSource})`,
+    ...(d.adSpendExcludedLines ?? []).map(l => `                    ${l}`),
+    ...(d.adSpendSplitAvailable === false
+      ? ['                    podział blended / wyłączone NIEDOSTĘPNY — wydatek może zawierać Cogni']
+      : []),
     '─'.repeat(42),
-    `Szacowany zysk:     ${fmtPln(d.estimatedProfitAfterAds)}`,
+    `Szacowany zysk${d.estimatedProfitBasis ? ` (${d.estimatedProfitBasis})` : ''}: ${fmtPln(d.estimatedProfitAfterAds)}`,
     `Zysk / zamówienie:  ${fmtPln(d.estimatedProfitPerOrder)}`,
     '',
     'Produkty:',
@@ -2133,8 +2228,14 @@ export function buildProfitSpoken(d: ProfitData | null): string {
   const parts: string[] = [
     `Dziś mamy ${d.ordersCount} zamówień i ${fmtPln(d.revenue)} przychodu.`,
     `Zmapowana marża to ${fmtPln(d.marginBeforeAds)}.`,
-    `Meta wydała ${fmtPln(d.adSpend)}, więc szacowany zysk po reklamie to ${fmtPln(d.estimatedProfitAfterAds)}.`,
+    `Meta wydała ${fmtPln(d.adSpend)}${(d.adSpendExcluded ?? 0) > 0 ? ' bez Cogni' : ''}, więc szacowany zysk po reklamie to ${fmtPln(d.estimatedProfitAfterAds)}.`,
   ]
+  if ((d.adSpendExcluded ?? 0) > 0) {
+    parts.push(
+      `Wydatek Cogni, ${fmtPln(d.adSpendExcluded)}, jest wyłączony z zysku i CPA: przychód Cogni jest w Stripe, `
+      + 'poza moim zasięgiem. Luka: brak przychodu Stripe w bazie.',
+    )
+  }
 
   const noMargin = d.noMarginOrdersCount ?? 0
   if (noMargin > 0) {

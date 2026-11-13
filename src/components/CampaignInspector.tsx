@@ -24,6 +24,10 @@
 import { useMemo, useState, useEffect } from 'react'
 import type { MetaAdDaily } from '../services/data'
 import { KPICard } from './KPICard'
+import {
+  adScopeOf, isExcludedFromWixBlended, excludedSpendLines, formatZl, EXCLUDED_GAP,
+  type AdSpendSplit,
+} from '../lib/adSpend'
 
 interface CampaignAgg {
   name: string
@@ -83,7 +87,7 @@ function aggregateAll(list: CampaignAgg[]): CampaignAgg {
 }
 
 export function CampaignInspector({
-  rows, loading, rangeLabel, wixCpa, wixRoas, globalSpend,
+  rows, loading, rangeLabel, wixCpa, wixRoas, globalSpend, spendSplit,
 }: {
   rows: MetaAdDaily[]
   loading: boolean
@@ -104,6 +108,11 @@ export function CampaignInspector({
    * nothing explained it.
    */
   globalSpend?: number | null
+  /**
+   * The blended / excluded split of THIS range's spend, from campaign-data —
+   * the same splitAdSpend() the global card and profit-data use.
+   */
+  spendSplit?: AdSpendSplit | null
 }) {
   const campaigns = useMemo(() => groupByCampaign(rows), [rows])
   const [sel, setSel] = useState<string>(ALL)
@@ -157,7 +166,9 @@ export function CampaignInspector({
           >
             <option value={ALL}>Wszystkie ({campaigns.length})</option>
             {campaigns.map(c => (
-              <option key={c.name} value={c.name}>{c.name}</option>
+              <option key={c.name} value={c.name}>
+                {c.name}{isExcludedFromWixBlended(adScopeOf(c.name)) ? ' · poza blended' : ''}
+              </option>
             ))}
           </select>
         </div>
@@ -211,7 +222,22 @@ export function CampaignInspector({
                 Wix nie niosą UTM, więc żadnego zamówienia nie da się przypisać do
                 kampanii. Blended, dla całego konta, podane niżej. */}
             <br />
-            {sel === ALL ? (
+            {sel === ALL && spendSplit && spendSplit.excluded > 0 && (
+              <>
+                {excludedSpendLines(spendSplit).map(l => <div key={l} style={{ color: 'var(--text2)' }}>{l}</div>)}
+                <div>
+                  Wydatek w blended (mianownik CPA i ROAS): {formatZl(spendSplit.blended)} ·
+                  razem {formatZl(spendSplit.total)}.
+                </div>
+              </>
+            )}
+            {sel !== ALL && isExcludedFromWixBlended(adScopeOf(sel)) ? (
+              <>
+                Ta kampania jest poza blended: jej przychód jest w Stripe i nie ma go w bazie
+                ({EXCLUDED_GAP[adScopeOf(sel)] ?? 'brak przychodu w bazie'}), więc jej wydatek
+                nie jest kosztem żadnego zamówienia Wix.
+              </>
+            ) : sel === ALL ? (
               <>
                 Realne CPA i ROAS z Wix dla tego zakresu:{' '}
                 <span style={{ color: 'var(--text2)' }}>

@@ -28,6 +28,7 @@ import {
 } from './lib/goalProgress'
 import { businessHoursSinceMidnight, businessToday } from './lib/businessDay'
 import { evaluateAlerts, todayContext, ALERT_RULES, isNotifying } from './lib/alerts'
+import { totalSpendOf } from './lib/adSpend'
 import { countOrdersInWindow, assessSyncHealth, SYNC_BACKLOG_DETECTOR_ACTIVE, META_WORLD_ACTIVE } from './lib/orderWindow'
 import {
   fetchTodayPerformance, fetchTopAds, fetchAutomationRuns,
@@ -746,6 +747,8 @@ export default function App() {
    * MIESIĄC, a range that contains that week.
    */
   const [campaignDailyRows, setCampaignDailyRows] = useState<MetaAdDaily[]>([])
+  /** The same split profit-data and the daily rows use, for THIS range's campaigns. */
+  const [campaignSpendSplit, setCampaignSpendSplit] = useState<import('./lib/adSpend').AdSpendSplit | null>(null)
   const [campaignRowsLoading, setCampaignRowsLoading] = useState(true)
   // Kept so the exported report can say WHY there are no campaign rows rather
   // than printing an empty section that reads like "no spend".
@@ -756,10 +759,11 @@ export default function App() {
       .then(r => {
         setCampaignRows(r.rows)
         setCampaignDailyRows(r.dailyRows ?? [])
+        setCampaignSpendSplit(r.spendSplit ?? null)
         setCampaignFetchError(r.fetchError ?? null)
       })
       .catch(e => {
-        setCampaignRows([]); setCampaignDailyRows([])
+        setCampaignRows([]); setCampaignDailyRows([]); setCampaignSpendSplit(null)
         setCampaignFetchError(String(e?.message ?? e))
       })
       .finally(() => setCampaignRowsLoading(false))
@@ -1113,7 +1117,10 @@ export default function App() {
       todayKPIs: perf ? {
         wix_orders: perf.wix_orders,
         wix_revenue: perf.wix_revenue,
+        // BLENDED — and the part left out beside it, so Stanley can say so.
         meta_spend: perf.meta_spend,
+        meta_spend_excluded: perf.meta_spend_excluded ?? 0,
+        spend_split: perf.spend_split ?? null,
         real_cpa: perf.real_cpa,
         real_roas: perf.real_roas,
         date: perf.date,
@@ -1122,6 +1129,11 @@ export default function App() {
         ok: true,
         marginBeforeAds: profitData.marginBeforeAds,
         adSpend: profitData.adSpend,
+        adSpendTotal: profitData.adSpendTotal ?? null,
+        adSpendExcluded: profitData.adSpendExcluded ?? 0,
+        adSpendExcludedCampaigns: profitData.adSpendExcludedCampaigns ?? [],
+        adSpendSplitAvailable: profitData.adSpendSplitAvailable ?? null,
+        estimatedProfitBasis: profitData.estimatedProfitBasis ?? null,
         estimatedProfitAfterAds: profitData.estimatedProfitAfterAds,
         estimatedProfitPerOrder: profitData.estimatedProfitPerOrder,
         unknownRevenue: profitData.unknownRevenue,
@@ -1143,6 +1155,7 @@ export default function App() {
       recentTrend: trend.map(r => ({
         date: r.date,
         meta_spend: r.meta_spend,
+        meta_spend_excluded: r.meta_spend_excluded ?? 0,
         wix_orders: r.wix_orders,
         wix_revenue: r.wix_revenue,
         real_cpa: r.real_cpa,
@@ -1419,6 +1432,16 @@ export default function App() {
   const rangeRows    = monthTrend.length > 0 ? monthTrend : trend
   const displayPerf  = resolveRangePerf(range, perf, rangeRows)
   const rangeSub     = rangeSubLabel(range)
+
+  // "blended X · wyłączone Y" — or an admission that the split is unknown. Never
+  // blank when it matters: a total that might hide Cogni, shown without saying
+  // so, is the thing this card used to do.
+  const adSpendSublabel: string | undefined = !displayPerf ? undefined
+    : displayPerf.spend_split === 'unavailable'
+      ? 'podział blended / wyłączone niedostępny'
+      : (displayPerf.meta_spend_excluded ?? 0) > 0
+        ? `blended ${fmtPln(displayPerf.meta_spend)} · wyłączone (Cogni) ${fmtPln(displayPerf.meta_spend_excluded)}`
+        : undefined
 
   // Interactive KPI cards — per-day series for the selected range. For 'today' the
   // live view row isn't in rangeRows, so fold it in; the detail chart filters to
@@ -1703,7 +1726,18 @@ export default function App() {
                       onClick={() => toggleMetric('wix_revenue')}
                       active={expandedMetric === 'wix_revenue'}
                     />
-                    <KPICard label="Ad Spend" value={fmtPln(displayPerf?.meta_spend)} sublabel={perfIsStale ? trend[0]?.date : undefined} onClick={() => toggleMetric('meta_spend')} active={expandedMetric === 'meta_spend'} />
+                    {/* TOTAL, with the split underneath. displayPerf.meta_spend is the
+                        BLENDED part (what CPA divides by); the card shows what Meta
+                        actually spent and says how much of it was kept out of the
+                        blended figures — otherwise the card, the CPA and the
+                        campaign section all quote slightly different spends. */}
+                    <KPICard
+                      label="Ad Spend"
+                      value={fmtPln(displayPerf ? totalSpendOf(displayPerf) : null)}
+                      sublabel={adSpendSublabel ?? (perfIsStale ? trend[0]?.date : undefined)}
+                      onClick={() => toggleMetric('meta_spend')}
+                      active={expandedMetric === 'meta_spend'}
+                    />
                     <KPICard
                       label="Est. Profit"
                       value={profitEst != null ? fmtPln(profitEst) : '—'}
@@ -1711,7 +1745,9 @@ export default function App() {
                       warning={profitWarning}
                       danger={profitDanger}
                       sublabel={[
-                        'Margin − ad spend',
+                        profitData?.estimatedProfitBasis
+                          ? `Margin − ad spend (${profitData.estimatedProfitBasis})`
+                          : 'Margin − ad spend',
                         noMarginCount > 0 ? `${noMarginCount} bez mapowania` : null,
                         excludedCount > 0 ? `${excludedCount} WSZTP poza blended` : null,
                       ].filter(Boolean).join(' · ')}
@@ -1917,7 +1953,11 @@ export default function App() {
                     const totalClicks      = displayPerf.clicks ?? 0
                     const totalLinkClicks  = displayPerf.link_clicks ?? 0
                     const totalImpressions = displayPerf.impressions ?? 0
-                    const totalSpend       = displayPerf.meta_spend ?? 0
+                    // TOTAL: the clicks and impressions here include Cogni's, so the
+                    // spend must too. displayPerf.meta_spend alone is blended and
+                    // would put CPC and CPM below the Campaigns section's by exactly
+                    // Cogni's share.
+                    const totalSpend       = totalSpendOf(displayPerf)
                     const ctr  = totalImpressions > 0 ? totalLinkClicks / totalImpressions * 100 : null
                     const cpc  = totalClicks > 0      ? totalSpend / totalClicks : null
                     const cpm  = totalImpressions > 0 ? totalSpend / totalImpressions * 1000 : null
@@ -2006,7 +2046,8 @@ export default function App() {
                 rangeLabel={RANGE_LABELS[range]}
                 wixCpa={cpaBlended}
                 wixRoas={roasBlended}
-                globalSpend={displayPerf?.meta_spend ?? null}
+                globalSpend={displayPerf ? totalSpendOf(displayPerf) : null}
+                spendSplit={campaignSpendSplit}
               />
 
               {/* ŚWIAT META — built, not shown. meta_ads_daily holds 5 purchases

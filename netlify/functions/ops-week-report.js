@@ -8,6 +8,7 @@
 import { classifyBySchedule } from './scheduleUtils.js'
 
 import { readTable } from '../shared/supabaseRead.js'
+import { splitAdSpend } from '../shared/adSpend.js'
 import { businessToday, businessYesterday, businessWeekStart, businessDaysAgo } from '../shared/businessDay.js'
 import { fetchOrdersInRange } from '../shared/productCatalog.js'
 
@@ -320,7 +321,24 @@ export const handler = async (event) => {
 
   const weekAllOrders  = perfRows.reduce((s, r) => s + (r.wix_orders  ?? 0), 0)
   const weekAllRevenue = perfRows.reduce((s, r) => s + (r.wix_revenue  ?? 0), 0)
-  const weekMetaSpend  = perfRows.reduce((s, r) => s + (r.meta_spend  ?? 0), 0)
+  // Ad spend for the week, split by the one function that knows what Cogni is.
+  // The view's meta_spend is one number per day — everything Meta spent — and
+  // cannot be split afterwards, so the week is read from meta_ads_daily and the
+  // view is only the fallback (total, split unknown).
+  let weekSpendSplit = null
+  try {
+    const adRows = await readTable(supabaseUrl, serviceKey, 'meta_ads_daily', {
+      select:  'date,campaign_name,ad_name,spend',
+      order:   'date.asc,ad_id.asc,campaign_id.asc',
+      filters: { date: [`gte.${weekStart}`, `lte.${today}`] },
+    })
+    if (adRows.length > 0) weekSpendSplit = splitAdSpend(adRows)
+  } catch (e) {
+    debug.metaSpendError = String(e?.message ?? e)
+  }
+  const weekMetaSpend  = weekSpendSplit
+    ? weekSpendSplit.total
+    : perfRows.reduce((s, r) => s + (r.meta_spend  ?? 0), 0)
   const weekImpressions = perfRows.reduce((s, r) => s + (r.impressions ?? 0), 0)
 
   const yesterdayPerf  = perfRows.find(r => r.date === yesterday)
@@ -573,7 +591,14 @@ export const handler = async (event) => {
         attribution_reason:             attributionReason,
       },
       meta: {
+        // Total Meta spent — what the invoice says.
         this_week_spend:       weekMetaSpend,
+        // The part that may be a denominator for Wix orders, and the part that
+        // may not. Null when meta_ads_daily could not be read: the split is
+        // then unknown, not zero.
+        this_week_spend_blended:  weekSpendSplit ? weekSpendSplit.blended : null,
+        this_week_spend_excluded: weekSpendSplit ? weekSpendSplit.excluded : null,
+        this_week_spend_excluded_campaigns: weekSpendSplit ? weekSpendSplit.excludedCampaigns : [],
         this_week_impressions: weekImpressions,
       },
       summary: {

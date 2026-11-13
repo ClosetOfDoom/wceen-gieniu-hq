@@ -227,14 +227,20 @@ export function RevenueTrendChart({ rows, prevRows, campaignRows, from, to, load
 // derived from THAT day's own components.
 function tooltipLines(date: string, r: DailyPerformance | undefined) {
   if (!r) return { date, lines: [{ k: 'brak danych', v: '—' }] }
+  // meta_spend on the row is the BLENDED spend: CPA and ROAS divide by it. The
+  // "Ad spend" line shows what Meta actually spent — blended plus the part kept
+  // out (Cogni) — so it agrees with the card and the series, and the excluded
+  // part is named on its own line instead of vanishing.
   const rev = Number(r.wix_revenue ?? 0), sp = Number(r.meta_spend ?? 0), ord = Number(r.wix_orders ?? 0)
+  const excl = Number(r.meta_spend_excluded ?? 0)
   const cpa = ord > 0 ? sp / ord : null
   const roas = sp > 0 ? rev / sp : null
   return {
     date,
     lines: [
       { k: 'Revenue', v: fmtMetric('pln', rev) },
-      { k: 'Ad spend', v: fmtMetric('pln', sp) },
+      { k: 'Ad spend', v: fmtMetric('pln', sp + excl) },
+      ...(excl > 0 ? [{ k: '  w tym Cogni (poza blended)', v: fmtMetric('pln', excl) }] : []),
       { k: 'Orders', v: fmtMetric('num', ord) },
       { k: 'Real CPA', v: cpa == null ? '— (0 zamówień)' : fmtMetric('pln', cpa) },
       { k: 'Real ROAS', v: roas == null ? '— (0 spend)' : fmtMetric('x', roas) },

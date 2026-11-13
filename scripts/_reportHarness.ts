@@ -16,6 +16,7 @@
 
 import { buildReport } from '../src/lib/exportReport'
 import { resolveRangePerf, aggregatePerf } from '../src/lib/rangePerf'
+import { applySpendSplit, totalSpendOf, type AdSpendSplit } from '../src/lib/adSpend'
 import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from '../src/lib/timeRange'
 import {
   ppOrdersGoal, revenueGoal, cpaGoal, roasGoal,
@@ -46,6 +47,19 @@ const viewRows = (from: string, to: string) =>
     { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } },
   )
 
+// The app overlays /spend-split onto the view's rows (services/data.ts). The
+// harness reads the view directly, so it fetches the same endpoint and applies
+// the same applySpendSplit() — no second copy of the formulas.
+async function splitRows(rows: DailyPerformance[]): Promise<DailyPerformance[]> {
+  if (rows.length === 0) return rows
+  const dates = rows.map(r => r.date).sort()
+  const days = await json<{ ok: boolean; days?: Array<AdSpendSplit & { date: string }> }>(
+    `${SITE}/.netlify/functions/spend-split?from=${dates[0]}&to=${dates[dates.length - 1]}`,
+  ).then(j => (j.ok && Array.isArray(j.days) ? new Map(j.days.map(d => [d.date, d])) : null))
+    .catch(() => null)
+  return applySpendSplit(rows, days)
+}
+
 export async function runForRange(range: TimeRange): Promise<{ report: string; comparison: string }> {
   const { from, to } = rangeDates(range)
   const today = warsawToday()
@@ -59,9 +73,9 @@ export async function runForRange(range: TimeRange): Promise<{ report: string; c
   const monthFrom = today.slice(0, 8) + '01'
 
   const [dailyRows, prevRows, monthRows, profit, campaign] = await Promise.all([
-    viewRows(from, to),
-    viewRows(prevFrom, prevTo),
-    viewRows(monthFrom < from ? monthFrom : from, today),
+    viewRows(from, to).then(splitRows),
+    viewRows(prevFrom, prevTo).then(splitRows),
+    viewRows(monthFrom < from ? monthFrom : from, today).then(splitRows),
     json<ProfitData>(`${SITE}/.netlify/functions/profit-data?from=${from}&to=${to}`).catch(() => null),
     json<{ rows: MetaAdDaily[]; fetchError: string | null }>(
       `${SITE}/.netlify/functions/campaign-data?from=${from}&to=${to}`,
@@ -126,7 +140,7 @@ export async function runForRange(range: TimeRange): Promise<{ report: string; c
   const cards: Array<[string, string]> = [
     ['Wix Orders',   fmtNum(displayPerf?.wix_orders)],
     ['Wix Revenue',  fmtPln(displayPerf?.wix_revenue)],
-    ['Ad Spend',     fmtPln(displayPerf?.meta_spend)],
+    ['Ad Spend',     fmtPln(displayPerf ? totalSpendOf(displayPerf) : null)],
     ['Est. Profit',  profit?.ok ? fmtPln(profit.estimatedProfitAfterAds) : '—'],
     ['Real CPA',     fmtPln(cpaBlended)],
     ['Real ROAS',    fmtRoas(roasBlended)],
@@ -134,7 +148,9 @@ export async function runForRange(range: TimeRange): Promise<{ report: string; c
   ]
   const reportCell = (metric: string): string => {
     const row = report.split('\n').find(l => l.startsWith(`| ${metric} |`))
-    return row ? row.split('|')[2].trim() : '(brak wiersza)'
+    // The ad-spend cell carries the split in a trailing "(blended … + wyłączone …)";
+    // the card shows the total, which is the figure before that note.
+    return row ? row.split('|')[2].trim().replace(/\s*\((?:blended|podział).*$/, '') : '(brak wiersza)'
   }
   const REPORT_KEY: Record<string, string> = {
     'Wix Orders': 'zamówienia', 'Wix Revenue': 'przychód', 'Ad Spend': 'ad spend',
