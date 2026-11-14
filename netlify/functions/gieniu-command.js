@@ -10,6 +10,8 @@ import { readTable } from '../shared/supabaseRead.js'
 import { adScopeOf, excludedSpendSentence } from '../shared/adSpend.js'
 import { fetchOrdersInRange } from '../shared/productCatalog.js'
 import { businessDay, businessToday, businessDaysAgo, businessWeekStart } from '../shared/businessDay.js'
+import { isFinanceQuestion } from '../shared/financeIntent.js'
+import { answerFinance } from '../shared/financeStanley.js'
 
 // Attendance and registration collection stopped here. Anything about who was
 // in the room is history, not a current figure.
@@ -2058,6 +2060,12 @@ export const handler = async (event) => {
   }
 
   const ctx = context ?? {}
+
+  // Finance questions (Stripe / P24 / PayPal / Meta aggregates from the accounting report) take
+  // their own path with the get_finance tool — before any dashboard fetch below is started.
+  if (isFinanceQuestion(message)) {
+    return success(await answerFinance({ message, systemPrompt: SYSTEM_PROMPT, parse: parseLLMResponse }))
+  }
 
   // LLM env vars — read early so deterministic paths can report llm.active
   const llmProviderEnv  = process.env.LLM_PROVIDER

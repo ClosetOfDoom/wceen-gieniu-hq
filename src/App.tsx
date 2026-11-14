@@ -1044,8 +1044,8 @@ export default function App() {
   async function speakAnswer(gr: GieniuResponse, question = '') {
     const session = ++ttsSessionRef.current
     stopSpeaking()
-    const displayText = enforceRefusal(gr.displayText, question)
-    const spokenText = enforceRefusal(gr.spokenText, question)
+    const displayText = gr.trusted ? gr.displayText : enforceRefusal(gr.displayText, question)
+    const spokenText = gr.trusted ? gr.spokenText : enforceRefusal(gr.spokenText, question)
     setResponse(displayText)
     setResponseSpoken(spokenText)
     setResponseChart(gr.chart)
@@ -1215,7 +1215,7 @@ export default function App() {
       }
       // The one and only utterance for this query — the final answer.
       delivered = true
-      speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText }, query)
+      speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText, trusted: cmdResult.intent === 'finance' }, query)
       // Then a subtle, silent visual mood accent (never audio, never blocking).
       if (isDayResultQuery(query) && perf?.real_roas != null) showResultMood(perf.real_roas)
     } catch (err) {

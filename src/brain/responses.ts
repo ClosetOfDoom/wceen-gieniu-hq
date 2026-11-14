@@ -128,6 +128,11 @@ export interface GieniuResponse {
   displayText: string
   spokenText: string
   chart?: InsightChartSpec
+  /**
+   * Finance answers (get_finance, Polish, built from published aggregates) carry their own
+   * missing-data wording and must not go through the English dashboard refusal guard.
+   */
+  trusted?: boolean
 }
 
 export function wrapResponse(displayText: string, spokenText?: string, chart?: InsightChartSpec): GieniuResponse {

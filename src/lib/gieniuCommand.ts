@@ -1,5 +1,6 @@
 // Fetch helper for the gieniu-command Netlify function.
 import type { LlmMeta } from '../types'
+import { isFinanceQuestion } from '../../netlify/shared/financeIntent.js'
 
 export interface TrendRow {
   date: string
@@ -116,13 +117,15 @@ export interface GieniuCommandResult {
 }
 
 const TIMEOUT_MS = 9000
+// Finance questions run a tool round-trip plus a long answer on the server, so they get longer.
+const FINANCE_TIMEOUT_MS = 28000
 
 export async function fetchGieniuCommand(
   message: string,
   context: GieniuCommandContext,
 ): Promise<GieniuCommandResult> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), isFinanceQuestion(message) ? FINANCE_TIMEOUT_MS : TIMEOUT_MS)
 
   try {
     const res = await fetch('/.netlify/functions/gieniu-command', {
