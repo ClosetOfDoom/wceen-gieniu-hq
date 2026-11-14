@@ -20,10 +20,11 @@ export const FINANCE_RULES = `
 Narzędzie get_finance zwraca agregaty z raportu księgowego oraz gotowy tekst w polu "report" tego wyniku.
 ZASADA PODSTAWOWA: serwer SAM dołącza raport (tabela sum z miesiącem, źródłem i statusem, zmiana względem poprzedniego miesiąca, anomalie, braki danych)
 PRZED Twoim tekstem. Twój tekst to KOMENTARZ do tego raportu — nie powtarzaj tabeli i nie przepisuj jej własnymi słowami.
-• JĘZYK: po polsku, „sir", ton stonowany; fakty przed stylem. To wyjątek od reguły „tylko angielski".
-• KOMENTARZ: 4–8 zdań, w ANSWER. Odpowiedz wprost na pytanie jedną lub dwiema liczbami z raportu (przepisz je dokładnie; nic nie przeliczaj, nie zaokrąglaj, nie dodawaj własnych sum), potem wskaż najważniejszą zmianę, anomalię lub brak z raportu.
+• JĘZYK: ANSWER i SPEECH WYŁĄCZNIE PO POLSKU, „sir", ton stonowany; fakty przed stylem. To WYJĄTEK od reguły 4 („tylko angielski") — dla pytań finansowych angielski jest błędem.
+• KOMENTARZ: 4–8 zdań, w ANSWER. Odpowiedz wprost na pytanie liczbami z raportu (przepisz je dokładnie; nic nie przeliczaj, nie zaokrąglaj), potem wskaż najważniejszą zmianę, anomalię lub brak z raportu.
 • Zawsze wymień miesiąc, źródło i status (OK, NIEPEŁNY, UWAGA) — statusy bierz z raportu, nie zmieniaj ich.
 • Brutto, zwroty, prowizje i netto podawaj osobno, nigdy jako jedną kwotę.
+• ZERO WŁASNYCH SUM I RÓŻNIC: nie dodawaj kwot z różnych źródeł, walut ani miesięcy (np. prowizji Stripe + P24 + PayPal) i niczego nie odejmuj — cytuj tylko liczby, które stoją w raporcie, każdą przy jej źródle. Wpływy nazywaj „wpływami od operatora", nie „przychodem".
 • META: wydatki z Insights i obciążenia przez PayPal to TEN SAM KOSZT w dwóch ujęciach: NIGDY ich nie sumuj ani nie dodawaj i nie wyprowadzaj „łącznego kosztu".
 • Zaznacz, że to wpływy od operatorów płatności, a nie sprzedaż z Wix; Wix pozostaje prawdą transakcyjną.
 • Miesiąc niezamknięty (gwiazdka w raporcie, closed:false) nie jest porównywalny z pełnym — powiedz to, jeśli o niego pytano; nie wyciągaj wniosków z porównań, których raport nie podaje.
@@ -93,7 +94,7 @@ export async function answerFinance({ message, systemPrompt, parse, env = proces
   const published = index
     ? (index.months ?? []).map((m) => `${m.month} (${m.closed ? 'zamknięty' : 'NIEZAMKNIĘTY'}; ${(m.sources ?? []).map((s) => `${s.name}=${s.status}`).join(', ')})`).join('\n  ')
     : 'brak index.json'
-  const user = `Dzisiaj: ${today} (Europe/Warsaw).\nOpublikowane miesiące (index.json):\n  ${published}\n\nPYTANIE: ${message}`
+  const user = `Dzisiaj: ${today} (Europe/Warsaw).\nOpublikowane miesiące (index.json):\n  ${published}\n\nPYTANIE: ${message}\n\n(Odpowiedz po polsku. Wywołaj get_finance i napisz tylko komentarz do raportu; nie sumuj kwot z różnych źródeł.)`
 
   const executeTool = async (name, args) => {
     if (name !== 'get_finance') throw new Error(`nieznane narzędzie: ${name}`)

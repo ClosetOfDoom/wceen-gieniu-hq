@@ -308,6 +308,14 @@ describe('renderReport — deterministyczny raport', () => {
     expect(text).toContain('2026-09 STRIPE: brak porównania — brak pliku 2026-08/summary_2026-08.json')
   })
 
+  it('źródło bez prowizji w pliku (P24): nota, że netto jest bez prowizji', () => {
+    const noFees = JSON.parse(JSON.stringify(OCT))
+    noFees.p24.fees = null
+    const t = renderReport(buildFinanceView({ index: INDEX, summaries: new Map([['2026-10', noFees]]), months: ['2026-10'], source: 'p24' }))
+    expect(t).toContain('PRZELEWY24 2026-10: prowizje nie są w pliku (rozlicza je faktura operatora), więc netto = brutto − zwroty, bez prowizji.')
+    expect(t).toContain('brak w pliku')
+  })
+
   it('Meta: dwa ujęcia osobno, bez łącznej kwoty', () => {
     expect(text).toContain('META 2026-10 — status OK (dwa ujęcia TEGO SAMEGO kosztu — nie sumować)')
     expect(text).toContain('wydatki wg Insights (panel Meta) [OK]: 14 527,06 zł')
@@ -365,6 +373,9 @@ describe('Stanley: get_finance (OpenAI, podstawiony fetch)', () => {
     expect(first.tool_choice).toEqual({ type: 'function', function: { name: 'get_finance' } })
     expect(first.tools[0].function.name).toBe('get_finance')
     expect(first.messages[0].content).toBe('STANLEY-PROMPT' + FINANCE_RULES)
+    expect(FINANCE_RULES).toContain('WYŁĄCZNIE PO POLSKU')
+    expect(FINANCE_RULES).toContain('ZERO WŁASNYCH SUM')
+    expect(first.messages[1].content).toContain('Odpowiedz po polsku')
     expect(first.messages[1].content).toContain('Dzisiaj: 2026-11-14')
     expect(first.messages[1].content).toContain('2026-11 (NIEZAMKNIĘTY;')
     expect(first.messages[1].content).toContain('PYTANIE: Przychody Stripe za wrzesień?')

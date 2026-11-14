@@ -445,6 +445,12 @@ export function renderReport(view) {
         return ds.filter((d) => !d.payouts.startsWith('0,00')).map((d) => `${s.source}${d.currency === 'PLN' ? '' : ` ${d.currency}`}: ${d.payouts}`)
       })
       if (payouts.length > 0) L.push('', `Wypłaty na rachunek ${m.month}: ${payouts.join('; ')}`)
+      for (const key of ['stripe', 'p24']) {
+        const s = m.sources[key]
+        if (s?.data && String(s.data.fees).startsWith('brak')) {
+          L.push(`${s.source} ${m.month}: prowizje nie są w pliku (rozlicza je faktura operatora), więc netto = brutto − zwroty, bez prowizji.`)
+        }
+      }
       const pp = m.sources.paypal?.byCurrency?.find((d) => d.currency === 'PLN')
       if (pp && (pp.outgoingPayments || pp.topUps)) {
         L.push(`PAYPAL ${m.month}: netto uwzględnia też płatności wychodzące (${pp.outgoingPayments ?? '0,00 zł'}) i zasilenia salda (${pp.topUps ?? '0,00 zł'}).`)
