@@ -5,7 +5,7 @@ import { handler as financeDataHandler } from '../netlify/functions/finance-data
 import { answerFinance, bankCostAnswer, FINANCE_RULES } from '../netlify/shared/financeStanley.js'
 import { isBankCostQuestion, isFinanceQuestion } from '../netlify/shared/financeIntent.js'
 import {
-  buildFinanceView, fmt, getFinance, pct, previousMonth, RequestError, validateRequest,
+  buildFinanceView, fmt, getFinance, mergeViews, pct, previousMonth, renderReport, RequestError, validateRequest,
 } from '../netlify/shared/financeStore.js'
 import { enforceRefusal } from '../src/lib/refusalGuard'
 
@@ -285,6 +285,53 @@ describe('rozpoznawanie pytań finansowych', () => {
   })
 })
 
+describe('renderReport — deterministyczny raport', () => {
+  const text = renderReport(view(['2026-09', '2026-10', '2026-11']))
+  const lines = text.split('\n')
+
+  it('tabela: miesiąc, źródło, status, brutto, zwroty, prowizje i netto w osobnych kolumnach', () => {
+    expect(lines.find((l) => l.startsWith('Miesiąc'))!.split(/ {2,}/)).toEqual(['Miesiąc', 'Źródło', 'Status', 'Brutto', 'Zwroty', 'Prowizje', 'Netto'])
+    const row = lines.find((l) => /^2026-10 +STRIPE /.test(l))!
+    expect(row.split(/ {2,}/)).toEqual(['2026-10', 'STRIPE', 'OK', '21 962,00 zł', '59,99 zł', '600,00 zł', '21 243,48 zł'])
+    expect(lines.find((l) => /^2026-11\* +STRIPE /.test(l))).toContain('NIEPEŁNY')
+  })
+
+  it('niezamknięty miesiąc ma gwiazdkę i adnotację; źródło bez danych ma status i nazwę pliku', () => {
+    expect(text).toContain('* MIESIĄC NIEZAMKNIĘTY — dane do 2026-11-13 14:02')
+    expect(lines.find((l) => l.startsWith('2026-11*  PRZELEWY24'))).toContain('NIEPEŁNY')
+    expect(text).toContain('2026-11/summary_2026-11.json → p24 (PRZELEWY24): nie mam tych danych')
+  })
+
+  it('zmiana względem poprzedniego miesiąca: porównanie dla zamkniętych, powód braku porównania dla niezamkniętego i wrześniowego bez sierpnia', () => {
+    expect(text).toContain('2026-10 STRIPE vs 2026-09: brutto 18 000,00 zł → 21 962,00 zł (+3 962,00 zł, +22,0%)')
+    expect(text).toContain('2026-11 STRIPE: brak porównania — 2026-11 jest niezamknięty — nie porównuję z pełnym miesiącem')
+    expect(text).toContain('2026-09 STRIPE: brak porównania — brak pliku 2026-08/summary_2026-08.json')
+  })
+
+  it('Meta: dwa ujęcia osobno, bez łącznej kwoty', () => {
+    expect(text).toContain('META 2026-10 — status OK (dwa ujęcia TEGO SAMEGO kosztu — nie sumować)')
+    expect(text).toContain('wydatki wg Insights (panel Meta) [OK]: 14 527,06 zł')
+    expect(text).toContain('obciążenia przez PayPal [OK]: 2 292,14 zł (2 płatności)')
+    expect(text).not.toContain('16 819,20')
+  })
+
+  it('anomalie, braki i zasada Wix w każdym raporcie; PayPal z wyjaśnieniem netto', () => {
+    expect(text).toContain('! 2026-10 STRIPE: wzrost prowizji w brutto 2,2% → 2,7%')
+    expect(text).toContain('ANOMALIE')
+    expect(text).toContain('BRAKI DANYCH')
+    expect(lines.at(-1)).toBe('Wix pozostaje prawdą transakcyjną dla zamówień i przychodu; powyższe to wpływy od operatorów płatności.')
+    expect(renderReport(view(['2026-10'], 'stripe'))).not.toContain('META')
+  })
+
+  it('brak anomalii i braków → jawne „nie wykryto” / „brak w żądanym zakresie”; mergeViews łączy źródła tego samego miesiąca', () => {
+    const merged = mergeViews([view(['2026-10'], 'stripe'), view(['2026-10'], 'p24')])
+    const t = renderReport(merged)
+    expect(t).toContain('2026-10  STRIPE')
+    expect(t).toContain('2026-10  PRZELEWY24')
+    expect(t.split('\n').filter((l) => l.startsWith('Miesiąc'))).toHaveLength(1)
+  })
+})
+
 // ── Stanley z narzędziem get_finance ─────────────────────────────────────────────────────
 
 const parse = (raw: string) => {
@@ -326,7 +373,11 @@ describe('Stanley: get_finance (OpenAI, podstawiony fetch)', () => {
     expect(toolMessage.content).toContain('18 000,00 zł')
     expect(toolMessage.content).not.toContain(KEY)
     expect(second.tool_choice).toBe('auto') // dalsza runda: model może poprosić o kolejne miesiące
-    expect(out).toMatchObject({ intent: 'finance', language: 'pl', llmUsed: true, answerText: 'Wrzesień, STRIPE, status OK: brutto 18 000,00 zł.' })
+    expect(out).toMatchObject({ intent: 'finance', language: 'pl', llmUsed: true })
+    // odpowiedź = raport z serwera + komentarz modelu
+    expect(out.answerText).toContain('SUMY (wpływy od operatorów płatności, nie sprzedaż z Wix)')
+    expect(out.answerText).toContain('2026-09  STRIPE  OK ')
+    expect(out.answerText.endsWith('KOMENTARZ\nWrzesień, STRIPE, status OK: brutto 18 000,00 zł.')).toBe(true)
     expect(out.finance.toolCalls).toEqual([{ name: 'get_finance', args: { months: ['2026-09'], source: 'stripe' } }])
   })
 
@@ -356,7 +407,8 @@ describe('Stanley: get_finance (OpenAI, podstawiony fetch)', () => {
     const out = await answerFinance({ message: 'Przychody Stripe za wrzesień?', systemPrompt: 'X', parse, env: OPENAI_ENV, fetchFn: failing })
     expect(out.llmUsed).toBe(false)
     expect(out.warnings[0]).toContain('LLM error')
-    expect(out.answerText).toBeTypeOf('string')
+    expect(out.answerText).toContain('18 000,00 zł') // te same liczby co w danych
+    expect(out.answerText).toContain('Model niedostępny — raport bez komentarza')
   })
 
   it('brak index.json → „nie mam tych danych: index.json”', async () => {

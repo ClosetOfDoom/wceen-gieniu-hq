@@ -379,3 +379,107 @@ export async function getFinance(request, { env = process.env, fetchFn = fetch }
   const { index, summaries } = await loadFinance(config, months, fetchFn)
   return buildFinanceView({ index, summaries, months, source })
 }
+
+// ── report text (deterministic) ────────────────────────────────────────────────────────
+// Tables, statuses, changes, anomalies and gaps are rendered HERE, not by the model: a smaller
+// model dropped statuses and the "nie mam tych danych" file names. Stanley's text is a comment
+// placed after this report.
+
+/** Several tool results (e.g. stripe and p24 asked separately) merged by month. */
+export function mergeViews(views) {
+  if (views.length === 1) return views[0]
+  const merged = { ...views[0], months: [], anomalies: undefined }
+  const byMonth = new Map()
+  for (const v of views) {
+    for (const m of v.months) {
+      const have = byMonth.get(m.month)
+      if (!have) {
+        byMonth.set(m.month, { ...m, sources: { ...(m.sources ?? {}) }, anomalies: [...(m.anomalies ?? [])], missing: [...(m.missing ?? [])] })
+      } else if (m.available && have.available) {
+        Object.assign(have.sources, m.sources)
+        have.anomalies = [...new Set([...have.anomalies, ...m.anomalies])]
+        have.missing = [...new Set([...have.missing, ...m.missing])]
+      }
+    }
+  }
+  merged.months = [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month))
+  return merged
+}
+
+const pad = (s, n) => String(s).padEnd(n)
+const feesCell = (d) => (String(d.fees).startsWith('brak') ? 'brak w pliku' : d.fees)
+
+function tableRows(m) {
+  const rows = []
+  const label = `${m.month}${m.closed === false ? '*' : ''}`
+  const push = (name, status, d) => rows.push([label, name, status, d.gross, d.refunds, feesCell(d), d.net])
+  for (const key of ['stripe', 'p24', 'paypal']) {
+    const s = m.sources[key]
+    if (!s) continue
+    if (s.data) {
+      push(s.source, s.status, s.data)
+      for (const other of s.otherCurrencies ?? []) push(`${s.source} ${other.currency}`, s.status, other)
+    } else if (s.byCurrency) {
+      for (const d of s.byCurrency) push(d.currency === 'PLN' ? s.source : `${s.source} ${d.currency}`, s.status, d)
+    } else {
+      rows.push([label, s.source, s.status, '—', '—', '—', '—'])
+    }
+  }
+  return rows
+}
+
+export function renderReport(view) {
+  const L = []
+  const open = view.months.filter((m) => m.available && m.closed === false)
+  const rows = view.months.flatMap((m) => (m.available ? tableRows(m) : []))
+  if (rows.length > 0) {
+    const head = ['Miesiąc', 'Źródło', 'Status', 'Brutto', 'Zwroty', 'Prowizje', 'Netto']
+    const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => String(r[i]).length)))
+    const line = (r) => r.map((c, i) => pad(c, widths[i])).join('  ').trimEnd()
+    L.push('SUMY (wpływy od operatorów płatności, nie sprzedaż z Wix)', line(head), widths.map((w) => '-'.repeat(w)).join('  '), ...rows.map(line))
+    for (const m of view.months.filter((x) => x.available)) {
+      const payouts = ['stripe', 'p24', 'paypal'].flatMap((key) => {
+        const s = m.sources[key]
+        if (!s) return []
+        const ds = s.data ? [s.data, ...(s.otherCurrencies ?? [])] : (s.byCurrency ?? [])
+        return ds.filter((d) => !d.payouts.startsWith('0,00')).map((d) => `${s.source}${d.currency === 'PLN' ? '' : ` ${d.currency}`}: ${d.payouts}`)
+      })
+      if (payouts.length > 0) L.push('', `Wypłaty na rachunek ${m.month}: ${payouts.join('; ')}`)
+      const pp = m.sources.paypal?.byCurrency?.find((d) => d.currency === 'PLN')
+      if (pp && (pp.outgoingPayments || pp.topUps)) {
+        L.push(`PAYPAL ${m.month}: netto uwzględnia też płatności wychodzące (${pp.outgoingPayments ?? '0,00 zł'}) i zasilenia salda (${pp.topUps ?? '0,00 zł'}).`)
+      }
+    }
+  }
+  for (const m of view.months.filter((x) => x.available && x.sources.meta)) {
+    const { insights, paypalCharges } = m.sources.meta
+    L.push('', `META ${m.month}${m.closed === false ? '*' : ''} — status ${m.sources.meta.status} (dwa ujęcia TEGO SAMEGO kosztu — nie sumować)`)
+    L.push(`  wydatki wg Insights (panel Meta) [${insights.status}]: ${insights.total ? Object.values(insights.total).join(' / ') : `nie mam tych danych: ${(insights.reasons ?? []).join('; ') || 'brak'}`}`)
+    L.push(`  obciążenia przez PayPal [${paypalCharges.status}]: ${paypalCharges.sum ? paypalCharges.sum.join(' / ') : `nie mam tych danych: ${(paypalCharges.reasons ?? []).join('; ') || 'brak'}`}`)
+  }
+  if (open.length > 0) {
+    L.push('', ...open.map((m) => `* ${m.warning}`))
+  }
+
+  const changes = view.months.filter((m) => m.available).flatMap((m) =>
+    ['stripe', 'p24', 'paypal'].flatMap((key) => {
+      const c = m.sources[key]?.changeVsPrevious
+      if (!c) return []
+      const name = `${m.month} ${m.sources[key].source}`
+      return c.comparable
+        ? [`${name} vs ${c.vs}: brutto ${c.gross}; zwroty ${c.refunds}; prowizje ${c.fees}${c.feesPctOfGross ? ` (udział w brutto ${c.feesPctOfGross})` : ''}; netto ${c.net}`]
+        : [`${name}: brak porównania — ${c.reason}`]
+    }),
+  )
+  const metaChanges = view.months.filter((m) => m.available && m.sources.meta).map((m) => `${m.month} META Insights: ${m.sources.meta.insights.changeVsPrevious}`)
+  L.push('', 'ZMIANA WZGLĘDEM POPRZEDNIEGO MIESIĄCA', ...(changes.length + metaChanges.length ? [...changes, ...metaChanges].map((x) => `  ${x}`) : ['  brak danych do porównania']))
+
+  const anomalies = view.months.filter((m) => m.available).flatMap((m) => m.anomalies)
+  L.push('', 'ANOMALIE (progi: zwroty ≥ 2,0% brutto, wzrost prowizji ≥ 0,3 pp, zmiana brutto ≥ 30%, status UWAGA)',
+    ...(anomalies.length ? anomalies.map((a) => `  ! ${a}`) : ['  nie wykryto anomalii']))
+
+  const missing = [...(view.missing ?? []), ...view.months.flatMap((m) => (m.available ? m.missing : [m.missing]))]
+  L.push('', 'BRAKI DANYCH', ...(missing.length ? missing.map((x) => `  ${x}`) : ['  brak w żądanym zakresie']))
+  L.push('', 'Wix pozostaje prawdą transakcyjną dla zamówień i przychodu; powyższe to wpływy od operatorów płatności.')
+  return L.join('\n')
+}

@@ -3,33 +3,32 @@
 //
 // Flow: question -> (bank costs / subscriptions: fixed "nie mam tych danych" answer, no model)
 //       -> read index.json -> model with get_finance (forced first call) -> answer.
-// The system prompt is Stanley's own plus FINANCE_RULES, which override the three dashboard
-// rules that do not fit finance (English only, concision, no tables).
+// The tables, statuses, changes, anomalies and gaps are rendered by the server (renderReport) and
+// put before the model's comment; the system prompt is Stanley's own plus FINANCE_RULES, which
+// override the dashboard rules that do not fit finance (English only, concision, no tables).
 
 import { businessToday } from './businessDay.js'
 import { isBankCostQuestion } from './financeIntent.js'
 import {
-  FinanceError, SOURCE_KEYS, getFinance, getJson, readFinanceConfig,
+  FinanceError, getFinance, getJson, mergeViews, readFinanceConfig, renderReport,
 } from './financeStore.js'
 import { FINANCE_TOOL, runToolChat } from './llmTools.js'
 
 export const FINANCE_RULES = `
 
 ━━━ TRYB FINANSOWY (Stripe, P24, PayPal, Meta) — dla pytań finansowych NADPISUJE reguły 4, 5 i 7 powyżej ━━━
-Pytanie dotyczy raportu księgowego. Narzędzie get_finance zwraca agregaty opublikowane z raportu miesięcznego.
-• JĘZYK I FORMA: odpowiadasz PO POLSKU, obszernie, czystym tekstem z tabelą sum (kolumny wyrównane spacjami, bez markdown, bez JSON). Zwracasz się „sir", ton stonowany; fakty przed stylem.
-• ZERO WYMYŚLANIA: każda liczba pochodzi z wyniku get_finance i jest już sformatowana — przepisz ją dokładnie, niczego nie przeliczaj, nie zaokrąglaj i nie dodawaj własnych sum (wyjątek: sumy, które narzędzie podaje samo).
-• BRAK DANYCH: napisz „nie mam tych danych: <nazwa pliku lub pola>", biorąc nazwę z pola missing / statusReasons (np. „nie mam tych danych: 2026-11/summary_2026-11.json → p24"). Nigdy ogólnik bez nazwy.
-• ZAWSZE podaj miesiąc, źródło i status (OK, NIEPEŁNY, UWAGA) — statusy bierz z narzędzia, nie zmieniaj ich.
-• BRUTTO, ZWROTY, PROWIZJE i NETTO podawaj osobno (każda pozycja w osobnej kolumnie lub wierszu), nigdy jako jedną kwotę.
-• META: wydatki z Insights i obciążenia przez PayPal to TEN SAM KOSZT w dwóch ujęciach. Pokaż je osobno z podpisami, NIGDY ich nie sumuj ani nie dodawaj i nie wyprowadzaj z nich „łącznego kosztu".
-• To wpływy od operatorów płatności, a nie sprzedaż z Wix. Wix pozostaje prawdą transakcyjną (zamówienia i przychód) — powiedz to wprost w odpowiedzi.
-• MIESIĄC NIEZAMKNIĘTY (closed:false, pole warning) pokaż osobno z adnotacją i NIE porównuj go z pełnym miesiącem. Zmiany względem poprzedniego miesiąca podawaj wyłącznie z pola changeVsPrevious; gdy comparable=false, napisz dlaczego.
-• KOSZTY Z BANKU, SUBSKRYPCJE, OPŁATY BANKOWE, FAKTURY: odpowiedz „nie mam tych danych: brak publikacji audytu".
-• STRUKTURA ODPOWIEDZI: (1) tabela sum per miesiąc i źródło, (2) zmiana względem poprzedniego miesiąca, (3) anomalie (zwroty, wzrost prowizji, status UWAGA) — tylko z listy anomalies i statusów z narzędzia; gdy lista jest pusta, napisz, że anomalii nie wykryto, (4) braki danych (missing).
-• FORMAT: nadal „ANSWER:" i „SPEECH:". SPEECH to 2 krótkie zdania po polsku, bez tabel.`
-
-const OPEN_MONTHS_NOTE = 'miesiąc niezamknięty'
+Narzędzie get_finance zwraca agregaty z raportu księgowego oraz gotowy tekst w polu "report" tego wyniku.
+ZASADA PODSTAWOWA: serwer SAM dołącza raport (tabela sum z miesiącem, źródłem i statusem, zmiana względem poprzedniego miesiąca, anomalie, braki danych)
+PRZED Twoim tekstem. Twój tekst to KOMENTARZ do tego raportu — nie powtarzaj tabeli i nie przepisuj jej własnymi słowami.
+• JĘZYK: po polsku, „sir", ton stonowany; fakty przed stylem. To wyjątek od reguły „tylko angielski".
+• KOMENTARZ: 4–8 zdań, w ANSWER. Odpowiedz wprost na pytanie jedną lub dwiema liczbami z raportu (przepisz je dokładnie; nic nie przeliczaj, nie zaokrąglaj, nie dodawaj własnych sum), potem wskaż najważniejszą zmianę, anomalię lub brak z raportu.
+• Zawsze wymień miesiąc, źródło i status (OK, NIEPEŁNY, UWAGA) — statusy bierz z raportu, nie zmieniaj ich.
+• Brutto, zwroty, prowizje i netto podawaj osobno, nigdy jako jedną kwotę.
+• META: wydatki z Insights i obciążenia przez PayPal to TEN SAM KOSZT w dwóch ujęciach: NIGDY ich nie sumuj ani nie dodawaj i nie wyprowadzaj „łącznego kosztu".
+• Zaznacz, że to wpływy od operatorów płatności, a nie sprzedaż z Wix; Wix pozostaje prawdą transakcyjną.
+• Miesiąc niezamknięty (gwiazdka w raporcie, closed:false) nie jest porównywalny z pełnym — powiedz to, jeśli o niego pytano; nie wyciągaj wniosków z porównań, których raport nie podaje.
+• Brak danych: „nie mam tych danych: <nazwa pliku lub pola z sekcji BRAKI DANYCH>". Fraza „nie mam tych danych: brak publikacji audytu" dotyczy WYŁĄCZNIE kosztów z banku, subskrypcji, opłat bankowych i faktur — nigdy nie używaj jej do prowizji, zwrotów ani wpływów.
+• FORMAT: „ANSWER:" (komentarz) i „SPEECH:" (2 krótkie zdania po polsku, bez tabel).`
 
 export function bankCostAnswer() {
   const answerText = [
@@ -40,35 +39,6 @@ export function bankCostAnswer() {
   ].join('\n')
   const speechText = 'Nie mam tych danych: brak publikacji audytu. Koszty z banku i subskrypcje nie są publikowane.'
   return { answerText, speechText }
-}
-
-/** Plain-text table straight from the tool view — used when the model is unavailable or fails. */
-export function renderFallback(view) {
-  const L = ['(Model niedostępny — zestawienie wprost z danych; bez analizy.)', '']
-  for (const m of view.months) {
-    if (!m.available) {
-      L.push(`${m.month}: ${m.missing}`)
-      continue
-    }
-    L.push(`${m.month} ${m.closed === false ? `[${OPEN_MONTHS_NOTE}] ` : ''}${m.warning ?? ''}`.trim())
-    for (const key of SOURCE_KEYS) {
-      const s = m.sources[key]
-      if (!s) continue
-      if (key === 'meta') {
-        L.push(`  META  Insights [${s.insights.status}]: ${s.insights.total ? Object.values(s.insights.total).join(' / ') : 'brak danych'}`)
-        L.push(`  META  obciążenia przez PayPal [${s.paypalCharges.status}]: ${s.paypalCharges.sum ? s.paypalCharges.sum.join(' / ') : 'brak danych'}  (ten sam koszt — nie sumować)`)
-        continue
-      }
-      const rows = s.data ? [s.data] : (s.byCurrency ?? [])
-      if (rows.length === 0) L.push(`  ${s.source} [${s.status}]: nie mam tych danych (${(s.statusReasons ?? []).join('; ')})`)
-      for (const d of rows) {
-        L.push(`  ${s.source} ${d.currency} [${s.status}]: brutto ${d.gross} | zwroty ${d.refunds} | prowizje ${d.fees} | netto ${d.net} | wypłaty ${d.payouts}`)
-      }
-    }
-    for (const a of m.anomalies) L.push(`  ! ${a}`)
-  }
-  L.push('', 'To wpływy od operatorów płatności, a nie sprzedaż z Wix; Wix pozostaje prawdą transakcyjną.')
-  return L.join('\n')
 }
 
 function pickProvider(env) {
@@ -138,10 +108,12 @@ export async function answerFinance({ message, systemPrompt, parse, env = proces
     })
   }
 
-  let lastView = null
+  const views = []
   const tracedTool = async (name, args) => {
-    lastView = await executeTool(name, args)
-    return lastView
+    const view = await executeTool(name, args)
+    views.push(view)
+    // the model gets the finished report text it will be placed under (all figures are in it)
+    return { report: renderReport(mergeViews(views)), publishedMonths: view.publishedMonths }
   }
   try {
     const { text, rounds, toolCalls } = await runToolChat({
@@ -149,8 +121,12 @@ export async function answerFinance({ message, systemPrompt, parse, env = proces
       system: systemPrompt + FINANCE_RULES, user, tool: FINANCE_TOOL, executeTool: tracedTool,
       fetchFn,
     })
-    const { answerText, speechText } = parse(text)
-    return body(answerText, speechText, {
+    const { answerText: comment, speechText } = parse(text)
+    const report = views.length > 0 ? renderReport(mergeViews(views)) : ''
+    return body(report ? `${report}
+
+KOMENTARZ
+${comment}` : comment, speechText, {
       llmUsed: true,
       llmProvider: provider.name,
       llm: { active: true, provider: provider.name, used: true, model: provider.model },
@@ -158,8 +134,10 @@ export async function answerFinance({ message, systemPrompt, parse, env = proces
     })
   } catch (err) {
     const reason = String(err?.message ?? err).slice(0, 100)
-    if (lastView) {
-      return body(renderFallback(lastView), 'Model niedostępny, pokazuję zestawienie wprost z danych.', {
+    if (views.length > 0) {
+      return body(`${renderReport(mergeViews(views))}
+
+(Model niedostępny — raport bez komentarza.)`, 'Model niedostępny, pokazuję zestawienie wprost z danych.', {
         warnings: [`LLM error (deterministic fallback): ${reason}`],
         llm: { active: true, provider: provider.name, used: false, model: null },
       })
