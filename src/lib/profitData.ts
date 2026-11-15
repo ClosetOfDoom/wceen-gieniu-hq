@@ -1,6 +1,7 @@
 // Frontend lib for profit-data backend endpoint.
 // Caches for 55 s — just under the 60 s auto-refresh interval.
 import { bustUrl } from '../utils/cacheBust'
+import { stanleyFetch } from './stanleyAuth'
 
 // The canonical profit shape the UI reads. It used to live in a second module
 // (src/services/productMargins.ts) that carried its own copy of the price and
@@ -188,7 +189,7 @@ export async function fetchProfitData(range?: { from: string; to: string }): Pro
     const base = range
       ? `/.netlify/functions/profit-data?from=${range.from}&to=${range.to}`
       : '/.netlify/functions/profit-data'
-    const res = await fetch(bustUrl(base), { headers: { 'Cache-Control': 'no-store' } })
+    const res = await stanleyFetch(bustUrl(base), { headers: { 'Cache-Control': 'no-store' } })
     if (!res.ok) return null
     const data = await res.json() as ProfitData
     if (!data.ok) return data   // return error payload so callers can inspect

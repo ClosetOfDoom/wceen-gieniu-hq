@@ -31,6 +31,7 @@
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { businessToday, businessDaysAgo, businessWeekStart } from '../netlify/shared/businessDay.js'
+import { stanleyHeaders } from './_stanleyHeaders.mjs'
 
 const root = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const rootDir = process.platform === 'win32' ? root.replace(/^\//, '') : root
@@ -62,7 +63,7 @@ const shiftDay = (iso, days) => businessDaysAgo(-days, iso)
 const weekStartOf = businessWeekStart
 
 async function getJson(url, label) {
-  const res = await fetch(url, { headers: { Accept: 'application/json', 'Cache-Control': 'no-store' } })
+  const res = await fetch(url, { headers: stanleyHeaders({ Accept: 'application/json', 'Cache-Control': 'no-store' }) })
   if (!res.ok) throw new Error(`${label}: HTTP ${res.status}`)
   return res.json()
 }

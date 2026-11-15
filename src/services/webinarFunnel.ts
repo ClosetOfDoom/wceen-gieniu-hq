@@ -3,6 +3,7 @@
 // The anon key cannot read webinar_sessions or webinar_participants due to RLS.
 // Direct Supabase anon queries will return 0 rows even when the table has data.
 import { bustUrl } from '../utils/cacheBust'
+import { stanleyFetch } from '../lib/stanleyAuth'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -182,7 +183,7 @@ interface WebinarBackendResponse {
 // ── Backend fetch ─────────────────────────────────────────────────────────────
 
 async function fetchWebinarBackend(): Promise<WebinarBackendResponse> {
-  const res = await fetch(bustUrl('/.netlify/functions/webinar-data'), {
+  const res = await stanleyFetch(bustUrl('/.netlify/functions/webinar-data'), {
     headers: { 'Cache-Control': 'no-store' },
   })
   if (!res.ok) {

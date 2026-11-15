@@ -1,6 +1,7 @@
 // Typed fetch helper for /.netlify/functions/data-health
 // Service-role diagnostic: checks all operational Supabase tables.
 import { bustUrl } from '../utils/cacheBust'
+import { stanleyFetch } from './stanleyAuth'
 
 export interface DataHealthOrders {
   count: number | null
@@ -76,7 +77,7 @@ export async function fetchDataHealth(): Promise<DataHealthReport | null> {
   if (_cache && now - _cacheTime < CACHE_TTL) return _cache
 
   try {
-    const res = await fetch(bustUrl('/.netlify/functions/data-health'), {
+    const res = await stanleyFetch(bustUrl('/.netlify/functions/data-health'), {
       headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
     })
     if (!res.ok) {

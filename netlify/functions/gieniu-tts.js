@@ -8,15 +8,15 @@
 //
 // No browser speechSynthesis fallback — voice is always server-provided.
 
+import { withStanleyAuth } from '../shared/auth.js'
 import { handler as elevenTtsHandler } from './eleven-tts.js'
 
 const CORS = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 }
 
-export async function handler(event, context) {
+async function handlerImpl(event, context) {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: CORS, body: '' }
   }
@@ -65,3 +65,6 @@ export async function handler(event, context) {
   // ── Route 2: ElevenLabs Stanley ──────────────────────────────────────────
   return elevenTtsHandler(event, context)
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

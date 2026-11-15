@@ -3,12 +3,12 @@
 // Also checks v_daily_wix_meta_performance so the frontend can detect when
 // aggregate Meta spend exists but campaign-level rows are missing.
 
+import { withStanleyAuth } from '../shared/auth.js'
 import { readTable } from '../shared/supabaseRead.js'
 import { businessToday } from '../shared/businessDay.js'
 import { splitAdSpend } from '../shared/adSpend.js'
 
 const CORS = {
-  'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 }
@@ -29,7 +29,7 @@ async function tryGet(supabaseUrl, serviceKey, table, filters = {}) {
   }
 }
 
-export const handler = async (event) => {
+const handlerImpl = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: CORS, body: '' }
   }
@@ -251,3 +251,6 @@ const rowGranularity = (r) =>
     }),
   }
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

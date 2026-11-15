@@ -16,18 +16,18 @@
 //
 // Read-only. Writes nothing.
 
+import { withStanleyAuth } from '../shared/auth.js'
 import { readTable } from '../shared/supabaseRead.js'
 import { splitAdSpendByDay, splitAdSpend } from '../shared/adSpend.js'
 
 const CORS = {
-  'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 }
 const JSON_HEADERS = { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 
-export const handler = async (event) => {
+const handlerImpl = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, headers: JSON_HEADERS, body: JSON.stringify({ ok: false, error: 'Method not allowed' }) }
@@ -71,3 +71,6 @@ export const handler = async (event) => {
     }
   }
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

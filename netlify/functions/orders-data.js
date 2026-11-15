@@ -7,6 +7,7 @@
 // ./productCatalog.js — the same module profit-data.js uses, so the PP count on
 // the Est. Profit card and the PP count here can never disagree again.
 
+import { withStanleyAuth } from '../shared/auth.js'
 import {
   PRODUCTS,
   aggregateOrders,
@@ -22,7 +23,6 @@ import { MIGRATION_FILES, MIGRATION_REGISTER_FILE } from '../shared/migrationLis
 import { tryReadTable } from '../shared/supabaseRead.js'
 
 const CORS = {
-  'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 }
@@ -195,7 +195,7 @@ function labelOf(decision) {
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
-export const handler = async (event) => {
+const handlerImpl = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, headers: JSON_HEADERS, body: JSON.stringify({ ok: false, error: 'Method not allowed' }) }
@@ -378,3 +378,6 @@ export const handler = async (event) => {
     }),
   }
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

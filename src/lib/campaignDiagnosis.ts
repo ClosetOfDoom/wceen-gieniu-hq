@@ -2,6 +2,7 @@ import { businessToday } from './businessDay'
 import type { MetaAdDaily } from '../services/data'
 import { bustUrl } from '../utils/cacheBust'
 import { adScopeOf, isExcludedFromWixBlended, type AdScope, type AdSpendSplit } from './adSpend'
+import { stanleyFetch } from './stanleyAuth'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -318,7 +319,7 @@ export async function fetchCampaignRows(range?: { from: string; to: string }): P
     const base = range
       ? `/.netlify/functions/campaign-data?from=${range.from}&to=${range.to}`
       : '/.netlify/functions/campaign-data'
-    const res = await fetch(bustUrl(base), {
+    const res = await stanleyFetch(bustUrl(base), {
       headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
     })
     if (!res.ok) {

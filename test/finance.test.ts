@@ -232,8 +232,9 @@ describe('funkcja finance-data', () => {
     vi.stubGlobal('fetch', fn)
     vi.stubEnv('SUPABASE_URL', ENV.SUPABASE_URL)
     vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', KEY)
+    vi.stubEnv('STANLEY_ACCESS_TOKEN', 'test-token-finance')
     try {
-      return await financeDataHandler(event)
+      return await financeDataHandler({ headers: { 'x-stanley-token': 'test-token-finance' }, ...event })
     } finally {
       vi.unstubAllGlobals()
       vi.unstubAllEnvs()

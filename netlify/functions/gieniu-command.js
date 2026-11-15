@@ -5,6 +5,7 @@
 // Returns: { answerText, speechText, intent, confidence, dataSourcesUsed, warnings, llmUsed, llmProvider }
 
 // Funding radar snapshot (same data as src/data/funding.ts, copied from dashboard.html).
+import { withStanleyAuth } from '../shared/auth.js'
 import { FUNDING_RADAR } from '../shared/funding.js'
 import { readTable } from '../shared/supabaseRead.js'
 import { adScopeOf, excludedSpendSentence } from '../shared/adSpend.js'
@@ -2043,7 +2044,7 @@ function success(body) {
   }
 }
 
-export const handler = async (event) => {
+const handlerImpl = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' }
   }
@@ -2311,3 +2312,6 @@ export const handler = async (event) => {
     })
   }
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

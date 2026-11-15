@@ -5,6 +5,7 @@
 // Classification uses the WCEEN fixed weekly schedule:
 //   Thursday 18:00 Warsaw = JSU | Tuesday 18:00 Warsaw = JZK
 
+import { withStanleyAuth } from '../shared/auth.js'
 import { classifyBySchedule } from './scheduleUtils.js'
 
 import { readTable } from '../shared/supabaseRead.js'
@@ -13,7 +14,6 @@ import { businessToday, businessYesterday, businessWeekStart, businessDaysAgo } 
 import { fetchOrdersInRange } from '../shared/productCatalog.js'
 
 const CORS = {
-  'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 }
@@ -198,7 +198,7 @@ async function supabaseGet(supabaseUrl, serviceKey, table, params = {}) {
   })
 }
 
-export const handler = async (event) => {
+const handlerImpl = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: CORS, body: '' }
   }
@@ -629,3 +629,6 @@ export const handler = async (event) => {
     }),
   }
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

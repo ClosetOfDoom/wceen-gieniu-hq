@@ -3,6 +3,7 @@
 // Used by GIENIU intent handlers for "ile dziś zamówień" and similar queries.
 import { bustUrl } from '../utils/cacheBust'
 import type { DaySeriesEntry } from './alerts'
+import { stanleyFetch } from './stanleyAuth'
 
 export interface OrderRow {
   external_order_id: string
@@ -120,7 +121,7 @@ export async function fetchOrdersData(): Promise<OrdersData | null> {
   if (_cache && now - _cacheTime < CACHE_TTL) return _cache
 
   try {
-    const res = await fetch(bustUrl('/.netlify/functions/orders-data'), {
+    const res = await stanleyFetch(bustUrl('/.netlify/functions/orders-data'), {
       headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
     })
     if (!res.ok) {

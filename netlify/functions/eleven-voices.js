@@ -1,9 +1,10 @@
 // Netlify Function: eleven-voices
 // Returns list of available ElevenLabs voices.
 
-export const handler = async (event) => {
+import { withStanleyAuth } from '../shared/auth.js'
+
+const handlerImpl = async (event) => {
   const headers = {
-    'Access-Control-Allow-Origin': '*',
     'Content-Type': 'application/json',
   }
 
@@ -48,3 +49,6 @@ export const handler = async (event) => {
     }
   }
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

@@ -8,6 +8,7 @@
 
 import { supabase } from './supabase'
 import { bustUrl } from '../utils/cacheBust'
+import { stanleyFetch } from '../lib/stanleyAuth'
 
 export interface FunnelViewRow {
   session_name: string
@@ -80,7 +81,7 @@ export interface AttendeesResult {
 
 export async function fetchSessionAttendees(room: string, session: string): Promise<AttendeesResult> {
   try {
-    const res = await fetch(
+    const res = await stanleyFetch(
       bustUrl(`/.netlify/functions/webinar-attendees?room=${encodeURIComponent(room)}&session=${encodeURIComponent(session)}`),
       { headers: { 'Cache-Control': 'no-store' } },
     )

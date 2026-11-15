@@ -2,11 +2,12 @@
 // Proxies TTS requests to ElevenLabs keeping the API key server-side.
 // Voice is ALWAYS Stanley (9Ft9sm9dzvprPILZmLJl) — env ELEVENLABS_VOICE_ID is intentionally ignored.
 
+import { withStanleyAuth } from '../shared/auth.js'
+
 const STANLEY_VOICE_ID   = '9Ft9sm9dzvprPILZmLJl'
 const STANLEY_VOICE_NAME = 'Stanley'
 
 const CORS = {
-  'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 }
@@ -80,7 +81,7 @@ function errorBody(stage, diagnostics, extra = {}) {
   return obj
 }
 
-export const handler = async (event) => {
+const handlerImpl = async (event) => {
   // ── CORS preflight ─────────────────────────────────────────────────────────
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: CORS, body: '' }
@@ -271,3 +272,6 @@ export const handler = async (event) => {
     }
   }
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

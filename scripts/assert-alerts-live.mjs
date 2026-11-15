@@ -21,6 +21,7 @@ import {
 import {
   ALERT_RULES, countsAsOrder, evaluateAlerts, todayContext,
 } from '../netlify/shared/alertRules.js'
+import { stanleyHeaders } from './_stanleyHeaders.mjs'
 
 const root = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const rootDir = process.platform === 'win32' ? root.replace(/^\//, '') : root
@@ -50,7 +51,7 @@ const fail = (m) => { console.error('  FAIL', m); failures++ }
 const pass = (m) => console.log('  pass', m)
 
 async function getJson(url) {
-  const res = await fetch(url, { headers: { Accept: 'application/json', 'Cache-Control': 'no-store' } })
+  const res = await fetch(url, { headers: stanleyHeaders({ Accept: 'application/json', 'Cache-Control': 'no-store' }) })
   if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`)
   return res.json()
 }

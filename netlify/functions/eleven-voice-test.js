@@ -1,11 +1,12 @@
 // Netlify Function: eleven-voice-test
 // Voice preview — always uses Stanley (9Ft9sm9dzvprPILZmLJl).
 
+import { withStanleyAuth } from '../shared/auth.js'
+
 const STANLEY_VOICE_ID = '9Ft9sm9dzvprPILZmLJl'
 
-export const handler = async (event) => {
+const handlerImpl = async (event) => {
   const headers = {
-    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   }
@@ -59,3 +60,6 @@ export const handler = async (event) => {
     return { statusCode: 500, headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: String(e) }) }
   }
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

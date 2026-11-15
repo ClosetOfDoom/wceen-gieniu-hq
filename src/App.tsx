@@ -76,6 +76,7 @@ import { buildReport } from './lib/exportReport'
 import { aggregatePerf, resolveRangePerf } from './lib/rangePerf'
 import { copyText } from './utils/clipboard'
 import { fmtPln, fmtNum, fmtRoas, fmtPct } from './utils/format'
+import { logout } from './lib/stanleyAuth'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -305,6 +306,9 @@ function TopBar({
             style={{ fontSize: '0.95rem', padding: '7px 10px', minWidth: '36px', opacity: ambientOn ? 1 : 0.42, borderColor: ambientOn ? 'var(--border-gold)' : 'var(--border)' }}
           >
             🍃
+          </button>
+          <button className="btn-sm" onClick={logout} title="Wyloguj — usuwa zapamiętane hasło z tej przeglądarki">
+            Wyloguj
           </button>
         </div>
       </div>

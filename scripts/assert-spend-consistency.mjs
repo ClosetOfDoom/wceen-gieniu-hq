@@ -16,6 +16,7 @@
 //
 // Runs against the deployed functions. Read-only.
 
+import { stanleyHeaders } from './_stanleyHeaders.mjs'
 const BASE = process.argv.includes('--base')
   ? process.argv[process.argv.indexOf('--base') + 1]
   : 'https://elegant-kelpie-6fdfc8.netlify.app'
@@ -26,7 +27,7 @@ const fail = (m) => { console.log(`  FAIL ${m}`); errors++ }
 const pln = (n) => Number(n ?? 0).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const get = async (path) => {
-  const res = await fetch(`${BASE}/.netlify/functions/${path}`)
+  const res = await fetch(`${BASE}/.netlify/functions/${path}`, { headers: stanleyHeaders() })
   if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`)
   return res.json()
 }

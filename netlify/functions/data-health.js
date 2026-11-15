@@ -4,12 +4,12 @@
 // and detect source mismatches (e.g. v_daily_wix_meta_performance has spend
 // but meta_ads_daily is empty or inaccessible via anon key).
 
+import { withStanleyAuth } from '../shared/auth.js'
 import { countTable, tryReadTable } from '../shared/supabaseRead.js'
 import { fetchOrdersInRange } from '../shared/productCatalog.js'
 import { businessToday, businessWeekStart } from '../shared/businessDay.js'
 
 const CORS = {
-  'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 }
@@ -49,7 +49,7 @@ function maskEmail(email) {
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
-export const handler = async (event) => {
+const handlerImpl = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: CORS, body: '' }
   }
@@ -263,3 +263,6 @@ export const handler = async (event) => {
     }),
   }
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

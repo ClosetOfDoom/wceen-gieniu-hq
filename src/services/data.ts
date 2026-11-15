@@ -2,6 +2,7 @@ import { businessToday } from '../lib/businessDay'
 import { supabase, pagedSelect } from './supabase'
 import { bustUrl } from '../utils/cacheBust'
 import { applySpendSplit, type AdSpendSplit, type ExcludedCampaign } from '../lib/adSpend'
+import { stanleyFetch } from '../lib/stanleyAuth'
 
 export interface DailyPerformance {
   date: string
@@ -94,7 +95,7 @@ type DaySplit = AdSpendSplit & { date: string }
 
 async function fetchSpendSplit(from: string, to: string): Promise<Map<string, DaySplit> | null> {
   try {
-    const res = await fetch(
+    const res = await stanleyFetch(
       bustUrl(`/.netlify/functions/spend-split?from=${from}&to=${to}`),
       { headers: { Accept: 'application/json', 'Cache-Control': 'no-store' } },
     )

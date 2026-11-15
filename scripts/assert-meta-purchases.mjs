@@ -27,6 +27,7 @@
 
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
+import { stanleyHeaders } from './_stanleyHeaders.mjs'
 
 const root = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const rootDir = process.platform === 'win32' ? root.replace(/^\//, '') : root
@@ -69,7 +70,7 @@ const fail = (m) => { console.error(`  FAIL ${m}`); failures++ }
 // ── what the database holds ─────────────────────────────────────────────────
 // Through the deployed function: meta_ads_daily is closed to the anon key, and
 // the service key lives only in Netlify.
-const res = await fetch(`${BASE}/.netlify/functions/campaign-data?from=${FROM}&to=${TO}`)
+const res = await fetch(`${BASE}/.netlify/functions/campaign-data?from=${FROM}&to=${TO}`, { headers: stanleyHeaders() })
 if (!res.ok) {
   console.error(`FAIL — campaign-data HTTP ${res.status}`)
   process.exit(1)
@@ -116,7 +117,7 @@ if (expected === 0 && dbPurchases === 0) {
 const byDay = new Map()
 for (let d = new Date(FROM + 'T12:00:00Z'); d <= new Date(TO + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) {
   const day = d.toISOString().slice(0, 10)
-  const r1 = await fetch(`${BASE}/.netlify/functions/campaign-data?from=${day}&to=${day}`)
+  const r1 = await fetch(`${BASE}/.netlify/functions/campaign-data?from=${day}&to=${day}`, { headers: stanleyHeaders() })
   if (!r1.ok) continue
   const b1 = await r1.json()
   const dayRows = (b1.rows ?? []).filter(r => !CAMPAIGN || r.campaign_name === CAMPAIGN)

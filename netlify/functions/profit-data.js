@@ -12,6 +12,7 @@
 //   ?date=YYYY-MM-DD                → a single day (shortcut for from=to=date)
 //   ?debug=1                        → also return every classified order
 
+import { withStanleyAuth } from '../shared/auth.js'
 import {
   NON_SALE_LABELS,
   PRODUCTS,
@@ -27,7 +28,6 @@ import { toWarsawDate } from '../shared/productCatalog.js'
 import { businessWallClock } from '../shared/businessDay.js'
 
 const CORS = {
-  'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 }
@@ -36,7 +36,7 @@ const JSON_HEADERS = { ...CORS, 'Content-Type': 'application/json', 'Cache-Contr
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
-export const handler = async (event) => {
+const handlerImpl = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, headers: JSON_HEADERS, body: JSON.stringify({ ok: false, error: 'Method not allowed' }) }
@@ -466,3 +466,6 @@ export const handler = async (event) => {
     }),
   }
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

@@ -1,6 +1,7 @@
 // Fetch helper for the gieniu-command Netlify function.
 import type { LlmMeta } from '../types'
 import { isFinanceQuestion } from '../../netlify/shared/financeIntent.js'
+import { stanleyFetch } from './stanleyAuth'
 
 export interface TrendRow {
   date: string
@@ -128,7 +129,7 @@ export async function fetchGieniuCommand(
   const timer = setTimeout(() => controller.abort(), isFinanceQuestion(message) ? FINANCE_TIMEOUT_MS : TIMEOUT_MS)
 
   try {
-    const res = await fetch('/.netlify/functions/gieniu-command', {
+    const res = await stanleyFetch('/.netlify/functions/gieniu-command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, context }),

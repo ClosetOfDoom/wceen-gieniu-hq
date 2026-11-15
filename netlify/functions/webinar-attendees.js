@@ -10,10 +10,10 @@
 //
 //   GET /.netlify/functions/webinar-attendees?room=10138835&session=45109700
 
+import { withStanleyAuth } from '../shared/auth.js'
 import { readTable } from '../shared/supabaseRead.js'
 
 const CORS = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Content-Type': 'application/json',
@@ -39,7 +39,7 @@ async function queryTable(supabaseUrl, serviceKey, table, params = {}) {
   })
 }
 
-export const handler = async (event) => {
+const handlerImpl = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
 
   const supabaseUrl = process.env.SUPABASE_URL
@@ -150,3 +150,6 @@ export const handler = async (event) => {
     }
   }
 }
+
+// Every function of this site sits behind the shared password (netlify/shared/auth.js).
+export const handler = withStanleyAuth(handlerImpl)

@@ -1,6 +1,7 @@
 // Frontend helper for the ops-week-report backend function.
 // Provides types + a cached fetch (55 s — matches auto-refresh interval).
 import { bustUrl } from '../utils/cacheBust'
+import { stanleyFetch } from './stanleyAuth'
 
 export interface OpsWeekRange {
   week_start: string
@@ -143,7 +144,7 @@ export async function fetchOpsWeekReport(): Promise<OpsWeekReport> {
   if (_cache && Date.now() - _cache.fetchedAt < 55_000) {
     return _cache.report
   }
-  const res = await fetch(bustUrl('/.netlify/functions/ops-week-report'), {
+  const res = await stanleyFetch(bustUrl('/.netlify/functions/ops-week-report'), {
     headers: { 'Cache-Control': 'no-store' },
   })
   if (!res.ok) {

@@ -2,6 +2,7 @@ import { GIENIU_VOICE_ID, GIENIU_VOICE_NAME } from '../config/gieniuVoice'
 import { cleanForTTS, cleanForEnglishTTS } from './textClean'
 import { suppressAmbient } from '../lib/ambient'
 import { beginSpeech, endSpeech } from '../lib/speechGate'
+import { stanleyFetch } from '../lib/stanleyAuth'
 
 console.log(`GIENIU voice: ${GIENIU_VOICE_NAME} ${GIENIU_VOICE_ID}`)
 
@@ -266,7 +267,7 @@ export async function speak(text: string): Promise<TTSResult> {
   currentFetchAbort = ac
 
   try {
-    const res = await fetch('/.netlify/functions/gieniu-tts', {
+    const res = await stanleyFetch('/.netlify/functions/gieniu-tts', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ text: elevenText }),
