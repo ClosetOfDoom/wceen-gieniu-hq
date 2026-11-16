@@ -118,8 +118,9 @@ export interface GieniuCommandResult {
 }
 
 const TIMEOUT_MS = 9000
-// Finance questions run a tool round-trip plus a long answer on the server, so they get longer.
-const FINANCE_TIMEOUT_MS = 28000
+// Finance questions run a tool loop (up to 6 get_finance calls) plus an analytical answer on the server: the model
+// loop has a 40 s deadline there and Netlify stops synchronous functions at 60 s, so the client waits up to 52 s.
+const FINANCE_TIMEOUT_MS = 52000
 
 export async function fetchGieniuCommand(
   message: string,

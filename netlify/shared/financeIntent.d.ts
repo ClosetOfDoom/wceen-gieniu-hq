@@ -2,3 +2,5 @@
 export function normalize(s: string | null | undefined): string
 export function isFinanceQuestion(message: string): boolean
 export function isBankCostQuestion(message: string): boolean
+export function isTaxObligationQuestion(message: string): boolean
+export function isSecretRequest(message: string): boolean
