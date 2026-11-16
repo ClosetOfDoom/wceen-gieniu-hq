@@ -2,7 +2,7 @@
 // rozpoznawanie pytań i ścieżka Stanleya z narzędziem (podstawiony fetch modelu). Dane syntetyczne, bez sieci.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { handler as financeDataHandler } from '../netlify/functions/finance-data.js'
-import { answerFinance, bankCostAnswer, FINANCE_RULES, secretAnswer, taxAnswer } from '../netlify/shared/financeStanley.js'
+import { answerFinance, bankCostAnswer, FINANCE_RULES, financeReference, secretAnswer, taxAnswer } from '../netlify/shared/financeStanley.js'
 import { checkRateLimit, pickFinanceProvider, resetRateLimit } from '../netlify/shared/financeLlm.js'
 import { buildAllowed, normalizeSections, scrubModelText, verifyNumbers } from '../netlify/shared/financeVerify.js'
 import { isBankCostQuestion, isFinanceQuestion, isSecretRequest } from '../netlify/shared/financeIntent.js'
@@ -339,7 +339,7 @@ describe('renderReport — deterministyczny raport', () => {
     const t = renderReport(merged)
     expect(t).toContain('2026-10  STRIPE')
     expect(t).toContain('2026-10  PRZELEWY24')
-    expect(t.split('\n').filter((l) => l.startsWith('Miesiąc'))).toHaveLength(1)
+    expect(t.split('\n').filter((l) => /^Miesiąc\s+Źródło\s+Status/.test(l))).toHaveLength(1)
   })
 })
 
@@ -375,7 +375,7 @@ describe('Stanley: get_finance (OpenAI, podstawiony fetch)', () => {
     const [first, second] = log.map((l) => l.body)
     expect(first.tool_choice).toEqual({ type: 'function', function: { name: 'get_finance' } })
     expect(first.tools[0].function.name).toBe('get_finance')
-    expect(first.messages[0].content).toBe('STANLEY-PROMPT' + FINANCE_RULES)
+    expect(first.messages[0].content).toBe('STANLEY-PROMPT' + FINANCE_RULES + financeReference().text)
     expect(FINANCE_RULES).toContain('WYŁĄCZNIE PO POLSKU')
     expect(FINANCE_RULES).toContain('ZERO WŁASNYCH SUM')
     expect(first.messages[1].content).toContain('Odpowiedz po polsku')
@@ -460,7 +460,7 @@ const ANALYTIC = [
   'Wrzesień, STRIPE, status OK: brutto 18 000,00 zł, zwroty 400,00 zł.',
   'Październik, STRIPE, status OK: brutto 21 962,00 zł, czyli o 3 962,00 zł więcej niż we wrześniu.',
   'DLACZEGO',
-  'Możliwe, że wzrost wynika z kampanii reklamowej.',
+  'Możliwe, że wzrost brutto to wyższa średnia wartość płatności. Sprawdź: liczbę płatności we wrześniu i w październiku w panelu Stripe. Potwierdzi, jeśli płatności spadły przy wzroście brutto; obali, jeśli płatności wzrosły.',
   'CO SPRAWDZIĆ LUB ZROBIĆ',
   'Sprawdź zwroty Stripe za wrzesień (400,00 zł) w panelu.',
   'POMYSŁY',
@@ -505,7 +505,7 @@ describe('Stanley: get_finance na Claude (podstawiony fetch)', () => {
     expect(first.output_config).toEqual({ effort: 'medium' })
     expect(first.tools[0].name).toBe('get_finance')
     expect(first.max_tokens).toBe(1800)
-    expect(first.system).toBe('STANLEY-PROMPT' + FINANCE_RULES)
+    expect(first.system).toBe('STANLEY-PROMPT' + FINANCE_RULES + financeReference().text)
     expect(first.messages[0].content).toContain('<pytanie_uzytkownika>\nPrzychody Stripe za wrzesień?\n</pytanie_uzytkownika>')
     // druga runda: odpowiedź asystenta z tool_use odtworzona bez zmian + tool_result z raportem
     expect(second.messages[1].content[0]).toMatchObject({ type: 'tool_use', id: 'tu_1' })
@@ -522,7 +522,7 @@ describe('Stanley: get_finance na Claude (podstawiony fetch)', () => {
     expect(out.llm).toMatchObject({ provider: 'anthropic', model: 'claude-sonnet-5-5', used: true })
     const comment = out.answerText.split('KOMENTARZ\n')[1]!
     expect(comment.split('\n').filter((l: string) => /^[A-ZĄĆĘŁŃÓŚŹŻ ]+$/.test(l))).toEqual(['WNIOSKI', 'DLACZEGO', 'CO SPRAWDZIĆ LUB ZROBIĆ', 'POMYSŁY'])
-    expect(comment).toContain('- Hipoteza: Możliwe, że wzrost wynika z kampanii reklamowej.')
+    expect(comment).toContain('- Hipoteza: Możliwe, że wzrost brutto to wyższa średnia wartość płatności. Sprawdź: liczbę płatności')
     expect(comment).toContain('- Propozycja: Przejrzeć prowizje Stripe za październik (600,00 zł).')
     expect(comment).toContain('o 3 962,00 zł więcej niż we wrześniu') // różnica dwóch liczb z tego samego zdania
     expect(out.finance.numbers.removed).toBe(0)
@@ -554,7 +554,7 @@ describe('Stanley: get_finance na Claude (podstawiony fetch)', () => {
     expect(out.answerText).toContain('2,7% brutto')
     expect(out.answerText).not.toContain('7,9%')
     expect(out.answerText).toContain('(Kontrola liczb: usunięto 1 zd. z liczbami spoza danych raportu.)')
-    expect(JSON.parse(logs[0]!)).toMatchObject({ numbersChecked: 4, numbersRemoved: 1 })
+    expect(JSON.parse(logs[0]!)).toMatchObject({ numbersChecked: 3, numbersRemoved: 1 })
   })
 
   it('Meta: dwa ujęcia osobno przechodzą, „łączny koszt” (suma ujęć) jest usuwany', async () => {
@@ -590,11 +590,10 @@ describe('Stanley: get_finance na Claude (podstawiony fetch)', () => {
     expect(comment).toContain('brutto 18 000,00 zł')
     expect(comment).toContain('To wymaga uwagi.')
     for (const bad of ['123 456,78', '37%', '777']) expect(out.answerText).not.toContain(bad)
-    expect(out.speechText).not.toContain('123 456,78')
-    expect(out.speechText).toContain('18 000,00 zł')
+    expect(out.speechText).toBe('Wrzesień, STRIPE, status OK: brutto 18 000,00 zł.') // mowa = zdanie wniosku, nie SPEECH modelu
     expect(comment).toContain('(Kontrola liczb: usunięto 3 zd. z liczbami spoza danych raportu.)')
-    expect(out.finance.numbers).toMatchObject({ removed: 4 }) // 3 w komentarzu + 1 w mowie
-    expect(JSON.parse(logs[0]!)).toMatchObject({ numbersRemoved: 4 })
+    expect(out.finance.numbers).toMatchObject({ removed: 3 })
+    expect(JSON.parse(logs[0]!)).toMatchObject({ numbersRemoved: 3 })
     expect(logs[0]).not.toMatch(/123|777|37%/)
   })
 
@@ -623,7 +622,7 @@ describe('Stanley: get_finance na Claude (podstawiony fetch)', () => {
     for (const bad of ['sk-live', 'ANTHROPIC_API_KEY', 'ak-test-anthropic', 'system prompt', 'PIT-4']) expect(out.answerText.split('KOMENTARZ\n')[1]).not.toContain(bad)
     expect(comment).toContain('Status źródła bez zmian.')
     expect(out.speechText).not.toContain('sk-live')
-    expect(out.finance.scrubbed).toBeGreaterThanOrEqual(4)
+    expect(out.finance.scrubbed).toBe(3)
   })
 
   it('limit 6 wywołań get_finance na pytanie: nadmiarowe dostają błąd, ostatnia runda bez narzędzi (tool_choice none)', async () => {

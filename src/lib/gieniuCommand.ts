@@ -1,6 +1,7 @@
 // Fetch helper for the gieniu-command Netlify function.
 import type { LlmMeta } from '../types'
 import { isFinanceQuestion } from '../../netlify/shared/financeIntent.js'
+import type { FinanceBlock } from '../../netlify/shared/financeBlocks.js'
 import { stanleyFetch } from './stanleyAuth'
 
 export interface TrendRow {
@@ -104,7 +105,10 @@ export interface GieniuCommandContext {
 }
 
 export interface GieniuCommandResult {
+  /** Plain text of the answer; for finance answers generated from `blocks` (same figures), kept as the fallback. */
   answerText: string
+  /** Finance answers: structured blocks (table, text, lists, comment sections) the panel renders. */
+  blocks?: FinanceBlock[]
   speechText: string
   intent: string
   confidence: number

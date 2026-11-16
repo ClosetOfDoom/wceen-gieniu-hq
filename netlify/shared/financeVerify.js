@@ -144,6 +144,11 @@ const isHeader = (line) => headerOf(line.trim()) !== null
  * actions are bullets. Text before the first header goes under WNIOSKI. Sections the model left out are omitted.
  */
 export function normalizeSections(text) {
+  return sectionsToText(sectionsFrom(text))
+}
+
+/** The comment as data: [{ id, title, items }] — items without bullets, hypotheses / ideas labelled. Sections the model left out are absent. */
+export function sectionsFrom(text) {
   const buckets = new Map(SECTIONS.map((s) => [s, []]))
   let current = 'WNIOSKI'
   for (const rawLine of String(text ?? '').split('\n')) {
@@ -153,19 +158,168 @@ export function normalizeSections(text) {
     if (h) { current = h; continue }
     buckets.get(current).push(line.replace(/^[-•*]\s+/, '').replace(/^\d+[.)]\s+/, ''))
   }
-  const out = []
-  for (const s of SECTIONS) {
-    const lines = buckets.get(s)
-    if (lines.length === 0) continue
-    out.push(s)
-    for (const l of lines) {
-      if (s === 'DLACZEGO') out.push(/^hipotez/i.test(l) ? `- ${l}` : `- Hipoteza: ${l}`)
-      else if (s === 'POMYSŁY') out.push(/^propozycj/i.test(l) ? `- ${l}` : `- Propozycja: ${l}`)
-      else out.push(`- ${l}`)
+  return SECTIONS.filter((s) => buckets.get(s).length > 0).map((id) => ({
+    id,
+    title: id,
+    items: buckets.get(id).map((l) => {
+      if (id === 'DLACZEGO') return /^(\*\*)?hipotez/i.test(l) ? l : `Hipoteza: ${l}`
+      if (id === 'POMYSŁY') return /^(\*\*)?propozycj/i.test(l) ? l : `Propozycja: ${l}`
+      return l
+    }),
+  }))
+}
+
+export function sectionsToText(sections) {
+  return sections.map((s) => [s.title, ...s.items.map((i) => `- ${i}`)].join('\n')).join('\n\n')
+}
+
+// ── comment rules (usefulness, small sample, length) ─────────────────────────────────────────
+
+/** Fillers that say nothing a person could act on. A sentence with one of them is removed. */
+export const GENERIC_RE = /monitor(?:ow|uj|ing)\w*|rozwa[żz]\w*\s+(?:dzia[łl]ani\w*|kampani\w*|zmian\w*)|dzia[łl]ani\w*\s+marketingow\w*|warto\s+(?:przeanalizowa\w*|rozwa[żz]\w*|zbada\w*|przyjrze\w*|obserwowa\w*)|nale[żz]y\s+(?:przeanalizowa\w*|zbada\w*|obserwowa\w*)|dalsz\w+\s+analiz\w*|zbada\w*\s+przyczyn\w*|optymalizowa\w*\s+(?:kampani\w*|dzia[łl]ani\w*)/i
+
+/** Words that turn a statement about a small sample into a claim about a trend / change. */
+export const TREND_RE = /trend|wzrost|wzrosł|wzros|spadek|spadł|spada|zmniejsz|zwiększ|zmian[aęyie]|dynamik|pogorszeni|poprawi|\bvs\b|względem|→|[-+−]\s?\d[\d\s]*[,.]?\d*\s*%|\bo\s+\d[\d\s]*[,.]?\d*\s*%/i
+
+const splitSentences = (text) => String(text ?? '').split(SENTENCE_SPLIT)
+
+function mapItems(sections, fn) {
+  return sections
+    .map((s) => ({ ...s, items: s.items.map(fn).filter((i) => i !== null && i !== '') }))
+    .filter((s) => s.items.length > 0)
+}
+
+/** Removes sentences made of fillers ("monitorować", "warto przeanalizować", "rozważyć działania marketingowe"…). */
+export function dropGeneric(sections) {
+  let dropped = 0
+  const out = mapItems(sections, (item) => {
+    const kept = splitSentences(item).filter((s) => {
+      if (!GENERIC_RE.test(s)) return true
+      dropped++
+      return false
+    })
+    return kept.length > 0 ? kept.join(' ') : null
+  })
+  return { sections: out, dropped }
+}
+
+/**
+ * Small-sample rule. For every topic with fewer than 5 events in either compared period (or an unknown count) a sentence that talks
+ * about a trend or a change of that topic is replaced — once — by "<Temat>: zbyt mało zdarzeń (n) — bez trendu i bez zmiany procentowej".
+ * @param rules [{ id: 'zwroty' | 'płatności', pattern: RegExp, n: string | null }]
+ */
+export function applySmallSample(sections, rules) {
+  let replaced = 0
+  const said = new Set()
+  const out = mapItems(sections, (item) => {
+    const parts = []
+    for (const s of splitSentences(item)) {
+      const rule = rules.find((r) => r.pattern.test(s) && TREND_RE.test(s))
+      if (!rule) { parts.push(s); continue }
+      replaced++
+      if (said.has(rule.id)) continue
+      said.add(rule.id)
+      const label = rule.id.charAt(0).toUpperCase() + rule.id.slice(1)
+      parts.push(`${label}: zbyt mało zdarzeń (${rule.n ?? `liczba ${rule.gen ?? rule.id} nieznana — brak w pliku`}) — bez trendu i bez zmiany procentowej.`)
     }
-    out.push('')
+    return parts.length > 0 ? parts.join(' ') : null
+  })
+  return { sections: out, replaced }
+}
+
+/** Every hypothesis must say what to check (Sprawdź), where, and which result confirms (Potwierdzi) and which refutes it (Obali). */
+export function checkHypotheses(sections) {
+  let dropped = 0
+  const out = sections
+    .map((s) => (s.id !== 'DLACZEGO' ? s : {
+      ...s,
+      items: s.items.filter((i) => {
+        const ok = /sprawd[źz]/i.test(i) && /potwierdz/i.test(i) && /obal/i.test(i)
+        if (!ok) dropped++
+        return ok
+      }),
+    }))
+    .filter((s) => s.items.length > 0)
+  return { sections: out, dropped }
+}
+
+export const MAX_COMMENT_WORDS = 150
+const words = (text) => stripWords(text).split(/\s+/).filter(Boolean).length
+const stripWords = (t) => String(t ?? '').replace(/\*\*/g, '')
+
+/** At most `max` words in all items: trailing ideas go first, then hypotheses, then actions; the first conclusion is never cut. */
+export function limitWords(sections, max = MAX_COMMENT_WORDS) {
+  let trimmed = 0
+  const work = sections.map((s) => ({ ...s, items: [...s.items] }))
+  const count = () => work.reduce((n, s) => n + s.items.reduce((m, i) => m + words(i), 0), 0)
+  for (const id of ['POMYSŁY', 'DLACZEGO', 'CO SPRAWDZIĆ LUB ZROBIĆ', 'WNIOSKI']) {
+    const s = work.find((x) => x.id === id)
+    while (s && count() > max && s.items.length > (id === 'WNIOSKI' ? 1 : 0)) {
+      s.items.pop()
+      trimmed++
+    }
   }
-  return out.join('\n').trim()
+  return { sections: work.filter((s) => s.items.length > 0), trimmed }
+}
+
+/**
+ * One or two sentences of the conclusion for speech. Only the FIRST item of WNIOSKI is used (it is the conclusion); a sentence with more than
+ * two figures is shortened at the first clause boundary (" (", " — ", ", ", "; ") so that no list of figures is read out; markup removed.
+ */
+export function speechFrom(sections, maxChars = 260) {
+  const first = sections.find((s) => s.id === 'WNIOSKI')?.items[0]
+  if (!first) return ''
+  const shorten = (sentence) => {
+    let t = sentence.trim()
+    while (extractNumbers(t).length > 2) {
+      const cut = Math.max(t.lastIndexOf(' ('), t.lastIndexOf(' — '), t.lastIndexOf(', '), t.lastIndexOf('; '))
+      if (cut <= 0) return ''
+      t = t.slice(0, cut).trim()
+    }
+    return /[.!?…]$/.test(t) ? t : `${t}.`
+  }
+  const picked = splitSentences(stripWords(first)).map(shorten).filter(Boolean).slice(0, 2)
+  let text = picked.join(' ')
+  if (text.length > maxChars) text = picked[0] ?? ''
+  return text.length > maxChars ? text.slice(0, maxChars - 1).replace(/s+S*$/, '') + '…' : text
+}
+
+/** Small-sample rules from the merged view: refunds (count unknown or < 5) and payments (< 5) in any comparison. */
+export function smallSampleRules(view) {
+  const rules = []
+  const comps = (view?.months ?? []).filter((m) => m.available).flatMap((m) =>
+    ['stripe', 'p24', 'paypal'].map((k) => m.sources?.[k]?.changeVsPrevious).filter((c) => c?.comparable && c.sample))
+  const refunds = comps.find((c) => c.sample.refunds?.small)
+  if (refunds) rules.push({ id: 'zwroty', gen: 'zwrotów', pattern: /zwrot/i, n: refunds.sample.refunds.n ?? null })
+  const payments = comps.find((c) => c.sample.payments?.small)
+  if (payments) rules.push({ id: 'płatności', gen: 'płatności', pattern: /płatno/i, n: payments.sample.payments.n })
+  return rules
+}
+
+/**
+ * The whole comment pipeline: scrub → sections → fillers → numbers → small sample → hypotheses → length.
+ * @returns {{ sections, counts: { checked, removed, scrubbed, generic, smallSample, hypotheses, trimmed } }}
+ */
+export function refineSections(raw, allowed, { smallSample = [] } = {}) {
+  const scrubbed = scrubModelText(raw)
+  let sections = sectionsFrom(scrubbed.text)
+  const generic = dropGeneric(sections)
+  sections = generic.sections
+  let checked = 0
+  let removed = 0
+  sections = mapItems(sections, (item) => {
+    const v = verifyNumbers(item, allowed)
+    checked += v.checked
+    removed += v.removed
+    return v.text
+  })
+  const small = applySmallSample(sections, smallSample)
+  const hyp = checkHypotheses(small.sections)
+  const lim = limitWords(hyp.sections)
+  return {
+    sections: lim.sections,
+    counts: { checked, removed, scrubbed: scrubbed.secrets + scrubbed.tax, generic: generic.dropped, smallSample: small.replaced, hypotheses: hyp.dropped, trimmed: lim.trimmed },
+  }
 }
 
 // ── scrubs ───────────────────────────────────────────────────────────────────────────────────

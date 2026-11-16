@@ -4,6 +4,7 @@ import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import { pct } from '../services/webinarFunnel'
 import { normalizeProduct, productFromQuery, type ProductTag } from '../lib/webinarProduct'
 import { PRODUCT_CLASSIFICATION_REASON } from '../lib/productClassifier'
+import type { FinanceBlock } from '../../netlify/shared/financeBlocks.js'
 import type { OpsWeekReport } from '../lib/opsWeekReport'
 import type { OrdersData } from '../lib/ordersData'
 import { formatZl, EXCLUDED_REASON, type AdScope } from '../lib/adSpend'
@@ -133,6 +134,8 @@ export interface GieniuResponse {
    * missing-data wording and must not go through the English dashboard refusal guard.
    */
   trusted?: boolean
+  /** Finance answers: structured blocks the panel renders instead of the plain text (displayText stays the fallback / copy source). */
+  blocks?: FinanceBlock[]
 }
 
 export function wrapResponse(displayText: string, spokenText?: string, chart?: InsightChartSpec): GieniuResponse {

@@ -11,12 +11,15 @@
 
 import { businessToday } from './businessDay.js'
 import { isBankCostQuestion, isSecretRequest, isTaxObligationQuestion } from './financeIntent.js'
+import { blocksToText } from './financeBlocks.js'
 import {
-  FinanceError, getFinance, getJson, mergeViews, readFinanceConfig, renderReport,
+  FinanceError, MIN_EVENTS, buildReportBlocks, getFinance, getJson, mergeViews, readFinanceConfig, renderReport,
 } from './financeStore.js'
 import { checkRateLimit, logFinanceUsage, pickFinanceProvider, runAnthropicFinanceChat } from './financeLlm.js'
-import { buildAllowed, normalizeSections, scrubModelText, verifyNumbers, wrapQuestion } from './financeVerify.js'
+import { buildAllowed, refineSections, smallSampleRules, speechFrom, wrapQuestion } from './financeVerify.js'
 import { FINANCE_TOOL, runToolChat } from './llmTools.js'
+import { PRODUCTS } from './productCatalog.js'
+import { GOALS } from './alertRules.js'
 
 export const FINANCE_RULES = `
 
@@ -38,12 +41,40 @@ PRZED Twoim tekstem. Twój tekst to KOMENTARZ do tego raportu — nie powtarzaj 
 • Miesiąc niezamknięty (gwiazdka w raporcie, closed:false) nie jest porównywalny z pełnym — powiedz to, jeśli o niego pytano; nie wyciągaj wniosków z porównań, których raport nie podaje.
 • ZUS, PIT-4, VAT i inne zobowiązania wyznacza biuro rachunkowe: nie wyznaczasz ich, nie szacujesz i nie doradzasz podatkowo. Bez dokumentów z biura odpowiadasz „nie mam tych danych".
 • Brak danych: „nie mam tych danych: <nazwa pliku lub pola z sekcji BRAKI DANYCH>". Fraza „nie mam tych danych: brak publikacji audytu" dotyczy WYŁĄCZNIE kosztów z banku, subskrypcji, opłat bankowych i faktur — nigdy nie używaj jej do prowizji, zwrotów ani wpływów.
-• FORMAT: „ANSWER:" z czterema sekcjami, każda zaczyna się od osobnej linii z nagłówkiem, w tej kolejności, potem „SPEECH:" (2 krótkie zdania po polsku, bez tabel):
-  WNIOSKI — fakty z raportu, przepisane liczby (miesiąc, źródło, status), najważniejsza zmiana, anomalia lub brak.
-  DLACZEGO — przypuszczenia, każda linia zaczyna się od „Hipoteza:". To nie są fakty; bez liczb spoza danych.
+• METRYKI POCHODNE: raport ma tabelę „METRYKI POCHODNE” (liczba płatności, średnia wartość płatności, liczba zwrotów i ich udział w płatnościach, prowizja jako % brutto) oraz w liniach zmiany „płatności X → Y” i „śr. płatność A → B”. Cytuj je. Gdy liczba płatności spada, a brutto rośnie, napisz, że rośnie średnia wartość płatności (podaj obie średnie z raportu) — to inna historia niż „więcej sprzedaży”.
+• MAŁA PRÓBA: gdy raport pisze „zbyt mało zdarzeń” albo „liczba zwrotów nieznana” (poniżej 5 zdarzeń danego typu w którymś z okresów), NIE mów o trendzie ani nie podawaj zmiany procentowej tego typu — napisz „zbyt mało zdarzeń (n)” z liczbą z raportu. Zmiana kwoty zwrotów przy 1 zwrocie w każdym miesiącu nie jest trendem.
+• STRIPE ≠ WIX: Stripe zawiera także płatności spoza Wix (np. Cogni). Nie przypisuj wzrostu ani spadku brutto „sprzedaży” bez rozbicia. Jeśli rozbicia nie ma w danych, napisz to wprost i wskaż, czego brakuje (rozbicie brutto Stripe na produkty / płatności spoza Wix).
+• UŻYTECZNOŚĆ: każda hipoteza ma jedną linię w formie „Hipoteza: <przypuszczenie>. Sprawdź: <co> w <źródło>. Potwierdzi, jeśli <wynik>; obali, jeśli <wynik>.” (źródło = np. panel Stripe, panel Wix, raport Meta, plik summary_RRRR-MM.json). Zakaz ogólników: „monitorować”, „rozważyć działania marketingowe”, „warto przeanalizować”, „dalsza analiza” — zdanie z takim zwrotem zostanie usunięte. Działania muszą być konkretne: co, gdzie, jaka liczba z raportu.
+• DŁUGOŚĆ: komentarz do 150 słów łącznie. PIERWSZE zdanie to wniosek (odpowiedź na pytanie, z liczbą z raportu), bez wstępu i bez powtarzania pytania. Serwer obetnie nadmiar od końca (najpierw POMYSŁY).
+• DANE REFERENCYJNE (ceny, marże, cele, progi) są poniżej, w sekcji „DANE REFERENCYJNE”. Korzystaj tylko z nich; czego tam nie ma, tego nie dopowiadaj.
+• FORMAT: „ANSWER:" z czterema sekcjami, każda zaczyna się od osobnej linii z nagłówkiem, w tej kolejności (pogrubienie **tak** wolno tylko dla kluczowej liczby lub nazwy; żadnego innego Markdownu ani HTML), potem „SPEECH:" (jedno–dwa krótkie zdania wniosku po polsku, bez tabel i bez listy liczb):
+  WNIOSKI — pierwsze zdanie: wniosek; dalej fakty z raportu (miesiąc, źródło, status), najważniejsza zmiana, anomalia lub brak.
+  DLACZEGO — hipotezy w formie opisanej wyżej; to nie są fakty.
   CO SPRAWDZIĆ LUB ZROBIĆ — konkretne działania, każde z liczbą z raportu (miesiąc, źródło, kwota lub procent).
   POMYSŁY — propozycje, każda zaczyna się od „Propozycja:". To nie są fakty.
   Pomiń sekcję, jeśli raport nie daje podstaw; nie zapełniaj jej ogólnikami.`
+
+/**
+ * Reference data for the finance prompt, built from what the repo already holds (product catalog, goals, report thresholds): nothing typed
+ * here by hand except wording. Returns the prompt text and the numbers in it (the number check accepts them as data).
+ */
+export function financeReference() {
+  const known = Object.values(PRODUCTS).filter((p) => p.contributionMargin != null)
+  const numbers = []
+  const products = known.map((p) => {
+    numbers.push(p.catalogPrice, p.contributionMargin)
+    return `${p.displayName} (${p.shortName}) ${p.catalogPrice} zł, marża ${p.contributionMargin} zł`
+  })
+  numbers.push(GOALS.PP_ORDERS_PER_DAY, GOALS.MONTHLY_REVENUE, 2, 0.3, 30, MIN_EVENTS)
+  const text = `
+
+━━━ DANE REFERENCYJNE (z repozytorium Stanleya; niczego poza nimi nie dopowiadaj) ━━━
+• Cennik katalogowy i marża kontrybucyjna na sztukę (przed reklamą): ${products.join('; ')}. Produkty bez ustalonej marży nie mają jej w danych.
+• Cele postępu (nie alarmy): ${GOALS.PP_ORDERS_PER_DAY} zamówień Pakietu Pamięciowego dziennie; ${GOALS.MONTHLY_REVENUE} zł przychodu miesięcznie.
+• Cogni jest sprzedawane przez Stripe i nie występuje w zamówieniach Wix — brutto Stripe zawiera więc także Cogni.
+• Progi anomalii raportu: zwroty ≥ 2,0% brutto, wzrost prowizji ≥ 0,3 pp, zmiana brutto ≥ 30%. Reguła małej próby: poniżej ${MIN_EVENTS} zdarzeń danego typu w którymś z okresów — bez trendu i bez zmiany procentowej.`
+  return { text, numbers }
+}
 
 export function bankCostAnswer() {
   const answerText = [
@@ -86,14 +117,6 @@ function body(answerText, speechText, extra = {}) {
     llm: { active: false, provider: null, used: false, model: null },
     ...extra,
   }
-}
-
-/** Scrub secrets / tax talk, label the sections, drop sentences with numbers outside the data. Counts only leave this function. */
-function refineComment(raw, allowed, { sections }) {
-  const scrubbed = scrubModelText(raw)
-  const text = sections ? normalizeSections(scrubbed.text) : scrubbed.text
-  const verified = verifyNumbers(text, allowed)
-  return { text: verified.text, checked: verified.checked, removed: verified.removed, scrubbed: scrubbed.secrets + scrubbed.tax }
 }
 
 const NO_USAGE = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
@@ -165,29 +188,36 @@ export async function answerFinance({
     // the model gets the finished report text it will be placed under (all figures are in it)
     return { report: renderReport(mergeViews(views)), publishedMonths: view.publishedMonths }
   }
+  const reference = financeReference()
   const t0 = now()
   const logBase = { provider: provider.name, model: provider.model }
   try {
     const run = provider.name === 'anthropic' ? runAnthropicFinanceChat : runToolChat
     const { text, rounds, toolCalls, usage } = await run({
-      apiKey: provider.key, model: provider.model, system: systemPrompt + FINANCE_RULES, user, tool: FINANCE_TOOL, executeTool: tracedTool, fetchFn, now,
+      apiKey: provider.key, model: provider.model, system: systemPrompt + FINANCE_RULES + reference.text, user, tool: FINANCE_TOOL, executeTool: tracedTool, fetchFn, now,
     })
     if (views.length === 0) throw new Error('model nie pobrał danych z raportu')
-    const report = renderReport(mergeViews(views))
-    const allowed = buildAllowed({ reportText: report, data: views })
-    const { answerText: rawComment, speechText: rawSpeech } = parse(text)
-    const comment = refineComment(rawComment, allowed, { sections: true })
-    const speech = refineComment(rawSpeech, allowed, { sections: false })
-    const numbersChecked = comment.checked + speech.checked
-    const numbersRemoved = comment.removed + speech.removed
-    const scrubbed = comment.scrubbed + speech.scrubbed
-    const costUsd = logFinanceUsage({ ...logBase, rounds, toolCalls: toolCalls.length, usage, numbersChecked, numbersRemoved, scrubbed, ms: now() - t0, ok: true }, log)
-    const note = comment.removed > 0 ? `\n\n(Kontrola liczb: usunięto ${comment.removed} zd. z liczbami spoza danych raportu.)` : ''
-    const commentText = comment.text || 'Brak zdań, które przeszły kontrolę liczb — zestawienie powyżej pochodzi wprost z danych.'
-    return body(`${report}
-
-KOMENTARZ
-${commentText}${note}`, speech.text || 'Zestawienie jest na ekranie.', {
+    const merged = mergeViews(views)
+    const reportBlocks = buildReportBlocks(merged)
+    const allowed = buildAllowed({ reportText: blocksToText(reportBlocks), data: [...views, reference.numbers] })
+    const { answerText: rawComment } = parse(text)
+    const refined = refineSections(rawComment, allowed, { smallSample: smallSampleRules(merged) })
+    const c = refined.counts
+    const speechText = speechFrom(refined.sections) || 'Zestawienie jest na ekranie.'
+    const costUsd = logFinanceUsage({
+      ...logBase, rounds, toolCalls: toolCalls.length, usage, numbersChecked: c.checked, numbersRemoved: c.removed,
+      scrubbed: c.scrubbed + c.generic + c.hypotheses, ms: now() - t0, ok: true,
+    }, log)
+    // ONE structure: the blocks. The text answer (fallback, copy) is generated from them by blocksToText.
+    const blocks = [
+      ...reportBlocks,
+      refined.sections.length > 0
+        ? { type: 'comment', sections: refined.sections }
+        : { type: 'comment', sections: [], fallback: 'Brak zdań, które przeszły kontrolę — zestawienie powyżej pochodzi wprost z danych.' },
+      ...(c.removed > 0 ? [{ type: 'text', role: 'note', lines: ['', `(Kontrola liczb: usunięto ${c.removed} zd. z liczbami spoza danych raportu.)`] }] : []),
+    ]
+    return body(blocksToText(blocks), speechText, {
+      blocks,
       llmUsed: true,
       llmProvider: provider.name,
       llm: { active: true, provider: provider.name, used: true, model: provider.model },
@@ -195,8 +225,9 @@ ${commentText}${note}`, speech.text || 'Zestawienie jest na ekranie.', {
         rounds, toolCalls,
         usage: { inputTokens: usage.input, outputTokens: usage.output, cacheReadTokens: usage.cacheRead },
         costUsdEstimate: costUsd,
-        numbers: { checked: numbersChecked, removed: numbersRemoved },
-        scrubbed,
+        numbers: { checked: c.checked, removed: c.removed },
+        scrubbed: c.scrubbed,
+        rules: { generic: c.generic, smallSample: c.smallSample, hypotheses: c.hypotheses, trimmed: c.trimmed },
       },
       warnings: provider.warnings,
     })
@@ -204,9 +235,9 @@ ${commentText}${note}`, speech.text || 'Zestawienie jest na ekranie.', {
     const reason = String(err?.message ?? err).slice(0, 100)
     logFinanceUsage({ ...logBase, rounds: 0, toolCalls: views.length, usage: NO_USAGE, ms: now() - t0, ok: false }, log)
     if (views.length > 0) {
-      return body(`${renderReport(mergeViews(views))}
-
-(Model niedostępny — raport bez komentarza.)`, 'Model niedostępny, pokazuję zestawienie wprost z danych.', {
+      const blocks = [...buildReportBlocks(mergeViews(views)), { type: 'text', role: 'note', lines: ['', '(Model niedostępny — raport bez komentarza.)'] }]
+      return body(blocksToText(blocks), 'Model niedostępny, pokazuję zestawienie wprost z danych.', {
+        blocks,
         warnings: [`LLM error (deterministic fallback): ${reason}`],
         llm: { active: true, provider: provider.name, used: false, model: null },
       })

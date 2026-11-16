@@ -62,6 +62,9 @@ import {
 } from './voice/tts'
 import { fetchGieniuCommand, type GieniuCommandContext } from './lib/gieniuCommand'
 import { enforceRefusal } from './lib/refusalGuard'
+import { textToSpeak } from './lib/financeSpeech'
+import { FinanceAnswer } from './components/FinanceAnswer'
+import type { FinanceBlock } from '../netlify/shared/financeBlocks.js'
 import {
   startListening, type SttResult,
 } from './voice/stt'
@@ -375,6 +378,7 @@ function getTtsErrorMessage(err: string): string {
 
 function RightPanel({
   response,
+  blocks,
   chart,
   lastQuery,
   voiceUnlocked,
@@ -411,6 +415,7 @@ function RightPanel({
   digestOrdersToHour,
 }: {
   response: string
+  blocks?: FinanceBlock[]
   chart?: InsightChartSpec
   lastQuery?: string
   voiceUnlocked?: boolean
@@ -508,9 +513,14 @@ function RightPanel({
               </div>
             )}
 
-            <pre key={response} className="gieniu-response-text" style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', lineHeight: 1.85, color: 'var(--text)', margin: 0, marginBottom: chart ? '8px' : '14px' }}>
-              {response}
-            </pre>
+            {blocks && blocks.length > 0 ? (
+              /* Finance answer: structured blocks (HTML table, lists, comment sections). The plain text stays the copy / fallback source. */
+              <FinanceAnswer key={response} blocks={blocks} />
+            ) : (
+              <pre key={response} className="gieniu-response-text" style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '1.05rem', lineHeight: 1.85, color: 'var(--text)', margin: 0, marginBottom: chart ? '8px' : '14px' }}>
+                {response}
+              </pre>
+            )}
 
             {chart && <InsightChart spec={chart} />}
           </>
@@ -851,6 +861,7 @@ export default function App() {
   // Conversational state
   const [response, setResponse]           = useState('')
   const [responseSpoken, setResponseSpoken] = useState('')
+  const [responseBlocks, setResponseBlocks]   = useState<FinanceBlock[] | undefined>(undefined)
   const [responseChart, setResponseChart]   = useState<InsightChartSpec | undefined>(undefined)
   const [speaking, setSpeaking]           = useState(false)
   const [thinking, setThinking]           = useState(false)
@@ -1049,9 +1060,11 @@ export default function App() {
     const session = ++ttsSessionRef.current
     stopSpeaking()
     const displayText = gr.trusted ? gr.displayText : enforceRefusal(gr.displayText, question)
-    const spokenText = gr.trusted ? gr.spokenText : enforceRefusal(gr.spokenText, question)
+    // Finance answers (blocks) speak only one or two sentences of the conclusion — never the table or a list of figures.
+    const spokenText = textToSpeak(gr.trusted ? gr.spokenText : enforceRefusal(gr.spokenText, question), displayText, gr.blocks)
     setResponse(displayText)
     setResponseSpoken(spokenText)
+    setResponseBlocks(gr.blocks)
     setResponseChart(gr.chart)
     setTtsError('')
     // eslint-disable-next-line no-console
@@ -1079,7 +1092,7 @@ export default function App() {
       return
     }
     prewarmAudio()
-    const toSpeak = responseSpoken || response
+    const toSpeak = textToSpeak(responseSpoken, response, responseBlocks)
     if (!toSpeak.trim()) return
     const session = ++ttsSessionRef.current
     setTtsError('')
@@ -1219,7 +1232,7 @@ export default function App() {
       }
       // The one and only utterance for this query — the final answer.
       delivered = true
-      speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText, trusted: cmdResult.intent === 'finance' }, query)
+      speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText, trusted: cmdResult.intent === 'finance', blocks: cmdResult.blocks }, query)
       // Then a subtle, silent visual mood accent (never audio, never blocking).
       if (isDayResultQuery(query) && perf?.real_roas != null) showResultMood(perf.real_roas)
     } catch (err) {
@@ -1273,7 +1286,7 @@ export default function App() {
     setTtsFallbackActive(false)
     setTtsError('')
     prewarmAudio()
-    const toSpeak = responseSpoken || response
+    const toSpeak = textToSpeak(responseSpoken, response, responseBlocks)
     if (!toSpeak.trim()) return   // nothing real to say — never fall back to a canned line
     const session = ++ttsSessionRef.current
     setSpeaking(true)
@@ -2153,6 +2166,7 @@ export default function App() {
 
       <RightPanel
         response={response}
+        blocks={responseBlocks}
         chart={responseChart}
         lastQuery={lastQuery}
         voiceUnlocked={voiceUnlocked}

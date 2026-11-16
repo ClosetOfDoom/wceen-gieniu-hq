@@ -11,10 +11,14 @@
 // buildFinanceView() is pure. It does the arithmetic (percentages, month-on-month change,
 // anomalies, statuses) so the model only transcribes: Stanley must never invent a figure.
 
+import { blocksToText } from './financeBlocks.js'
+
 export const BUCKET = 'ksiegowosc'
 export const MAX_MONTHS = 6
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 const SCHEMA_VERSION = 1
+/** Fewer events of a kind than this in either compared period: no percentage change and no talk of a trend. */
+export const MIN_EVENTS = 5
 
 export const SOURCE_KEYS = ['stripe', 'p24', 'paypal', 'meta']
 
@@ -142,6 +146,9 @@ function flowsView(f) {
   const out = {
     currency: cur,
     payments: f.paymentsCount,
+    avgPayment: f.paymentsCount > 0 ? money(Math.round(f.gross / f.paymentsCount), cur) : 'brak (0 płatności)',
+    refundsCount: Number.isInteger(f.refundsCount) ? f.refundsCount : 'brak w pliku (pole refundsCount)',
+    refundsShareOfPayments: Number.isInteger(f.refundsCount) && f.paymentsCount > 0 ? pct(f.refundsCount, f.paymentsCount) : 'brak (liczba zwrotów nie jest w pliku)',
     gross: money(f.gross, cur),
     refunds: money(f.refunds, cur),
     disputes: money(f.disputes, cur),
@@ -181,13 +188,25 @@ function changeVsPrevious(month, summary, previous, key) {
     return { comparable: false, vs: previous.month, reason: `brak pełnych danych ${SOURCE_LABEL[key]} w jednym z miesięcy (${month}: ${sa.status}, ${previous.month}: ${sb.status})` }
   }
   const line = (cur, prev, currency) => `${money(prev, currency)} → ${money(cur, currency)} (${signedMoney(cur - prev, currency)}, ${pct(cur - prev, Math.abs(prev), true) ?? 'brak bazy'})`
+  const lineNoPct = (cur, prev, currency) => `${money(prev, currency)} → ${money(cur, currency)} (${signedMoney(cur - prev, currency)})`
+  // Small-sample rule: fewer than MIN_EVENTS events of a kind in either period → no percentage change, no trend.
+  const paySmall = a.paymentsCount < MIN_EVENTS || b.paymentsCount < MIN_EVENTS
+  const refKnown = Number.isInteger(a.refundsCount) && Number.isInteger(b.refundsCount)
+  const refSmall = !refKnown || a.refundsCount < MIN_EVENTS || b.refundsCount < MIN_EVENTS
+  const paySample = `zbyt mało zdarzeń (płatności ${b.paymentsCount} → ${a.paymentsCount}) — bez zmiany procentowej`
   const out = {
     comparable: true,
     vs: previous.month,
-    gross: line(a.gross, b.gross, a.currency),
-    refunds: line(a.refunds, b.refunds, a.currency),
-    net: line(a.net, b.net, a.currency),
+    gross: paySmall ? `${lineNoPct(a.gross, b.gross, a.currency)}; ${paySample}` : line(a.gross, b.gross, a.currency),
+    refunds: !refSmall
+      ? line(a.refunds, b.refunds, a.currency)
+      : refKnown
+        ? `${lineNoPct(a.refunds, b.refunds, a.currency)}; zbyt mało zdarzeń (zwroty ${b.refundsCount} → ${a.refundsCount}) — bez zmiany procentowej i bez trendu`
+        : `${lineNoPct(a.refunds, b.refunds, a.currency)}; liczba zwrotów nieznana (brak pola refundsCount w pliku) — bez zmiany procentowej, to nie jest trend`,
+    net: paySmall ? `${lineNoPct(a.net, b.net, a.currency)}; ${paySample}` : line(a.net, b.net, a.currency),
     payments: `${b.paymentsCount} → ${a.paymentsCount}`,
+    avgPayment: a.paymentsCount > 0 && b.paymentsCount > 0 ? `${money(Math.round(b.gross / b.paymentsCount), a.currency)} → ${money(Math.round(a.gross / a.paymentsCount), a.currency)}` : 'brak (0 płatności w jednym z miesięcy)',
+    sample: { payments: paySmall ? { small: true, n: `${b.paymentsCount} → ${a.paymentsCount}` } : { small: false }, refunds: !refSmall ? { small: false } : { small: true, n: refKnown ? `${b.refundsCount} → ${a.refundsCount}` : null } },
   }
   if (a.fees !== null && b.fees !== null) {
     out.fees = line(a.fees, b.fees, a.currency)
@@ -406,13 +425,12 @@ export function mergeViews(views) {
   return merged
 }
 
-const pad = (s, n) => String(s).padEnd(n)
 const feesCell = (d) => (String(d.fees).startsWith('brak') ? 'brak w pliku' : d.fees)
 
 function tableRows(m) {
   const rows = []
   const label = `${m.month}${m.closed === false ? '*' : ''}`
-  const push = (name, status, d) => rows.push([label, name, status, d.gross, d.refunds, feesCell(d), d.net])
+  const push = (name, status, d) => rows.push({ cells: [label, name, status, d.gross, d.refunds, feesCell(d), d.net], status })
   for (const key of ['stripe', 'p24', 'paypal']) {
     const s = m.sources[key]
     if (!s) continue
@@ -422,50 +440,110 @@ function tableRows(m) {
     } else if (s.byCurrency) {
       for (const d of s.byCurrency) push(d.currency === 'PLN' ? s.source : `${s.source} ${d.currency}`, s.status, d)
     } else {
-      rows.push([label, s.source, s.status, '—', '—', '—', '—'])
+      rows.push({ cells: [label, s.source, s.status, '—', '—', '—', '—'], status: s.status })
     }
   }
   return rows
 }
 
-export function renderReport(view) {
-  const L = []
+const noData = (v) => v === null || v === undefined || String(v).startsWith('brak')
+
+/** Derived metrics per source and month: payments, average payment, refunds count and share, fees as % of gross. Computed in flowsView from raw numbers. */
+function metricRows(m) {
+  const rows = []
+  const label = `${m.month}${m.closed === false ? '*' : ''}`
+  const push = (name, d) => rows.push([
+    label, name, String(d.payments), d.avgPayment,
+    noData(d.refundsCount) ? 'brak w pliku' : String(d.refundsCount),
+    noData(d.refundsShareOfPayments) ? 'brak' : d.refundsShareOfPayments,
+    noData(d.feesPctOfGross) ? 'brak w pliku' : d.feesPctOfGross,
+  ])
+  for (const key of ['stripe', 'p24', 'paypal']) {
+    const s = m.sources[key]
+    if (!s) continue
+    if (s.data) {
+      push(s.source, s.data)
+      for (const other of s.otherCurrencies ?? []) push(`${s.source} ${other.currency}`, other)
+    } else if (s.byCurrency) {
+      for (const d of s.byCurrency) push(d.currency === 'PLN' ? s.source : `${s.source} ${d.currency}`, d)
+    }
+  }
+  return rows
+}
+
+const dataOf = (s) => (s.data ? [s.data, ...(s.otherCurrencies ?? [])] : (s.byCurrency ?? []))
+
+/** The report as structured blocks (see financeBlocks.js). renderReport() is blocksToText() of this — one source of figures and wording. */
+export function buildReportBlocks(view) {
+  const blocks = []
   const open = view.months.filter((m) => m.available && m.closed === false)
   const rows = view.months.flatMap((m) => (m.available ? tableRows(m) : []))
   if (rows.length > 0) {
-    const head = ['Miesiąc', 'Źródło', 'Status', 'Brutto', 'Zwroty', 'Prowizje', 'Netto']
-    const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => String(r[i]).length)))
-    const line = (r) => r.map((c, i) => pad(c, widths[i])).join('  ').trimEnd()
-    L.push('SUMY (wpływy od operatorów płatności, nie sprzedaż z Wix)', line(head), widths.map((w) => '-'.repeat(w)).join('  '), ...rows.map(line))
+    const keys = ['month', 'source', 'status', 'gross', 'refunds', 'fees', 'net']
+    const labels = ['Miesiąc', 'Źródło', 'Status', 'Brutto', 'Zwroty', 'Prowizje', 'Netto']
+    blocks.push({
+      type: 'table',
+      title: 'SUMY (wpływy od operatorów płatności, nie sprzedaż z Wix)',
+      columns: labels.map((label, i) => ({ key: keys[i], label, align: i < 3 ? 'left' : 'right' })),
+      rows,
+    })
+    const notes = []
     for (const m of view.months.filter((x) => x.available)) {
       const payouts = ['stripe', 'p24', 'paypal'].flatMap((key) => {
         const s = m.sources[key]
         if (!s) return []
-        const ds = s.data ? [s.data, ...(s.otherCurrencies ?? [])] : (s.byCurrency ?? [])
-        return ds.filter((d) => !d.payouts.startsWith('0,00')).map((d) => `${s.source}${d.currency === 'PLN' ? '' : ` ${d.currency}`}: ${d.payouts}`)
+        return dataOf(s).filter((d) => !d.payouts.startsWith('0,00')).map((d) => `${s.source}${d.currency === 'PLN' ? '' : ` ${d.currency}`}: ${d.payouts}`)
       })
-      if (payouts.length > 0) L.push('', `Wypłaty na rachunek ${m.month}: ${payouts.join('; ')}`)
+      if (payouts.length > 0) notes.push('', `Wypłaty na rachunek ${m.month}: ${payouts.join('; ')}`)
       for (const key of ['stripe', 'p24']) {
         const s = m.sources[key]
         if (s?.data && String(s.data.fees).startsWith('brak')) {
-          L.push(`${s.source} ${m.month}: prowizje nie są w pliku (rozlicza je faktura operatora), więc netto = brutto − zwroty, bez prowizji.`)
+          notes.push(`${s.source} ${m.month}: prowizje nie są w pliku (rozlicza je faktura operatora), więc netto = brutto − zwroty, bez prowizji.`)
         }
       }
       const pp = m.sources.paypal?.byCurrency?.find((d) => d.currency === 'PLN')
       if (pp && (pp.outgoingPayments || pp.topUps)) {
-        L.push(`PAYPAL ${m.month}: netto uwzględnia też płatności wychodzące (${pp.outgoingPayments ?? '0,00 zł'}) i zasilenia salda (${pp.topUps ?? '0,00 zł'}).`)
+        notes.push(`PAYPAL ${m.month}: netto uwzględnia też płatności wychodzące (${pp.outgoingPayments ?? '0,00 zł'}) i zasilenia salda (${pp.topUps ?? '0,00 zł'}).`)
       }
+    }
+    if (notes.length > 0) blocks.push({ type: 'text', role: 'notes', lines: notes })
+
+    const metrics = view.months.flatMap((m) => (m.available ? metricRows(m) : []))
+    if (metrics.length > 0) {
+      const mkeys = ['month', 'source', 'payments', 'avg', 'refundsCount', 'refundsShare', 'feesPct']
+      const mlabels = ['Miesiąc', 'Źródło', 'Płatności', 'Śr. płatność', 'Zwroty (szt.)', 'Zwroty / płatności', 'Prowizje / brutto']
+      blocks.push({
+        type: 'table',
+        lead: true,
+        title: 'METRYKI POCHODNE (liczone na serwerze z danych raportu)',
+        columns: mlabels.map((label, i) => ({ key: mkeys[i], label, align: i < 2 ? 'left' : 'right' })),
+        rows: metrics.map((cells) => ({ cells })),
+      })
+      const lines = []
+      const shown = view.months.filter((m) => m.available).flatMap((m) => ['stripe', 'p24', 'paypal'].map((k) => m.sources[k]).filter(Boolean))
+      if (shown.some((s) => dataOf(s).some((d) => noData(d.refundsCount)))) {
+        lines.push('Liczba zwrotów nie jest w pliku summary (brak pola refundsCount) — zmian kwoty zwrotów nie traktuję jako trendu ani nie podaję ich zmiany procentowej.')
+      }
+      if (view.months.some((m) => m.available && m.sources.stripe)) {
+        lines.push('Stripe obejmuje także płatności spoza Wix (np. Cogni); w pliku nie ma rozbicia brutto na produkty ani źródła sprzedaży, więc wzrostu brutto nie przypisuję sprzedaży z Wix.')
+      }
+      if (lines.length > 0) blocks.push({ type: 'text', role: 'notes', lines })
     }
   }
   for (const m of view.months.filter((x) => x.available && x.sources.meta)) {
     const { insights, paypalCharges } = m.sources.meta
-    L.push('', `META ${m.month}${m.closed === false ? '*' : ''} — status ${m.sources.meta.status} (dwa ujęcia TEGO SAMEGO kosztu — nie sumować)`)
-    L.push(`  wydatki wg Insights (panel Meta) [${insights.status}]: ${insights.total ? Object.values(insights.total).join(' / ') : `nie mam tych danych: ${(insights.reasons ?? []).join('; ') || 'brak'}`}`)
-    L.push(`  obciążenia przez PayPal [${paypalCharges.status}]: ${paypalCharges.sum ? paypalCharges.sum.join(' / ') : `nie mam tych danych: ${(paypalCharges.reasons ?? []).join('; ') || 'brak'}`}`)
+    blocks.push({
+      type: 'text',
+      role: 'meta',
+      lines: [
+        '',
+        `META ${m.month}${m.closed === false ? '*' : ''} — status ${m.sources.meta.status} (dwa ujęcia TEGO SAMEGO kosztu — nie sumować)`,
+        `  wydatki wg Insights (panel Meta) [${insights.status}]: ${insights.total ? Object.values(insights.total).join(' / ') : `nie mam tych danych: ${(insights.reasons ?? []).join('; ') || 'brak'}`}`,
+        `  obciążenia przez PayPal [${paypalCharges.status}]: ${paypalCharges.sum ? paypalCharges.sum.join(' / ') : `nie mam tych danych: ${(paypalCharges.reasons ?? []).join('; ') || 'brak'}`}`,
+      ],
+    })
   }
-  if (open.length > 0) {
-    L.push('', ...open.map((m) => `* ${m.warning}`))
-  }
+  if (open.length > 0) blocks.push({ type: 'text', role: 'warning', lines: ['', ...open.map((m) => `* ${m.warning}`)] })
 
   const changes = view.months.filter((m) => m.available).flatMap((m) =>
     ['stripe', 'p24', 'paypal'].flatMap((key) => {
@@ -473,19 +551,35 @@ export function renderReport(view) {
       if (!c) return []
       const name = `${m.month} ${m.sources[key].source}`
       return c.comparable
-        ? [`${name} vs ${c.vs}: brutto ${c.gross}; zwroty ${c.refunds}; prowizje ${c.fees}${c.feesPctOfGross ? ` (udział w brutto ${c.feesPctOfGross})` : ''}; netto ${c.net}`]
+        ? [`${name} vs ${c.vs}: brutto ${c.gross}; zwroty ${c.refunds}; prowizje ${c.fees}${c.feesPctOfGross ? ` (udział w brutto ${c.feesPctOfGross})` : ''}; netto ${c.net}; płatności ${c.payments}; śr. płatność ${c.avgPayment}`]
         : [`${name}: brak porównania — ${c.reason}`]
     }),
   )
   const metaChanges = view.months.filter((m) => m.available && m.sources.meta).map((m) => `${m.month} META Insights: ${m.sources.meta.insights.changeVsPrevious}`)
-  L.push('', 'ZMIANA WZGLĘDEM POPRZEDNIEGO MIESIĄCA', ...(changes.length + metaChanges.length ? [...changes, ...metaChanges].map((x) => `  ${x}`) : ['  brak danych do porównania']))
+  const all = [...changes, ...metaChanges]
+  blocks.push({
+    type: 'list',
+    title: 'ZMIANA WZGLĘDEM POPRZEDNIEGO MIESIĄCA',
+    items: (all.length ? all : ['brak danych do porównania']).map((text) => ({ text })),
+  })
 
   const anomalies = view.months.filter((m) => m.available).flatMap((m) => m.anomalies)
-  L.push('', 'ANOMALIE (progi: zwroty ≥ 2,0% brutto, wzrost prowizji ≥ 0,3 pp, zmiana brutto ≥ 30%, status UWAGA)',
-    ...(anomalies.length ? anomalies.map((a) => `  ! ${a}`) : ['  nie wykryto anomalii']))
+  blocks.push({
+    type: 'list',
+    title: 'ANOMALIE (progi: zwroty ≥ 2,0% brutto, wzrost prowizji ≥ 0,3 pp, zmiana brutto ≥ 30%, status UWAGA)',
+    items: anomalies.length ? anomalies.map((text) => ({ text, kind: 'warn' })) : [{ text: 'nie wykryto anomalii' }],
+  })
 
   const missing = [...(view.missing ?? []), ...view.months.flatMap((m) => (m.available ? m.missing : [m.missing]))]
-  L.push('', 'BRAKI DANYCH', ...(missing.length ? missing.map((x) => `  ${x}`) : ['  brak w żądanym zakresie']))
-  L.push('', 'Wix pozostaje prawdą transakcyjną dla zamówień i przychodu; powyższe to wpływy od operatorów płatności.')
-  return L.join('\n')
+  blocks.push({
+    type: 'list',
+    title: 'BRAKI DANYCH',
+    items: (missing.length ? missing : ['brak w żądanym zakresie']).map((text) => ({ text })),
+  })
+  blocks.push({ type: 'text', role: 'footer', lines: ['', 'Wix pozostaje prawdą transakcyjną dla zamówień i przychodu; powyższe to wpływy od operatorów płatności.'] })
+  return blocks
+}
+
+export function renderReport(view) {
+  return blocksToText(buildReportBlocks(view))
 }
