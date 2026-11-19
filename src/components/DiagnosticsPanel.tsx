@@ -1,6 +1,7 @@
 import { businessToday } from '../lib/businessDay'
 import { useState, useEffect } from 'react'
 import type { DailyPerformance, MetaAdDaily, AutomationRun } from '../services/data'
+import { AutomationRuns } from './AutomationRuns'
 import type { JsuFunnelSummary } from '../services/webinarFunnel'
 import type { SyncHealth } from '../lib/orderWindow'
 import type { OrdersData } from '../lib/ordersData'
@@ -17,6 +18,8 @@ interface Props {
   trend: DailyPerformance[]
   ads: MetaAdDaily[]
   runs: AutomationRun[]
+  /** The Make runs list moved here from the removed SYNC tab. */
+  runsLoading?: boolean
   jsuSummary: JsuFunnelSummary | null
   opsWeekReport: OpsWeekReport | null
   opsWeekLoading: boolean
@@ -53,7 +56,7 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
   )
 }
 
-export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, browserVoiceInfo, englishVoiceCount, lastIntent, lastIntentConfidence, llmConnected, sttLastFinal, sttInterim, sttConfidence, sttStatus, sttRejectionReason, lastRefresh, profitDataDate, profitDataOrders, syncHealth, migrations, migrationRegisterMissing, migrationRegisterError }: Props) {
+export function DiagnosticsPanel({ perf, trend, ads, runs, runsLoading = false, jsuSummary, opsWeekReport, opsWeekLoading, ttsLastElevenError, ttsFallbackActive, browserVoiceInfo, englishVoiceCount, lastIntent, lastIntentConfidence, llmConnected, sttLastFinal, sttInterim, sttConfidence, sttStatus, sttRejectionReason, lastRefresh, profitDataDate, profitDataOrders, syncHealth, migrations, migrationRegisterMissing, migrationRegisterError }: Props) {
   const [dataContract, setDataContract] = useState<DataContractReport | null>(null)
   const [dataHealth, setDataHealth] = useState<DataHealthReport | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
@@ -208,6 +211,10 @@ export function DiagnosticsPanel({ perf, trend, ads, runs, jsuSummary, opsWeekRe
           <Row label="Last run age"      value={lastAutoRunAge != null ? `${lastAutoRunAge} min ago` : '—'} ok={lastAutoRunAge != null && lastAutoRunAge < 120} />
           <Row label="Last run rows"     value={latestRun?.rows_inserted != null ? String(latestRun.rows_inserted) : '—'} />
           <Row label="Recent runs"       value={String(runs.length)} ok={runs.length > 0} />
+          {/* Full list of recent Make runs (was the SYNC tab). */}
+          <div style={{ marginTop: '12px' }}>
+            <AutomationRuns runs={runs} loading={runsLoading} />
+          </div>
         </div>
 
         {/* Webinars */}

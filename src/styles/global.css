@@ -1443,98 +1443,6 @@ button:active, [role="button"]:active,
   filter: brightness(0.94);
 }
 
-/* ── Funding radar rows ─────────────────────────────────────────────────────
-   The collapsed row is a GRID, not a wrapping flex line: every item must read
-   as exactly one line so a screenful shows a work queue rather than two cards.
-   Each cell clips with an ellipsis instead of pushing the row to a second line. */
-.funding-line {
-  display: grid;
-  grid-template-columns:
-    14px                /* chevron */
-    minmax(0, 2.2fr)    /* name */
-    46px                /* verdict */
-    minmax(0, 1.1fr)    /* amount */
-    minmax(0, 0.9fr)    /* own contribution */
-    minmax(0, 1.2fr)    /* window */
-    auto                /* status markers */
-    auto;               /* check-by date */
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  cursor: pointer;
-}
-
-.funding-line > *,
-.funding-line .fl-meta > * {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* On desktop the meta wrapper is transparent — its children ARE the grid cells. */
-.funding-line .fl-meta { display: contents; }
-
-/* Collapsed-row date is an input on desktop, plain text on a phone. */
-.funding-line .fl-date-text { display: none; }
-
-/* ── Funding rows on a phone ────────────────────────────────────────────────
-   One line stops being honest below 640px: fields ran past the right edge, the
-   GO/MAYBE badge was clipped off-screen and the meta line refused to wrap at
-   all. The row stacks instead — name + badge on the first line with the badge
-   pinned right, meta wrapping freely on the second. Nothing may force the page
-   to scroll sideways. */
-@media (max-width: 640px) {
-  .funding-line {
-    grid-template-columns: 14px minmax(0, 1fr) auto;
-    grid-template-areas:
-      "chev name verdict"
-      "meta meta meta";
-    row-gap: 5px;
-    align-items: start;
-  }
-
-  .funding-line .fl-chev    { grid-area: chev; padding-top: 2px; }
-  .funding-line .fl-name    { grid-area: name; white-space: normal; overflow-wrap: anywhere; }
-  /* Pinned to the right edge and never shrunk — this is the badge that was
-     getting cut off by the viewport. */
-  .funding-line .fl-verdict { grid-area: verdict; justify-self: end; }
-
-  .funding-line .fl-meta {
-    grid-area: meta;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 3px 10px;
-    min-width: 0;
-  }
-  .funding-line .fl-meta > * { max-width: 100%; }
-
-  /* The date input was the single widest thing in the row; on a phone it moves
-     into the expanded body and the row shows the value as text. */
-  .funding-line .fl-date { display: none; }
-  .funding-line .fl-date-text { display: inline; }
-}
-
-/* ── Funding filters ────────────────────────────────────────────────────────
-   Four chip groups filled the whole phone screen before the first result. Below
-   640px they collapse behind one button; sorting stays out in the open. */
-.funding-filters { display: flex; }
-.funding-filters-toggle { display: none; }
-.funding-date-mobile { display: none; }
-
-@media (max-width: 640px) {
-  .funding-filters-toggle { display: inline-block; }
-  .funding-date-mobile { display: flex; }
-  .funding-filters { display: none; }
-  .funding-filters.is-open {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    width: 100%;
-  }
-}
-
 /* ── Stanley working indicator ──────────────────────────────────────────────
    Three breathing dots while an answer is in flight. Deliberately wordless: a
    sentence in this slot reads as Stanley having spoken, and used to be the first
@@ -1557,4 +1465,45 @@ button:active, [role="button"]:active,
 
 @media (prefers-reduced-motion: reduce) {
   .stanley-dot { animation: none; opacity: 0.55; }
+}
+
+/* ── Top bar (header) ─────────────────────────────────────────────────────────
+   Wraps instead of overflowing: at 360-390 px the date wraps (never cut) and the
+   buttons wrap onto a second line; Refresh / COPY show only their icon there
+   (each has an aria-label). Checked by scripts/responsive-check.mjs (Playwright). */
+.hq-topbar {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  background: var(--bg2);
+  flex-wrap: wrap;
+  gap: 10px;
+  flex-shrink: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.hq-topbar-left { min-width: 0; }
+.hq-topbar-right { text-align: right; min-width: 0; max-width: 100%; }
+.hq-topbar-time { font-family: var(--font-mono); font-size: 0.9rem; color: var(--text2); }
+.hq-topbar-date { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.hq-topbar-actions { margin-top: 8px; display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.hq-topbar-refreshed { font-size: 0.68rem; color: var(--muted2); font-family: var(--font-mono); align-self: center; }
+
+@media (max-width: 480px) {
+  .hq-topbar { padding: 12px 16px; }
+  .hq-topbar-right { width: 100%; text-align: left; }
+  .hq-topbar-actions { justify-content: flex-start; }
+  .hq-topbar-actions .btn-label { display: none; }
+  .hq-topbar-actions .btn-sm { padding-left: 10px; padding-right: 10px; }
+}
+
+/* Bottom bar: five tabs share the width; a label never overflows its cell. */
+@media (max-width: 699px) {
+  .mobile-nav-item { min-width: 0; padding-left: 2px; padding-right: 2px; }
+  .mobile-nav-label { white-space: nowrap; max-width: 100%; }
+}
+@media (max-width: 420px) {
+  .mobile-nav-label { font-size: 0.6rem; letter-spacing: 0; }
 }

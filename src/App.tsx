@@ -12,7 +12,6 @@ import { KPICard } from './components/KPICard'
 import { DayDigest } from './components/DayDigest'
 import { StatusBadge } from './components/StatusBadge'
 import { GieniuAvatar } from './components/GieniuAvatar'
-import { AutomationRuns } from './components/AutomationRuns'
 import { WebinarFunnelPanel } from './components/WebinarFunnelPanel'
 import { WebinarMailPanel, MailAlertLines, useWebinarMailAlerts } from './components/WebinarMailPanel'
 import { RevenueTrendChart } from './components/RevenueTrendChart'
@@ -73,7 +72,6 @@ import { isSpeaking as sttIsStanleySpeaking } from './lib/speechGate'
 
 import { RangeSwitcher } from './components/RangeSwitcher'
 import { KpiDetailChart } from './components/KpiDetailChart'
-import { FundingPanel } from './components/FundingPanel'
 import { KPI_METRICS } from './lib/kpiMetrics'
 import { rangeDates, rangeSubLabel, RANGE_LABELS, type TimeRange } from './lib/timeRange'
 import { buildReport } from './lib/exportReport'
@@ -100,8 +98,6 @@ type NavSection =
   | 'campaigns'
   | 'webinars'
   | 'webinar-mails'
-  | 'funding'
-  | 'automation'
   | 'diagnostics'
 
 // Format helpers live in src/utils/format.ts so the clipboard export prints the
@@ -114,8 +110,6 @@ const NAV_ITEMS: { key: NavSection; icon: string; label: string }[] = [
   { key: 'campaigns',      icon: '📜', label: 'Campaigns'       },
   { key: 'webinars',       icon: '🎙', label: 'Webinars'        },
   { key: 'webinar-mails',  icon: '✉',  label: 'Maile webinarowe' },
-  { key: 'funding',        icon: '🪙', label: 'Funding'         },
-  { key: 'automation',     icon: '⚙',  label: 'Sync / Automation' },
   { key: 'diagnostics',    icon: '🔬', label: 'Diagnostics'     },
 ]
 
@@ -189,8 +183,6 @@ const MOBILE_NAV_ITEMS: { key: NavSection; icon: string; label: string }[] = [
   { key: 'campaigns',      icon: '📜', label: 'Campaigns'  },
   { key: 'webinars',       icon: '🎙', label: 'Webinars'   },
   { key: 'webinar-mails',  icon: '✉',  label: 'Maile'      },
-  { key: 'funding',        icon: '🪙', label: 'Funding'    },
-  { key: 'automation',     icon: '⚙',  label: 'Sync'       },
   { key: 'diagnostics',    icon: '🔬', label: 'Status'     },
 ]
 
@@ -249,18 +241,8 @@ function TopBar({
   const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Warsaw' })
 
   return (
-    <header style={{
-      padding: '14px 24px',
-      borderBottom: '1px solid var(--border)',
-      display: 'flex',
-      alignItems: 'flex-start',
-      justifyContent: 'space-between',
-      background: 'var(--bg2)',
-      flexWrap: 'wrap',
-      gap: '10px',
-      flexShrink: 0,
-    }}>
-      <div>
+    <header className="hq-topbar">
+      <div className="hq-topbar-left">
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '4px' }}>
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.35rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.14em' }}>
             STANLEY HQ
@@ -277,29 +259,33 @@ function TopBar({
         )}
       </div>
 
-      <div style={{ textAlign: 'right' }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: 'var(--text2)' }}>{timeStr}</div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--muted)', marginTop: '2px' }}>{dateStr}</div>
-        <div style={{ marginTop: '8px', display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+      {/* Right block: on a phone it takes the full width, the date wraps instead of being cut and the
+          buttons wrap; Refresh / COPY drop their words below 480 px and keep the icon + aria-label. */}
+      <div className="hq-topbar-right">
+        <div className="hq-topbar-time">{timeStr}</div>
+        <div className="hq-topbar-date" data-testid="topbar-date">{dateStr}</div>
+        <div className="hq-topbar-actions">
           {lastRefresh && (
-            <span style={{ fontSize: '0.68rem', color: 'var(--muted2)', fontFamily: 'var(--font-mono)', alignSelf: 'center' }}>
+            <span className="hq-topbar-refreshed">
               refreshed {lastRefresh.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
-          <button className="btn-sm" onClick={onRefresh} disabled={loading}>
-            {loading ? '…' : '↻ Refresh'}
+          <button className="btn-sm" onClick={onRefresh} disabled={loading} aria-label="Odśwież dane" title="Odśwież dane">
+            {loading ? '…' : <>↻<span className="btn-label"> Refresh</span></>}
           </button>
           <button
             className="btn-sm"
             onClick={onCopyReport}
             disabled={loading}
+            aria-label={`Skopiuj raport (${rangeLabel})`}
             title={`Skopiuj pełny raport Markdown dla zakresu ${rangeLabel} — do wklejenia w zewnętrznej analizie`}
             style={copyState === 'error' ? { borderColor: 'var(--orange)', color: 'var(--orange)' } : undefined}
           >
-            {copyState === 'copied' ? '✓ SKOPIOWANO' : copyState === 'error' ? '⚠ BŁĄD KOPIOWANIA' : '⧉ COPY'}
+            {copyState === 'copied' ? '✓ SKOPIOWANO' : copyState === 'error' ? '⚠ BŁĄD KOPIOWANIA' : <>⧉<span className="btn-label"> COPY</span></>}
           </button>
           <button
             className="btn-sm"
+            aria-label={theme === 'dark' ? 'Tryb jasny' : 'Tryb ciemny'}
             onClick={onToggleTheme}
             title={theme === 'dark' ? 'Switch to light mode (auto follows the clock until you override)' : 'Switch to dark mode (auto follows the clock until you override)'}
             style={{ fontSize: '0.95rem', padding: '7px 10px', minWidth: '36px' }}
@@ -308,13 +294,14 @@ function TopBar({
           </button>
           <button
             className="btn-sm"
+            aria-label={ambientOn ? 'Wycisz dźwięk tła' : 'Włącz dźwięk tła'}
             onClick={onToggleAmbient}
             title={ambientOn ? 'Ambient nature sound: on — tap to mute' : 'Ambient nature sound: off — tap to enable'}
             style={{ fontSize: '0.95rem', padding: '7px 10px', minWidth: '36px', opacity: ambientOn ? 1 : 0.42, borderColor: ambientOn ? 'var(--border-gold)' : 'var(--border)' }}
           >
             🍃
           </button>
-          <button className="btn-sm" onClick={logout} title="Wyloguj — usuwa zapamiętane hasło z tej przeglądarki">
+          <button className="btn-sm" data-testid="logout" onClick={logout} aria-label="Wyloguj" title="Wyloguj — usuwa zapamiętane hasło z tej przeglądarki">
             Wyloguj
           </button>
         </div>
@@ -2130,21 +2117,6 @@ export default function App() {
             </div>
           )}
 
-          {/* ── FUNDING ───────────────────────────────────────────── */}
-          {section === 'funding' && (
-            <div className="panel-illuminate card">
-              <FundingPanel />
-            </div>
-          )}
-
-          {/* ── AUTOMATION ────────────────────────────────────────── */}
-          {section === 'automation' && (
-            <div className="panel-illuminate card">
-              <div className="section-title section-title-gold">Automation Runs</div>
-              <AutomationRuns runs={runs} loading={runsLoading} />
-            </div>
-          )}
-
           {/* ── DIAGNOSTICS ───────────────────────────────────────── */}
           {section === 'diagnostics' && (
             <DiagnosticsPanel
@@ -2152,6 +2124,7 @@ export default function App() {
               trend={trend}
               ads={ads}
               runs={runs}
+              runsLoading={runsLoading}
               jsuSummary={jsuSummary}
               opsWeekReport={opsWeekReport}
               opsWeekLoading={opsWeekLoading}

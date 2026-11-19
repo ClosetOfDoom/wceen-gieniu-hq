@@ -38,6 +38,7 @@
     "assert:spend-consistency": "node scripts/assert-spend-consistency.mjs",
     "assert:voice-language": "node scripts/assert-browser-tts-language.mjs",
     "assert:stanley-auth": "node scripts/assert-stanley-auth.mjs",
+    "check:responsive": "npm run build && node scripts/responsive-check.mjs",
     "assert:gieniu-command": "node scripts/assert-gieniu-command.mjs",
     "assert:stt-language": "node scripts/assert-stt-language.mjs",
     "test": "vitest run",
@@ -56,6 +57,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.7.0",

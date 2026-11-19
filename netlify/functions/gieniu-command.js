@@ -4,7 +4,7 @@
 // Body: { message, context }
 // Returns: { answerText, speechText, intent, confidence, dataSourcesUsed, warnings, llmUsed, llmProvider }
 
-// Funding radar snapshot (same data as src/data/funding.ts, copied from dashboard.html).
+// Funding radar snapshot (copied from dashboard.html). Only Stanley's answers use it: the FUNDING tab was removed.
 import { withStanleyAuth } from '../shared/auth.js'
 import { FUNDING_RADAR } from '../shared/funding.js'
 import { readTable } from '../shared/supabaseRead.js'
@@ -1638,7 +1638,7 @@ function renderWebinarFunnelView(rows) {
 
 // checkBy overrides live in funding_checks (the browser cannot write funding.ts).
 // A missing table is not an error here: it simply means nothing is scheduled, so
-// every GO/MAYBE item reads as SPRAWDŹ TERAZ — the same verdict the panel shows.
+// every GO/MAYBE item reads as SPRAWDŹ TERAZ.
 async function fetchFundingChecks(supabaseUrl, serviceKey) {
   if (!supabaseUrl || !serviceKey) return {}
   try {
@@ -1654,8 +1654,7 @@ async function fetchFundingChecks(supabaseUrl, serviceKey) {
   }
 }
 
-// Action statuses — the SAME rules as src/lib/fundingStatus.ts, so Stanley quotes
-// the numbers the Funding panel is showing rather than a second opinion.
+// Action statuses for the funding radar (the rules the removed FUNDING tab used).
 //   SPRAWDŹ TERAZ    — GO/MAYBE with no checkBy, or a checkBy already past
 //   NIEZWERYFIKOWANE — verify:true
 //   PO TERMINIE      — hard deadline already past
