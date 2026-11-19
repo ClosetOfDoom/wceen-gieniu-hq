@@ -494,8 +494,10 @@ describe('Wix client payloads', () => {
     seen.length = 0
     const wix = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl })
     expect(await wix.createCampaign({ subject: 'Temat', preheader: 'Zajawka', html: '<p>x</p>' })).toBe('new-id')
-    const b = seen[0].body as { campaignEditorType: string; composer: { composerDataJson: string }; emailSubject: string; emailPreheader: string }
-    expect(b.campaignEditorType).toBe('HTML'); expect(JSON.parse(b.composer.composerDataJson)).toEqual({ html: '<p>x</p>' })
+    const b = seen[0].body as { campaignEditorType: { value: string }; composer: { composerDataJson: string }; emailSubject: string; emailPreheader: string }
+    // The exact shape Wix accepts (from its documented example); a bare string is rejected with HTTP 400.
+    expect(b.campaignEditorType).toEqual({ value: 'HTML' }); expect(JSON.parse(b.composer.composerDataJson)).toEqual({ html: '<p>x</p>' })
+    expect(typeof b.composer.composerDataJson).toBe('string')
     expect([b.emailSubject, b.emailPreheader]).toEqual(['Temat', 'Zajawka'])
   })
 

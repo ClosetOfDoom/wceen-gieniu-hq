@@ -58,7 +58,8 @@ export function createWixClient({ apiKey, siteId, fetchImpl = fetch } = {}) {
 
     async createCampaign({ subject, preheader, html }) {
       const body = {
-        campaignEditorType: 'HTML',
+        // Wix wants an object here ({ value: 'HTML' }), not a bare string: a string gives HTTP 400 "Expected an object".
+        campaignEditorType: { value: 'HTML' },
         composer: { composerDataJson: JSON.stringify({ html }) },
         emailSubject: subject,
       }
