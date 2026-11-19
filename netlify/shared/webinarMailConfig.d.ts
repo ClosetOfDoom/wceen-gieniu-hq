@@ -22,6 +22,7 @@ export interface WebinarMailConfig {
   readonly testContactId: string
   readonly testLeadMinutes: number
   readonly cron: string
+  readonly autoChangedAtFallback: string
   readonly slots: Readonly<Record<SlotName, SlotConfig>>
 }
 

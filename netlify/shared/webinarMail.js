@@ -372,10 +372,20 @@ export function ctrOf(stats) {
   return Math.round((Number(stats?.clicked ?? 0) / delivered) * 10000) / 100
 }
 
+/** Was AUTO already on before the planned run (wakeHour:00 Warsaw) of `date`? */
+export function autoOnBeforeRun(state, date, config = WEBINAR_MAIL_CONFIG) {
+  const plannedRun = warsawLocalToUtc(date, `${String(config.wakeHour).padStart(2, '0')}:00`).getTime()
+  const stamped = Date.parse(state?.autoChangedAt ?? '')
+  const since = Number.isFinite(stamped) ? stamped : Date.parse(config.autoChangedAtFallback)
+  return Number.isFinite(since) && since < plannedRun
+}
+
 /**
  * What the app shows as alerts. red = needs the owner; amber = a warning.
  *   - the last real run failed (until a later run succeeds or the owner acknowledges it)
- *   - a send day passed 06:45 with AUTO on, PAUZA off, and no run record at all (the function never fired)
+ *   - a send day passed 06:45 with AUTO on, PAUZA off, and no run record at all (the function never fired) —
+ *     only when AUTO was already on BEFORE that day's planned run (06:00 Warsaw): state.autoChangedAt, or
+ *     config.autoChangedAtFallback for a state written before the stamp existed. Turning AUTO on at 23:38 is not a missed run.
  *   - queue of a slot empty (red) or ≤ threshold (amber)
  * Neutral states (AUTO off, PAUZA, skipDate) are NOT alerts.
  */
@@ -387,7 +397,7 @@ export function buildAlerts({ state, lastRun, runToday, queues, now }, config = 
   const p = warsawParts(now)
   const slotToday = slotForWeekday(p.weekday, config)
   const late = p.hour > config.wakeHour || (p.hour === config.wakeHour && p.minute >= 45)
-  if (slotToday && late && state.auto && !state.pause && !config.skipDates.includes(p.date) && !runToday) {
+  if (slotToday && late && state.auto && !state.pause && !config.skipDates.includes(p.date) && !runToday && autoOnBeforeRun(state, p.date, config)) {
     alerts.push({ severity: 'red', rule: 'MAILE_NIE_ODPALILY', message: `${config.slots[slotToday].label}, ${p.date}: po 06:45 nie ma śladu uruchomienia funkcji (AUTO jest włączone)` })
   }
   for (const q of queues) {

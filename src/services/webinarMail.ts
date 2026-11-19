@@ -74,7 +74,7 @@ export interface RunRecord {
 
 export interface WebinarMailStatus {
   now: string
-  state: { auto: boolean; pause: boolean; ackedRunAt: string | null; updatedAt: string | null }
+  state: { auto: boolean; pause: boolean; ackedRunAt: string | null; autoChangedAt?: string | null; updatedAt: string | null }
   config: {
     wakeHour: number
     sendAtLocal: string

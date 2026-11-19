@@ -4,7 +4,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   runWebinarMail, validateSubject, validateTemplate, buildQueue, nextVariant, evaluateSafeguards,
-  warsawParts, warsawLocalToUtc, buildAlerts, ctrOf, renderCampaignHtml, SLOT_NAMES,
+  warsawParts, warsawLocalToUtc, buildAlerts, autoOnBeforeRun, ctrOf, renderCampaignHtml, SLOT_NAMES,
   assertTestAudience, createAndPublish, testAudience, testSendAt, unresolvedTags,
   type RunDeps, type WixLike, type TemplateFile, type LogEntry,
 } from '../../../netlify/shared/webinarMail.js'
@@ -403,6 +403,55 @@ describe('queue', () => {
     expect(buildAlerts({ ...base, runToday: null, now: new Date('2026-12-01T05:30:00Z') })).toEqual([]) // 06:30: still early
     expect(buildAlerts({ ...base, state: { auto: false, pause: false }, runToday: null, now: new Date('2026-12-01T05:50:00Z') })).toEqual([])
     expect(buildAlerts({ ...base, runToday: null, now: new Date('2026-12-24T05:50:00Z') })).toEqual([]) // skipDate
+  })
+})
+
+// ── T2: MAILE_NIE_ODPALILY only when AUTO was on before that day's 06:00 run ─────
+
+describe('missed-run alarm and autoChangedAt', () => {
+  const rules = (state: { auto: boolean; pause: boolean; autoChangedAt?: string | null }, now: string) =>
+    buildAlerts({ state, lastRun: null, runToday: null, queues: [], now: new Date(now) }).map((a) => a.rule)
+
+  it('AUTO switched on 19.11 at 22:38Z (Thursday, after the 06:00 run) → no alarm for 19.11', () => {
+    const state = { auto: true, pause: false, autoChangedAt: '2026-11-19T22:38:00.000Z' }
+    expect(autoOnBeforeRun(state, '2026-11-19')).toBe(false)
+    expect(rules(state, '2026-11-19T22:45:00Z')).toEqual([])   // 23:45 Warsaw, no run record that day
+  })
+
+  it('AUTO switched on on Monday → Tuesday without any run record by 06:45 is a red alarm', () => {
+    const state = { auto: true, pause: false, autoChangedAt: '2026-11-23T10:00:00.000Z' }   // Mon 23.11
+    expect(rules(state, '2026-11-24T05:30:00Z')).toEqual([])                       // 06:30 Warsaw: still early
+    expect(rules(state, '2026-11-24T05:46:00Z')).toEqual(['MAILE_NIE_ODPALILY'])   // 06:46 Warsaw
+    // a run record that day (even a skip) clears it
+    expect(buildAlerts({ state, lastRun: null, runToday: { status: 'skipped', reason: 'x', date: '2026-11-24' }, queues: [], now: new Date('2026-11-24T05:46:00Z') })).toEqual([])
+  })
+
+  it('AUTO switched on at 05:30 Warsaw on the send day itself (before 06:00) counts; at 06:10 it does not', () => {
+    expect(rules({ auto: true, pause: false, autoChangedAt: '2026-11-24T04:30:00.000Z' }, '2026-11-24T06:00:00Z')).toEqual(['MAILE_NIE_ODPALILY'])
+    expect(rules({ auto: true, pause: false, autoChangedAt: '2026-11-24T05:10:00.000Z' }, '2026-11-24T06:00:00Z')).toEqual([])
+  })
+
+  it('no autoChangedAt in the stored state → the deploy time of this fix is used', () => {
+    expect(Date.parse(CFG.autoChangedAtFallback)).toBeGreaterThan(Date.parse('2026-11-19T22:38:00Z'))
+    expect(Date.parse(CFG.autoChangedAtFallback)).toBeLessThan(Date.parse('2026-11-24T05:00:00Z'))
+    expect(rules({ auto: true, pause: false }, '2026-11-19T22:45:00Z')).toEqual([])                       // 19.11: no
+    expect(rules({ auto: true, pause: false, autoChangedAt: null }, '2026-11-24T05:46:00Z')).toEqual(['MAILE_NIE_ODPALILY']) // 24.11: yes
+  })
+
+  it('set-state stamps autoChangedAt on every change of AUTO, not on PAUZA or an unchanged AUTO', async () => {
+    const s = setup({ auto: false })
+    await adminAction({ action: 'set-state', body: { pause: true }, deps: s.deps, now: new Date('2026-11-19T20:00:00Z') })
+    expect((await s.store.getState()).autoChangedAt ?? null).toBeNull()
+    await adminAction({ action: 'set-state', body: { auto: true }, deps: s.deps, now: new Date('2026-11-19T22:38:00Z') })
+    expect((await s.store.getState())).toMatchObject({ auto: true, autoChangedAt: '2026-11-19T22:38:00.000Z' })
+    await adminAction({ action: 'set-state', body: { auto: true }, deps: s.deps, now: new Date('2026-11-20T08:00:00Z') })
+    expect((await s.store.getState()).autoChangedAt).toBe('2026-11-19T22:38:00.000Z')   // same value: no new stamp
+    await adminAction({ action: 'set-state', body: { auto: false }, deps: s.deps, now: new Date('2026-11-21T08:00:00Z') })
+    expect((await s.store.getState())).toMatchObject({ auto: false, autoChangedAt: '2026-11-21T08:00:00.000Z' })
+    // the store stamps a change made without a clock too
+    await s.store.setState({ auto: true })
+    const stamped = (await s.store.getState()).autoChangedAt
+    expect(stamped).not.toBe('2026-11-21T08:00:00.000Z'); expect(Number.isFinite(Date.parse(String(stamped)))).toBe(true)
   })
 })
 

@@ -77,6 +77,8 @@ export async function adminAction({ action, body, deps, now = new Date(), config
       if ('auto' in body) { if (!isBool(body.auto)) return { ok: false, error: 'auto musi być true/false' }; patch.auto = body.auto }
       if ('pause' in body) { if (!isBool(body.pause)) return { ok: false, error: 'pause musi być true/false' }; patch.pause = body.pause }
       if (!Object.keys(patch).length) return { ok: false, error: 'brak pól auto/pause' }
+      // The store stamps autoChangedAt only when AUTO really changes value; this gives it the request's clock.
+      if ('auto' in patch) patch.autoChangedAt = now.toISOString()
       return { ok: true, state: await store.setState(patch) }
     }
     case 'ack': {

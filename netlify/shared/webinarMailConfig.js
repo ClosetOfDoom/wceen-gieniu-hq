@@ -34,6 +34,11 @@ export const WEBINAR_MAIL_CONFIG = Object.freeze({
    * (CEST = UTC+2 → 04:00 UTC). On Tue/Thu the run at the wrong hour exits straight away.
    */
   cron: '0 4,5 * * 2,4',
+  /**
+   * When AUTO was last switched, for a state written before autoChangedAt existed (T2): the deploy of that fix.
+   * MAILE_NIE_ODPALILY only counts days whose 06:00 run came AFTER AUTO was on (state.autoChangedAt ?? this).
+   */
+  autoChangedAtFallback: '2026-11-19T23:01:00.000Z',
   slots: Object.freeze({
     tuesday: Object.freeze({
       label: 'Webinar językowy (wtorek)',

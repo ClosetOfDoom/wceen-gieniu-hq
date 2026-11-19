@@ -105,7 +105,7 @@ export interface RunOutcome {
 }
 
 export interface MailStoreLike {
-  getState(): Promise<{ auto: boolean; pause: boolean; ackedRunAt: string | null; updatedAt: string | null }>
+  getState(): Promise<{ auto: boolean; pause: boolean; ackedRunAt: string | null; autoChangedAt?: string | null; updatedAt: string | null }>
   setState(patch: Record<string, unknown>): Promise<unknown>
   getLog(): Promise<LogEntry[]>
   addLog(entry: LogEntry): Promise<void>
@@ -128,9 +128,10 @@ export interface RunDeps {
 export function runWebinarMail(args: { now: Date; deps: RunDeps; dryRun?: boolean; force?: boolean; config?: WebinarMailConfig }): Promise<RunOutcome>
 
 export function ctrOf(stats: { delivered?: number; clicked?: number } | null | undefined): number | null
+export function autoOnBeforeRun(state: { autoChangedAt?: string | null } | null | undefined, date: string, config?: WebinarMailConfig): boolean
 export interface MailAlertResult { severity: 'red' | 'amber'; rule: string; message: string; runAt?: string }
 export function buildAlerts(args: {
-  state: { auto: boolean; pause: boolean; ackedRunAt?: string | null }
+  state: { auto: boolean; pause: boolean; ackedRunAt?: string | null; autoChangedAt?: string | null }
   lastRun: RunOutcome | null
   runToday: RunOutcome | null
   queues: { slot: SlotName; empty: boolean; low: boolean; readyCount: number }[]

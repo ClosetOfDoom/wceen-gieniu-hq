@@ -188,6 +188,7 @@ export function WebinarMailPanel() {
         </button>
         <span style={{ ...MONO, fontSize: '0.7rem', color: 'var(--muted2)' }}>
           {state.auto && !state.pause ? 'maile wyjdą automatycznie' : 'maile NIE wyjdą (AUTO wyłączone albo PAUZA)'}
+          {state.autoChangedAt ? ` · AUTO zmienione ${fmtWarsaw(state.autoChangedAt)}` : ''}
         </span>
       </div>
 

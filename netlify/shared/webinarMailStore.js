@@ -1,6 +1,7 @@
 // webinarMailStore.js — state and log of the webinar mails, in Netlify Blobs (store "webinar-mail").
 //
-//   state                  { auto, pause, ackedRunAt, updatedAt }   AUTO / PAUZA switches (default: both OFF-safe)
+//   state                  { auto, pause, ackedRunAt, autoChangedAt, updatedAt }   AUTO / PAUZA switches (default: both OFF-safe);
+//                          autoChangedAt = when AUTO last changed value (written on every change)
 //   log/<key>              one entry per send  (key = <date>-<slot>; failures: <key>~<ts>)
 //   claim/<key>            idempotency claim, written with onlyIfNew BEFORE the campaign is created
 //   run/<key>              the last run record of that date-slot (also skips and failures)
@@ -11,13 +12,18 @@
 import { getStore } from '@netlify/blobs'
 import { LOG_STATUS } from './webinarMailStatus.js'
 
-export const DEFAULT_STATE = Object.freeze({ auto: false, pause: false, ackedRunAt: null, updatedAt: null })
+export const DEFAULT_STATE = Object.freeze({ auto: false, pause: false, ackedRunAt: null, autoChangedAt: null, updatedAt: null })
 
 function wrap(kv) {
   return {
     async getState() { return { ...DEFAULT_STATE, ...((await kv.getJSON('state')) ?? {}) } },
     async setState(patch) {
-      const next = { ...(await this.getState()), ...patch, updatedAt: new Date().toISOString() }
+      const cur = await this.getState()
+      const at = new Date().toISOString()
+      const next = { ...cur, ...patch, updatedAt: at }
+      // Every change of AUTO is stamped (the caller may pass its own clock as patch.autoChangedAt).
+      if ('auto' in patch && Boolean(patch.auto) !== Boolean(cur.auto)) next.autoChangedAt = patch.autoChangedAt ?? at
+      else if ('autoChangedAt' in patch) next.autoChangedAt = cur.autoChangedAt
       await kv.setJSON('state', next)
       return next
     },
