@@ -108,15 +108,16 @@ Tabela w zakładce: data, slot, wariant, status, temat, CTR z Wix (unikalne klik
 
 ## Blokady
 
-1. **Brak `STANLEY_ACCESS_TOKEN` i tokenu Netlify na tym komputerze.** Nie dało się kliknąć „Wyślij test” we wdrożonej aplikacji ani odczytać
-   Netlify Blobs (log TEST w produkcji, stan AUTO/PAUZA). Testy na żywo poszły tą samą funkcją, ale lokalnie, z logiem w pamięci.
-   Deploy potwierdzony tylko po hashu w bundlu strony.
+1. **Brak `STANLEY_ACCESS_TOKEN` i tokenu Netlify na tym komputerze.** Nie da się kliknąć „Wyślij test” we wdrożonej aplikacji ani zobaczyć
+   zakładki MAILE z danymi. Od 19.11 (P2) odczyt Blobs w produkcji jest dowodzony bez tokenu przez publiczny `webinar-mail-health`
+   (`blobsRead: "ok"`, AUTO/PAUZA, kolejki); pełny GET `webinar-mail-admin` z hasłem nadal niesprawdzony z tej sesji.
 2. **Klucz Wix nie ma uprawnienia do Email Subscriptions** (`POST /email-marketing/v1/email-subscriptions` → 403). Kontakt testowy ma subskrypcję
    `NOT_SET` zamiast `SUBSCRIBED`; nie przeszkadza (4 maile dostarczone), ale nie da się tego ustawić z kodu.
 3. **Na tym komputerze nie ma Node.js ani npm w PATH.** `verify` uruchomione samodzielnym Node 24 (Netlify buduje na Node 20) i npm pobranym
    do katalogu tymczasowego. Pierwszy przebieg vitest padł na starcie workera `financePanel.test.tsx` (jsdom z OneDrive ładuje się ~46 s,
    limit 60 s); po rozgrzaniu cache: zielone.
-4. **Unregister SW + clear cache** wymaga przeglądarki z otwartym Stanleyem; z tej sesji niewykonalne.
+4. **Unregister SW + clear cache** wymaga przeglądarki z otwartym Stanleyem; z tej sesji niewykonalne. Potrzebne **ostatni raz** (po deployu
+   e70d5b5): stary bundel nie ma jeszcze sprawdzania `/version.json`. Od P5 aplikacja sama się przeładowuje przy nowym buildzie.
 5. **Czwartek 02 (`02-2026-10-29-contact-name-first…`) zablokowany**: `${contact.name.first}` jest w **temacie** (i treści), a Wix go nie podmienia.
    Temat wymaga nowego copy od autora, kod go nie zmienia. Kolejka pomija ten szablon. (Czw 01 odblokowany 19.11, patrz niżej.)
 6. **Cyfry w tematach**: walidator tylko OSTRZEGA o cyfrach (blokuje „!”, tagi, „zł”, „%”). Gotowe tematy z cyframi: czw 01, czw 04,
@@ -139,3 +140,30 @@ Tabela w zakładce: data, slot, wariant, status, temat, CTR z Wix (unikalne klik
 - Dry-run `webinar-mail-run` na czwartek 26.11 05:00Z (prawdziwy Wix): szablon czw 01, wariant `landing` (`www.wceen.com/darmowy-webinar`),
   `sendAt 2026-11-26T06:00:00Z` = 07:00 Warszawa; wszystkie 7 bezpieczników OK; bramka AUTO_OFF (`wouldPublish: false`).
   Finalny HTML: 0 × `{{`, 0 × `${`; 4 linki `<a>`: 3 × `www.wceen.com/darmowy-webinar`, 1 × `mailto:` (wceen.com).
+
+## Stan na 2026-11-19 (noc, 3): HTTP 500 w MAILE, health, zakładki, samoaktualizacja
+
+- **P1 (9a9a133)**: `webinar-mail-admin` przeniesiony na Functions API v2 (`export default withStanleyAuthV2(...)`). Przyczyna 500:
+  handler v1 z `connectLambda` nie miał `uncachedEdgeURL`, więc odczyt Blobs ze `consistency: 'strong'` padał. KROK 0: Blobs używały tylko
+  `webinar-mail-admin` (v1) i `webinar-mail-run` (v2), obie przez `createBlobStore()`. Teraz `@netlify/blobs` importuje wyłącznie
+  `netlify/shared/webinarMailStore.js`, a każda funkcja ze store jest v2 (assert w `assert:webinar-mails`). Hasło: ta sama `checkAccess`.
+- **P2 (90354d0)**: publiczny `GET /.netlify/functions/webinar-mail-health` (v2, tylko odczyt, na liście wyjątków `assert:stanley-auth`).
+  Zwraca wyłącznie `{ build, blobsRead, auto, pauza, kolejka: { wtorek, czwartek }, nastepnaWysylka }`. Hash builda z `dist/version.json`
+  (pisany przez `vite build`, dołączony do funkcji przez `included_files`). Produkcja: HTTP 200, `blobsRead: "ok"`; admin bez tokenu: 401.
+- **P3 (977367f)**: teksty o stanie bazy liczone z wierszy (`src/lib/metaCoverage.ts`): ostrzeżenie „Purch.” w CAMPAIGNS, notka
+  `meta_purchases` w raporcie COPY, odmowy reguł CZĘSTOTLIWOŚĆ / KLIK_DO_KASY (bez „kolumna istnieje od migracji 2026-10-03”).
+- **P4 (98065c5)**: zakładki FUNDING i SYNC usunięte; lista przebiegów Make przeniesiona do STATUS → Automation. Nagłówek i dolny pasek
+  mieszczą się przy 360 i 390 px: `npm run check:responsive` (Playwright, build produkcyjny, każda zakładka).
+- **P5 (e70d5b5)**: `src/lib/buildVersion.ts`: przy starcie i powrocie do karty porównanie `/version.json` z `__BUILD_HASH__`,
+  przy różnicy aktualizacja SW i jedno przeładowanie (bezpiecznik w `sessionStorage`). SW: `skipWaiting` + `clientsClaim` (workbox).
+- `verify`: 27 plików testów, 639 testów, wszystkie asserty zielone (mniej testów niż 644, bo usunięto testy radaru dotacji razem z zakładką).
+
+Nowe blokady i uwagi z tej rundy:
+
+- **Playwright bez danych z funkcji**: brak hasła lokalnie, więc wywołania `/.netlify/functions/*` w teście dostają 503; panele CAMPAIGNS,
+  WEBINARS, MAILE są mierzone w stanie „brak danych”. HOME czyta Supabase bezpośrednio i ma prawdziwe dane. Szerokie tabele z danymi
+  z funkcji nie były mierzone. Na mobile `html, body` mają `overflow-x: hidden` (od dawna), co może maskować przepełnienie w `scrollWidth`.
+- **Edge headless nie startuje pod Playwright** na tym komputerze; test używa Chromium Playwrighta (`PW_CHANNEL=chromium`,
+  `node node_modules/playwright/cli.js install chromium`).
+- **`assert-campaigns` pada** (`campaignDiagnosis.ts does not query meta_ads_daily`) już przed tą rundą; nie jest w `verify`, nie ruszane.
+- `META_PURCHASES_FIXED_ON` w `src/lib/orderWindow.ts` zostaje `null` (to bramka metryk, nie tekst); teksty już go nie używają.
