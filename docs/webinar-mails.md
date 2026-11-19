@@ -117,9 +117,11 @@ Tabela w zakładce: data, slot, wariant, status, temat, CTR z Wix (unikalne klik
    do katalogu tymczasowego. Pierwszy przebieg vitest padł na starcie workera `financePanel.test.tsx` (jsdom z OneDrive ładuje się ~46 s,
    limit 60 s); po rozgrzaniu cache: zielone.
 4. **Unregister SW + clear cache** wymaga przeglądarki z otwartym Stanleyem; z tej sesji niewykonalne.
-5. **Czwartek: 2 szablony zablokowane przez `${contact.name.first}`**, którego Wix nie podmienia: `01-2026-10-20-…pamiec-cztery-razy-lepsza`
-   (w treści) i `02-2026-10-29-contact-name-first…` (w temacie i treści). Kolejka je pomija; w czwartek gotowe są 3 szablony (03, 04, 05),
-   więc zakładka pokazuje bursztynowy `MAILE_KOLEJKA_NISKA`. Treść zostawiona bez zmian; do poprawy: usunąć `${contact.name.first}` (np. „Cześć,”).
+5. **Czwartek 02 (`02-2026-10-29-contact-name-first…`) zablokowany**: `${contact.name.first}` jest w **temacie** (i treści), a Wix go nie podmienia.
+   Temat wymaga nowego copy od autora, kod go nie zmienia. Kolejka pomija ten szablon. (Czw 01 odblokowany 19.11, patrz niżej.)
+6. **Cyfry w tematach**: walidator tylko OSTRZEGA o cyfrach (blokuje „!”, tagi, „zł”, „%”). Gotowe tematy z cyframi: czw 01, czw 04,
+   wt 02, wt 04 (godzina „18:00”) i wt 01 („1000 słów. 17 godzin…”). Bez nowego copy od autora tematy zostają; jeśli cyfry mają blokować, trzeba zaostrzyć
+   `validateSubject` i dać nowe tematy.
 
 ## Stan na 2026-11-19 (noc): martwy link wypisania
 
@@ -127,3 +129,13 @@ Tabela w zakładce: data, slot, wariant, status, temat, CTR z Wix (unikalne klik
 - Dry-run `webinar-mail-run` na wtorek 24.11 06:00 (prawdziwy Wix): szablon `01-2026-10-20-1000-slow-17-godzin-zero-wkuwania.html`, wariant `landing`,
   `sendAt 2026-11-24T06:00:00Z`; bezpieczniki KONTO_ACTIVE, TEMAT, LINK_200, BRAK_WYSYLKI_DZIS, PAUZA_WYLACZONA, ZNACZNIKI_ROZWIAZANE, SENDAT_W_PRZYSZLOSCI: OK;
   bramka AUTO_OFF (`wouldPublish: false`). Finalny HTML: 0 × `{{`, 0 × `${`; 4 linki `<a>`: 3 × `www.wceen.com` (link zapisu), 1 × `mailto:` (wceen.com).
+
+## Stan na 2026-11-19 (noc, 2): czwartek 01 odblokowany
+
+- `thursday/01-2026-10-20-dzis-o-18-00-pamiec-cztery-razy-lepsza.html`: `${contact.name.first}` było tylko w treści (linia 33, samodzielne powitanie
+  przed akapitem „przez czterdzieści lat…”); temat i preheader bez tagu. Zamienione na „Cześć,”; reszta bez zmian.
+- Walidator: `blocked: []`; render obu wariantów: 0 × `{{`, 0 × `${`.
+- Kolejki: wtorek 4 gotowe / 0 zablokowanych, czwartek 4 gotowe / 1 zablokowany (02). `MAILE_KOLEJKA_NISKA` (≤ 3) gaśnie w czwartku.
+- Dry-run `webinar-mail-run` na czwartek 26.11 05:00Z (prawdziwy Wix): szablon czw 01, wariant `landing` (`www.wceen.com/darmowy-webinar`),
+  `sendAt 2026-11-26T06:00:00Z` = 07:00 Warszawa; wszystkie 7 bezpieczników OK; bramka AUTO_OFF (`wouldPublish: false`).
+  Finalny HTML: 0 × `{{`, 0 × `${`; 4 linki `<a>`: 3 × `www.wceen.com/darmowy-webinar`, 1 × `mailto:` (wceen.com).
