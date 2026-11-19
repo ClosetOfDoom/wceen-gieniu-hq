@@ -145,6 +145,20 @@ describe('webinar-mail-admin (Functions API v2, Request → Response)', () => {
   })
 })
 
+describe('webinar-mail-health (publiczny, tylko GET, tylko odczyt)', () => {
+  type V2 = (req: Request) => Promise<Response>
+  const loadH = async (): Promise<V2> => (await import('../netlify/functions/webinar-mail-health.js')).default as V2
+  it('GET bez hasła → 200 z dokładnie dozwolonymi polami (bez Blobs lokalnie: blobsRead "error", nie 500); POST → 405', async () => {
+    const h = await loadH()
+    const res = await h(new Request('https://app.example/.netlify/functions/webinar-mail-health'))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(Object.keys(body).sort()).toEqual(['auto', 'blobsRead', 'build', 'kolejka', 'nastepnaWysylka', 'pauza'])
+    expect(['ok', 'error']).toContain(body.blobsRead)
+    expect((await h(new Request('https://app.example/x', { method: 'POST', body: '{}' }))).status).toBe(405)
+  })
+})
+
 describe('tts-health ?live=1 tylko po zalogowaniu', () => {
   it('bez hasła ?live=1 daje 401 i nie woła ElevenLabs; z hasłem wywołanie live idzie do ElevenLabs', async () => {
     const handler = await load('tts-health')

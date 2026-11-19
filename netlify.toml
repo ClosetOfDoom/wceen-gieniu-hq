@@ -6,9 +6,10 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# The webinar mail templates are read from disk by webinar-mail-run / webinar-mail-admin.
+# The webinar mail templates are read from disk by webinar-mail-run / webinar-mail-admin / webinar-mail-health;
+# dist/version.json (written by vite build) gives the functions the build hash (netlify/shared/buildInfo.js).
 [functions]
-  included_files = ["webinar-mails/**"]
+  included_files = ["webinar-mails/**", "dist/version.json"]
 
 [[redirects]]
   from = "/*"
@@ -41,6 +42,11 @@
   for = "/registerSW.js"
   [headers.values]
     Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/version.json"
+  [headers.values]
+    Cache-Control = "no-store"
 
 [[headers]]
   for = "/index.html"

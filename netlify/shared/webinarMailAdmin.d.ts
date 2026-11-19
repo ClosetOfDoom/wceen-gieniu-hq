@@ -10,3 +10,13 @@ export function adminAction(args: {
   now?: Date
   config?: WebinarMailConfig
 }): Promise<{ ok: boolean; error?: string; outcome?: RunOutcome; [k: string]: unknown }>
+export function nextPlannedSend(now: Date, config?: WebinarMailConfig): Date | null
+export interface HealthSummary {
+  build: string
+  blobsRead: 'ok' | 'error'
+  auto: boolean | null
+  pauza: boolean | null
+  kolejka: { wtorek: number | null; czwartek: number | null }
+  nastepnaWysylka: string | null
+}
+export function healthSummary(args: { deps: Pick<RunDeps, 'store' | 'loadTemplates'>; build: string; now?: Date; config?: WebinarMailConfig }): Promise<HealthSummary>

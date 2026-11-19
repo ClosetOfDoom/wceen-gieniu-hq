@@ -136,3 +136,53 @@ export async function adminAction({ action, body, deps, now = new Date(), config
       return { ok: false, error: `nieznana akcja: ${action}` }
   }
 }
+
+/**
+ * The next planned send (sendAtLocal, 07:00 Warsaw) of any slot that is still ahead of `now`, skipping skipDates.
+ * It is the slot's time, not a promise: whether it goes out also depends on AUTO, PAUZA and the safeguards.
+ */
+export function nextPlannedSend(now, config = WEBINAR_MAIL_CONFIG) {
+  for (let i = 0; i < 16; i++) {
+    const p = warsawParts(new Date(now.getTime() + i * 86400e3))
+    if (!slotForWeekday(p.weekday, config) || config.skipDates.includes(p.date)) continue
+    const at = warsawLocalToUtc(p.date, config.sendAtLocal)
+    if (at.getTime() > now.getTime()) return at
+  }
+  return null
+}
+
+const SLOT_PL = { tuesday: 'wtorek', thursday: 'czwartek' }
+
+/**
+ * The PUBLIC health summary (webinar-mail-health). Exactly these fields and nothing else: no template content or
+ * names, no campaign IDs, no e-mails, no secrets. Reads the store the same way webinar-mail-run does
+ * (store.getState + store.getLog of createBlobStore). When the read fails: blobsRead "error" and the
+ * store-derived fields are null (never a made-up false / count).
+ */
+export async function healthSummary({ deps, build, now = new Date(), config = WEBINAR_MAIL_CONFIG }) {
+  let state = null
+  let log = null
+  try {
+    ;[state, log] = await Promise.all([deps.store.getState(), deps.store.getLog()])
+  } catch (e) {
+    console.error('[webinar-mail-health] blobs read failed:', String(e?.message ?? e).slice(0, 200))
+  }
+  const blobsRead = state && log ? 'ok' : 'error'
+  const kolejka = {}
+  for (const slot of SLOT_NAMES) {
+    let n = null
+    if (log) {
+      try { n = buildQueue(slot, await deps.loadTemplates(slot), log, config).readyCount } catch { n = null }
+    }
+    kolejka[SLOT_PL[slot] ?? slot] = n
+  }
+  const next = nextPlannedSend(now, config)
+  return {
+    build: String(build ?? 'unknown'),
+    blobsRead,
+    auto: state ? Boolean(state.auto) : null,
+    pauza: state ? Boolean(state.pause) : null,
+    kolejka,
+    nastepnaWysylka: next ? next.toISOString() : null,
+  }
+}

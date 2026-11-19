@@ -11,7 +11,7 @@ import {
 import { WEBINAR_MAIL_CONFIG as CFG } from '../../../netlify/shared/webinarMailConfig.js'
 import { createMemoryStore } from '../../../netlify/shared/webinarMailStore.js'
 import { createWixClient } from '../../../netlify/shared/webinarMailWix.js'
-import { adminAction, adminStatus } from '../../../netlify/shared/webinarMailAdmin.js'
+import { adminAction, adminStatus, healthSummary, nextPlannedSend } from '../../../netlify/shared/webinarMailAdmin.js'
 import {
   importTemplate, unwrapTrackingLink, stripWixInjection, replaceWebinarLinks, classifySlot, removeOwnUnsubscribeLinks,
 } from '../../../netlify/shared/webinarMailImport.js'
@@ -600,6 +600,47 @@ describe('Wix client payloads', () => {
   it('positive control: the placeholder really is replaced (a template that kept it would be caught)', () => {
     expect(renderCampaignHtml('<a href="{{WEBINAR_URL}}">x</a>', 'https://a.pl')).toEqual({ html: '<a href="https://a.pl">x</a>', unresolved: [] })
     expect(renderCampaignHtml('<a href="{{WEBINAR_URL}}">x</a>', 'https://a.pl').html).not.toContain('{{')
+  })
+})
+
+// ── Public health summary (webinar-mail-health) ──────────────────────────────────
+
+describe('healthSummary (public webinar-mail-health)', () => {
+  it('returns exactly the allowed fields: build, blobsRead, auto, pauza, kolejka{wtorek,czwartek}, nastepnaWysylka', async () => {
+    const s = setup({ auto: false, pause: true, templates: [T(1), T(2), { file: '03-bad.html', html: tpl('Zły!') }] })
+    await s.ready
+    const h = await healthSummary({ deps: s.deps, build: 'abc1234', now: new Date('2026-11-20T10:00:00Z') })
+    expect(Object.keys(h).sort()).toEqual(['auto', 'blobsRead', 'build', 'kolejka', 'nastepnaWysylka', 'pauza'])
+    expect(Object.keys(h.kolejka).sort()).toEqual(['czwartek', 'wtorek'])
+    expect(h).toEqual({ build: 'abc1234', blobsRead: 'ok', auto: false, pauza: true, kolejka: { wtorek: 2, czwartek: 2 }, nastepnaWysylka: '2026-11-24T06:00:00.000Z' })
+  })
+
+  it('no template content, file names, subjects, campaign IDs, e-mails or test contact in the body', async () => {
+    const s = setup({ log: [{ key: '2026-11-17-tuesday', date: '2026-11-17', slot: 'tuesday', templateFile: '01-t.html', subject: 'Temat numer jeden', status: 'scheduled', campaignId: 'camp-secret-id', createdAt: '2026-11-17T05:00:00Z' } as LogEntry] })
+    await s.ready
+    const text = JSON.stringify(await healthSummary({ deps: s.deps, build: 'x', now: new Date('2026-11-20T10:00:00Z') }))
+    for (const bad of ['camp-secret-id', '01-t.html', 'Temat', '@', 'WEBINAR_URL', CFG.testContactId, 'http']) expect(text).not.toContain(bad)
+  })
+
+  it('used templates leave the ready count (same queue as the run)', async () => {
+    const s = setup({ log: [{ key: '2026-11-17-tuesday', date: '2026-11-17', slot: 'tuesday', templateFile: '01-t.html', subject: 'x', status: 'scheduled', campaignId: 'c', createdAt: '2026-11-17T05:00:00Z' } as LogEntry] })
+    await s.ready
+    expect((await healthSummary({ deps: s.deps, build: 'x', now: new Date('2026-11-20T10:00:00Z') })).kolejka).toEqual({ wtorek: 4, czwartek: 5 })
+  })
+
+  it('a failing store read → blobsRead "error", store fields null (never made-up values)', async () => {
+    const boom = async () => { throw new Error('Netlify Blobs has failed to perform a read using strong consistency') }
+    const deps = { store: { getState: boom, getLog: boom } as never, loadTemplates: async () => [T(1)] }
+    const h = await healthSummary({ deps, build: 'x', now: new Date('2026-11-20T10:00:00Z') })
+    expect(h).toMatchObject({ blobsRead: 'error', auto: null, pauza: null, kolejka: { wtorek: null, czwartek: null } })
+    expect(h.nastepnaWysylka).toBe('2026-11-24T06:00:00.000Z')
+  })
+
+  it('nextPlannedSend: 07:00 Warsaw of the next Tue/Thu still ahead, CET and CEST, skipDates skipped', () => {
+    expect(nextPlannedSend(new Date('2026-11-24T05:59:00Z'))?.toISOString()).toBe('2026-11-24T06:00:00.000Z') // Tue before 07:00
+    expect(nextPlannedSend(new Date('2026-11-24T06:00:00Z'))?.toISOString()).toBe('2026-11-26T06:00:00.000Z') // after → Thu
+    expect(nextPlannedSend(new Date('2026-06-01T12:00:00Z'))?.toISOString()).toBe('2026-06-02T05:00:00.000Z') // CEST
+    expect(nextPlannedSend(new Date('2026-12-23T12:00:00Z'))?.toISOString()).toBe('2026-12-29T06:00:00.000Z') // 24.12 skipped
   })
 })
 
