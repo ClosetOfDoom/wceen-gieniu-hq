@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   runWebinarMail, validateSubject, validateTemplate, buildQueue, nextVariant, evaluateSafeguards,
   warsawParts, warsawLocalToUtc, buildAlerts, ctrOf, renderCampaignHtml, SLOT_NAMES,
-  assertTestAudience, createAndPublish, testAudience, testSendAt,
+  assertTestAudience, createAndPublish, testAudience, testSendAt, unresolvedTags,
   type RunDeps, type WixLike, type TemplateFile, type LogEntry,
 } from '../../../netlify/shared/webinarMail.js'
 import { WEBINAR_MAIL_CONFIG as CFG } from '../../../netlify/shared/webinarMailConfig.js'
@@ -13,7 +13,7 @@ import { createMemoryStore } from '../../../netlify/shared/webinarMailStore.js'
 import { createWixClient } from '../../../netlify/shared/webinarMailWix.js'
 import { adminAction, adminStatus } from '../../../netlify/shared/webinarMailAdmin.js'
 import {
-  importTemplate, unwrapTrackingLink, stripWixInjection, replaceWebinarLinks, classifySlot,
+  importTemplate, unwrapTrackingLink, stripWixInjection, replaceWebinarLinks, classifySlot, removeOwnUnsubscribeLinks,
 } from '../../../netlify/shared/webinarMailImport.js'
 
 // ── helpers ─────────────────────────────────────────────────────────────────────
@@ -598,8 +598,68 @@ describe('Wix client payloads', () => {
   })
 
   it('positive control: the placeholder really is replaced (a template that kept it would be caught)', () => {
-    expect(renderCampaignHtml('<a href="{{WEBINAR_URL}}">x</a>', 'https://a.pl')).toBe('<a href="https://a.pl">x</a>')
-    expect(renderCampaignHtml('<a href="{{WEBINAR_URL}}">x</a>', 'https://a.pl')).not.toContain('{{')
+    expect(renderCampaignHtml('<a href="{{WEBINAR_URL}}">x</a>', 'https://a.pl')).toEqual({ html: '<a href="https://a.pl">x</a>', unresolved: [] })
+    expect(renderCampaignHtml('<a href="{{WEBINAR_URL}}">x</a>', 'https://a.pl').html).not.toContain('{{')
+  })
+})
+
+// ── Unresolved tags: {{unsubscribe}}, {{X}}, ${...} block the send ───────────────
+
+describe('unresolved tags in the final HTML', () => {
+  const FOOT = '<p>Dostajesz tę wiadomość, bo zapisałeś się na nasze materiały o nauce i pamięci.\n  <a href="{{unsubscribe}}" style="color:#9A948A;">Wypisz się</a></p>'
+  const withUnsub = tpl('Temat z linkiem wypisania', `<p>Cześć</p><a href="{{WEBINAR_URL}}">Wchodzę</a>${FOOT}`)
+
+  it('a template with {{unsubscribe}} is rejected', () => {
+    const v = validateTemplate('x.html', withUnsub)
+    expect(v.blocked.join(' ')).toMatch(/nierozwiązane znaczniki po renderze: \{\{unsubscribe\}\}/)
+    expect(buildQueue('tuesday', [{ file: '01-x.html', html: withUnsub }], []).next).toBeNull()
+  })
+
+  it('the same template without it passes (sentence kept, link gone)', () => {
+    const { html, removed } = removeOwnUnsubscribeLinks(withUnsub)
+    expect(removed).toBe(1)
+    expect(html).toContain('Dostajesz tę wiadomość, bo zapisałeś się na nasze materiały o nauce i pamięci.')
+    expect(html).not.toContain('Wypisz'); expect(html).not.toContain('{{unsubscribe}}')
+    expect(validateTemplate('x.html', html).blocked).toEqual([])
+    // <br> before a stand-alone link goes with it
+    expect(removeOwnUnsubscribeLinks('a</a><br>\n  <a href="{{unsubscribe}}" style="x">Wypisz się z listy</a>\n</td>').html).toBe('a</a>\n</td>')
+  })
+
+  it('any unresolved {{X}} or ${...} blocks: validator, render, safeguard and createAndPublish', async () => {
+    expect(unresolvedTags('a {{X}} b ${contact.name.first} c {{X}}')).toEqual(['{{X}}', '${contact.name.first}'])
+    const r = renderCampaignHtml(tpl('Temat', '<a href="{{WEBINAR_URL}}">x</a> {{X}}'), 'https://a.pl')
+    expect(r.unresolved).toEqual(['{{X}}'])
+    expect(validateTemplate('x.html', tpl('Temat', '<a href="{{WEBINAR_URL}}">x</a> Cześć ${contact.name.first}')).blocked.join(' ')).toMatch(/\$\{contact\.name\.first\}/)
+    const checks = evaluateSafeguards({ account: { status: 'ACTIVE' }, subject: 'Temat', link: { status: 200 }, sendsToday: [], state: { pause: false }, sendAt: new Date('2026-12-01T06:00:00Z'), now: CET_TUE_0600, unresolved: ['{{X}}'] })
+    expect(checks.find((c) => c.id === 'ZNACZNIKI_ROZWIAZANE')).toMatchObject({ ok: false })
+    const { wix, calls } = fakeWix()
+    for (const test of [false, true]) {
+      await expect(createAndPublish({ wix, subject: 'T', html: '<a href="https://a.pl">x</a> {{unsubscribe}}', sendAt: 's', audience: test ? testAudience() : CFG.audience, test })).rejects.toThrow(/BEZPIECZNIK TREŚCI/)
+    }
+    expect(calls.create).not.toHaveBeenCalled(); expect(calls.publish).not.toHaveBeenCalled()
+  })
+
+  it('the run skips a template with leftovers (not used up) and takes the next clean one', async () => {
+    const bad = { file: '01-bad.html', html: withUnsub }
+    const s = setup({ templates: [bad, T(2)] })
+    const r = await run(s, CET_TUE_0600)
+    expect(r).toMatchObject({ status: 'scheduled' }); expect(r.plan?.template).toBe('02-t.html')
+    expect(s.calls.create.mock.calls[0][0].html).not.toMatch(/\{\{|\$\{/)
+  })
+
+  it('a queue with only such templates fails red (MAILE_AWARIA / queue-empty), nothing is used up', async () => {
+    const s = setup({ templates: [{ file: '01-bad.html', html: withUnsub }] })
+    const r = await run(s, CET_TUE_0600)
+    expect(r).toMatchObject({ status: 'failed', reason: 'queue-empty' })
+    expect(s.calls.create).not.toHaveBeenCalled()
+    const alerts = buildAlerts({ state: { auto: true, pause: false, ackedRunAt: null }, lastRun: r, runToday: r, queues: [], now: CET_TUE_0600 })
+    expect(alerts.map((a) => a.rule)).toContain('MAILE_AWARIA')
+  })
+
+  it('the test path refuses a template with leftovers too', async () => {
+    const s = setup({ templates: [{ file: '01-bad.html', html: withUnsub }] })
+    const r = await adminAction({ action: 'send-test', body: { slot: 'tuesday' }, deps: s.deps })
+    expect(r.ok).toBe(false); expect(s.calls.create).not.toHaveBeenCalled()
   })
 })
 
@@ -617,11 +677,11 @@ describe('import from a sent Wix campaign', () => {
     expect(unwrapTrackingLink('https://example.com/x')).toBe('https://example.com/x')
   })
 
-  it('strips the Wix footer and pixel, restores the unsubscribe placeholder, puts {{WEBINAR_URL}} in', () => {
+  it('strips the Wix footer and pixel, drops the own unsubscribe link, puts {{WEBINAR_URL}} in', () => {
     const t = importTemplate({ html: sample('https://fundacjawceen.clickmeeting.com/nauka-jezykow-w-xxi-wieku/register'), subject: 'Dziś 18:00' })
     expect(t.slot).toBe('tuesday')
     const html = t.html as string
-    expect(html).toContain('href="{{WEBINAR_URL}}"'); expect(html).toContain('href="{{unsubscribe}}"')
+    expect(html).toContain('href="{{WEBINAR_URL}}"'); expect(html).not.toContain('unsubscribe'); expect(html).not.toContain('Wypisz')
     expect(html).not.toMatch(/\/so\//); expect(html).not.toContain('TRACKING_PIXEL'); expect(html).not.toContain('wysłana z')
     expect(validateTemplate('x.html', html).blocked).toEqual([])
   })

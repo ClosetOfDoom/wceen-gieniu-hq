@@ -114,7 +114,8 @@ export async function adminAction({ action, body, deps, now = new Date(), config
       if (!(variant in variants)) return { ok: false, error: `wariant: ${Object.keys(variants).join(' albo ')}` }
       const url = variants[variant]
       const template = templates.find((t) => t.file === q.next.file)
-      const html = renderCampaignHtml(template.html, url, config)
+      const { html, unresolved } = renderCampaignHtml(template.html, url, config)
+      if (unresolved.length) return { ok: false, error: `BEZPIECZNIK TREŚCI: nierozwiązane znaczniki w finalnym HTML (${unresolved.join(', ')})` }
       const sendAt = testSendAt(now, config).toISOString()
       const { subject, preheader } = q.next
       const key = `TEST-${warsawParts(now).date}-${slot}-${variant}`

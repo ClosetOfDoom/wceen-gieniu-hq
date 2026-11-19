@@ -106,12 +106,30 @@ export function validateTemplate(file, html, config = WEBINAR_MAIL_CONFIG) {
   if (!html.includes(config.placeholder)) blocked.push(`brak ${config.placeholder} (link zapisu)`)
   if (/https?:\/\/[^"'\s]*\/so\/[A-Za-z0-9_-]+\/(?:c|o)\b/i.test(html)) blocked.push('linki śledzące starej kampanii Wix (/so/…)')
   if (/<!--\s*TRACKING_PIXEL\s*-->|Ta wiadomość e-mail została wysłana z/i.test(html)) blocked.push('stopka wstrzyknięta przez Wix w treści szablonu')
+  // The same render as the real send (with a stand-in URL): whatever tag survives it would reach the inbox raw.
+  const { unresolved } = renderCampaignHtml(html, 'https://render-check.invalid/', config)
+  if (unresolved.length) blocked.push(`nierozwiązane znaczniki po renderze: ${unresolved.join(', ')}`)
   return { file, subject, preheader, blocked, warnings }
 }
 
-/** Replace the registration placeholder with the chosen URL (all occurrences). */
+/**
+ * Tags that Wix does NOT replace in an HTML-editor campaign: {{...}} (e.g. {{unsubscribe}}) and ${...}
+ * (e.g. ${contact.name.first}). Proven on 2026-11-19: both arrive raw. Wix adds its own footer with a working unsubscribe link.
+ */
+const UNRESOLVED_TAG = /\{\{[^{}]*\}\}|\$\{[^{}]*\}/g
+
+/** Distinct unresolved tags in a final HTML. */
+export function unresolvedTags(html) {
+  return [...new Set(String(html).match(UNRESOLVED_TAG) ?? [])]
+}
+
+/**
+ * THE render of the final campaign HTML (production, test and template validation): replaces {{WEBINAR_URL}}
+ * with the chosen URL and reports every tag left over. Any leftover blocks the send.
+ */
 export function renderCampaignHtml(html, url, config = WEBINAR_MAIL_CONFIG) {
-  return html.split(config.placeholder).join(url)
+  const out = html.split(config.placeholder).join(url)
+  return { html: out, unresolved: unresolvedTags(out) }
 }
 
 // ── Queue and variants ──────────────────────────────────────────────────────────
@@ -158,7 +176,7 @@ export function nextVariant(slot, log, config = WEBINAR_MAIL_CONFIG) {
 
 /**
  * Every check on its own, none short-circuits another: the report shows all that failed.
- *   ctx: { account, subject, link: {status, error?}, sendsToday: [], state, sendAt (Date), now (Date) }
+ *   ctx: { account, subject, link: {status, error?}, sendsToday: [], state, sendAt (Date), now (Date), unresolved: [] }
  */
 export function evaluateSafeguards(ctx, config = WEBINAR_MAIL_CONFIG) {
   const checks = []
@@ -170,6 +188,8 @@ export function evaluateSafeguards(ctx, config = WEBINAR_MAIL_CONFIG) {
   add('BRAK_WYSYLKI_DZIS', (ctx.sendsToday ?? []).length === 0,
     (ctx.sendsToday ?? []).length ? `dziś już jest kampania tego webinaru: ${ctx.sendsToday.map((c) => String(c.campaignId).slice(0, 8)).join(', ')}` : 'dziś nie ma jeszcze kampanii tego webinaru')
   add('PAUZA_WYLACZONA', !ctx.state?.pause, ctx.state?.pause ? 'PAUZA włączona' : 'PAUZA wyłączona')
+  const left = ctx.unresolved ?? []
+  add('ZNACZNIKI_ROZWIAZANE', left.length === 0, left.length ? `w finalnym HTML zostały znaczniki: ${left.join(', ')}` : 'finalny HTML bez {{…}} i ${…}')
   const leadMin = (ctx.sendAt.getTime() - ctx.now.getTime()) / 60000
   add('SENDAT_W_PRZYSZLOSCI', leadMin >= config.minLeadMinutes && leadMin <= 365 * 24 * 60,
     `do wysyłki zostało ${Math.round(leadMin)} min (minimum ${config.minLeadMinutes})`)
@@ -237,6 +257,9 @@ export function testSendAt(now, config = WEBINAR_MAIL_CONFIG) {
  */
 export async function createAndPublish({ wix, subject, preheader, html, sendAt, audience, test = false }, config = WEBINAR_MAIL_CONFIG) {
   if (test) assertTestAudience(audience, config)
+  // Same check as the render: nothing with a raw {{...}} / ${...} ever reaches Wix, test or production.
+  const left = unresolvedTags(html)
+  if (left.length) throw new Error(`BEZPIECZNIK TREŚCI: nierozwiązane znaczniki w finalnym HTML (${left.join(', ')})`)
   const campaignId = await wix.createCampaign({ subject, preheader, html })
   try {
     await wix.publishCampaign(campaignId, { subject, sendAt, audience })
@@ -301,7 +324,7 @@ export async function runWebinarMail({ now, deps, dryRun = false, force = false,
     const variant = nextVariant(slot, log, config)
     const url = config.slots[slot].variants[variant]
     const template = templates.find((t) => t.file === queue.next.file)
-    const html = renderCampaignHtml(template.html, url, config)
+    const { html, unresolved } = renderCampaignHtml(template.html, url, config)
     const { subject, preheader } = queue.next
     const sendAt = warsawLocalToUtc(parts.date, config.sendAtLocal)
 
@@ -310,7 +333,7 @@ export async function runWebinarMail({ now, deps, dryRun = false, force = false,
       deps.checkUrl(url).catch((e) => ({ status: 0, error: scrub(e.message) })),
       findSendsToday({ slot, today: parts.date, wix, knownIds: log.map((e) => e.campaignId).filter(Boolean) }, config).catch(() => null),
     ])
-    const checks = evaluateSafeguards({ account, subject, link, sendsToday: sendsToday ?? [], state, sendAt, now }, config)
+    const checks = evaluateSafeguards({ account, subject, link, sendsToday: sendsToday ?? [], state, sendAt, now, unresolved }, config)
     if (sendsToday === null) {
       const i = checks.findIndex((c) => c.id === 'BRAK_WYSYLKI_DZIS')
       checks[i] = { id: 'BRAK_WYSYLKI_DZIS', ok: false, detail: 'nie udało się sprawdzić, czy dziś jest już kampania (lista kampanii Wix niedostępna)' }

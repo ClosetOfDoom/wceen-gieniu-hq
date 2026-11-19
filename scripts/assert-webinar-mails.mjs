@@ -5,15 +5,16 @@
 //
 // FAILS on: a missing slot folder, a template without <title>, without {{WEBINAR_URL}}, with a tracking
 // link of an old Wix campaign, with the Wix-injected footer; duplicate numeric prefixes; a cron that
-// differs between the function file and the config; functions.included_files missing in netlify.toml.
-// A template the SUBJECT VALIDATOR blocks ("!", merge tags, prices) is not a failure here: the queue
-// skips it and the tab lists it with the reason. It is printed as INFO.
+// differs between the function file and the config; functions.included_files missing in netlify.toml;
+// {{unsubscribe}} in any template; a READY template whose final HTML still has {{...}} / ${...}.
+// A template the VALIDATOR blocks (subject: "!", merge tags, prices; body: tags left after the render, e.g.
+// ${contact.name.first}) is not a failure here: the queue skips it and the tab lists it with the reason (INFO).
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WEBINAR_MAIL_CONFIG as CFG } from '../netlify/shared/webinarMailConfig.js'
-import { validateTemplate, buildQueue } from '../netlify/shared/webinarMail.js'
+import { validateTemplate, buildQueue, renderCampaignHtml } from '../netlify/shared/webinarMail.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 let errors = 0
@@ -34,10 +35,15 @@ for (const [slot, s] of Object.entries(CFG.slots)) {
     const v = validateTemplate(t.file, t.html)
     const hard = v.blocked.filter((b) => /WEBINAR_URL|śledzące|stopka/.test(b) || b === 'brak tematu')
     for (const h of hard) { fail(`${s.dir}/${t.file}: ${h}`); structural++ }
+    // The own unsubscribe link is dead in an HTML campaign (Wix adds its own footer): it must not be in any template.
+    if (t.html.includes('{{unsubscribe}}')) { fail(`${s.dir}/${t.file}: contains {{unsubscribe}} (dead link; Wix adds its own unsubscribe footer)`); structural++ }
+    // Every template that the queue would use renders with no {{...}} / ${...} left (same render as the real send).
+    const r = renderCampaignHtml(t.html, s.variants[Object.keys(s.variants)[0]])
+    if (v.blocked.length === 0 && r.unresolved.length) { fail(`${s.dir}/${t.file}: ready but its final HTML keeps ${r.unresolved.join(', ')}`); structural++ }
     const soft = v.blocked.filter((b) => !hard.includes(b))
-    if (soft.length) info(`${s.dir}/${t.file}: blocked by the subject validator (${soft.join('; ')}), the queue skips it`)
+    if (soft.length) info(`${s.dir}/${t.file}: blocked by the validator (subject or leftover tags: ${soft.join('; ')}), the queue skips it`)
   }
-  if (!structural) ok(`${s.dir}/: ${files.length} templates, all structurally sound`)
+  if (!structural) ok(`${s.dir}/: ${files.length} templates, all structurally sound, no {{unsubscribe}}, ready ones render without {{...}} / ${'${...}'}`)
   const q = buildQueue(slot, templates, [])
   ok(`${s.dir}/: ${q.readyCount} ready, ${q.blockedCount} blocked`)
 }

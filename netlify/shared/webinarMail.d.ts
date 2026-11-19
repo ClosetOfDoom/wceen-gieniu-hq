@@ -15,7 +15,8 @@ export function parseTemplate(html: string): { subject: string; preheader: strin
 
 export interface TemplateCheck { file: string; subject: string; preheader: string; blocked: string[]; warnings: string[] }
 export function validateTemplate(file: string, html: string, config?: WebinarMailConfig): TemplateCheck
-export function renderCampaignHtml(html: string, url: string, config?: WebinarMailConfig): string
+export function unresolvedTags(html: string): string[]
+export function renderCampaignHtml(html: string, url: string, config?: WebinarMailConfig): { html: string; unresolved: string[] }
 
 export interface TemplateFile { file: string; html: string }
 export interface LogEntry {
@@ -59,6 +60,7 @@ export function evaluateSafeguards(ctx: {
   state?: { pause?: boolean } | null
   sendAt: Date
   now: Date
+  unresolved?: string[]
 }, config?: WebinarMailConfig): SafeguardCheck[]
 
 export interface MailAudience {

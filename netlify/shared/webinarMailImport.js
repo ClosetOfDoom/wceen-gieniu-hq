@@ -23,13 +23,21 @@ export function unwrapTrackingLink(href) {
   }
 }
 
-/** The unsubscribe link the dashboard editor URL-encodes ("[LINK%20WYPISANIA%20Z%20WIX]") → Wix placeholder. */
-function normaliseUnsubscribe(url) {
-  return /^\[LINK(?:%20| )WYPISANIA(?:%20| )Z(?:%20| )WIX\]$/i.test(url) ? '{{unsubscribe}}' : url
+export function unwrapAllLinks(html) {
+  return html.replace(/href=(["'])([^"']*)\1/gi, (_, q, href) => `href=${q}${unwrapTrackingLink(href)}${q}`)
 }
 
-export function unwrapAllLinks(html) {
-  return html.replace(/href=(["'])([^"']*)\1/gi, (_, q, href) => `href=${q}${normaliseUnsubscribe(unwrapTrackingLink(href))}${q}`)
+/**
+ * The template's OWN unsubscribe link (href "{{unsubscribe}}" or the dashboard's "[LINK WYPISANIA Z WIX]") is removed,
+ * together with a <br> right before it. Wix does not replace these in an HTML campaign (the link arrives dead) and adds
+ * its own footer with a working unsubscribe link, so the own link is redundant. The sentence before it stays.
+ */
+const OWN_UNSUBSCRIBE = /(?:<br\s*\/?>)?\s*<a\b[^>]*\bhref=(["'])(?:\{\{unsubscribe\}\}|\[LINK(?:%20| )WYPISANIA(?:%20| )Z(?:%20| )WIX\])\1[^>]*>[\s\S]*?<\/a>/gi
+
+export function removeOwnUnsubscribeLinks(html) {
+  let count = 0
+  const out = html.replace(OWN_UNSUBSCRIBE, () => { count++; return '' })
+  return { html: out, removed: count }
 }
 
 /** Removes the footer table Wix appends and the tracking pixel after it. */
@@ -69,7 +77,7 @@ export function setHeadFields(html, subject, preheader = '') {
 
 /** One sent campaign (preview html + subject) → { slot, html } or { slot: null } when it is not a webinar mail. */
 export function importTemplate({ html, subject, preheader = '' }, config = WEBINAR_MAIL_CONFIG) {
-  const unwrapped = stripWixInjection(unwrapAllLinks(html))
+  const unwrapped = removeOwnUnsubscribeLinks(stripWixInjection(unwrapAllLinks(html))).html
   const slot = classifySlot(unwrapped, config)
   if (!slot) return { slot: null, html: null }
   return { slot, html: setHeadFields(replaceWebinarLinks(unwrapped, config.placeholder), subject, preheader) }

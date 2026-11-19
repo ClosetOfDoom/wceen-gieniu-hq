@@ -3,6 +3,7 @@ import type { SlotName, WebinarMailConfig } from './webinarMailConfig.js'
 export function unwrapTrackingLink(href: string): string
 export function unwrapAllLinks(html: string): string
 export function stripWixInjection(html: string): string
+export function removeOwnUnsubscribeLinks(html: string): { html: string; removed: number }
 export function replaceWebinarLinks(html: string, placeholder?: string): string
 export function classifySlot(html: string, config?: WebinarMailConfig): SlotName | null
 export function slugify(text: string, max?: number): string

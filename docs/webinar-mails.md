@@ -25,14 +25,24 @@ AUTO wyłączone, PAUZA i `skipDates` (2026-12-24, 2026-12-31) to stany celowe: 
 
 ## Szablony
 
-Plik `webinar-mails/<slot>/NN-RRRR-MM-DD-slug.html`. Temat w `<title>`, preheader w `<meta name="preheader" content="…">`, link zapisu to `{{WEBINAR_URL}}`
-(w treści zostają tagi Wix, np. `${contact.name.first}` i `{{unsubscribe}}`).
+Plik `webinar-mails/<slot>/NN-RRRR-MM-DD-slug.html`. Temat w `<title>`, preheader w `<meta name="preheader" content="…">`, link zapisu to `{{WEBINAR_URL}}`.
+To **jedyny** znacznik w szablonie: Wix w kampanii z edytora HTML nie podmienia ani `{{unsubscribe}}`, ani `${contact.name.first}` (oba docierają surowe,
+sprawdzone 19.11.2026: ręczny mail z 09:07Z miał martwy link `href="{{unsubscribe}}"`, podgląd testu czw 01 ma surowe `${contact.name.first}`).
+
+**Wix dokleja stopkę z wypisaniem, własny link zbędny.** Szablony nie mają własnego linku „Wypisz się”; zdanie
+„Dostajesz tę wiadomość, bo zapisałeś się…” zostaje. 19.11.2026 usunięto po jednym `<a href="{{unsubscribe}}">` z 7 szablonów
+(wt 01–04, czw 01, 03, 05; czw 02 i 04 go nie miały). Import (`removeOwnUnsubscribeLinks`) usuwa taki link, zamiast go przenosić.
+
+**Jeden render**: `renderCampaignHtml(html, url)` podmienia `{{WEBINAR_URL}}` i zwraca `{ html, unresolved }`. Z niego korzystają walidator szablonu,
+`webinar-mail-run` i „Wyślij test”. Każdy znacznik `{{…}}` albo `${…}`, który przetrwa render, BLOKUJE wysyłkę:
+walidator odrzuca szablon (kolejka go pomija, szablon nie jest zużywany), bezpiecznik `ZNACZNIKI_ROZWIAZANE` w biegu (czerwony `MAILE_AWARIA`),
+a `createAndPublish` odmawia przed jakimkolwiek wywołaniem Wix (test i produkcja).
 
 **Walidator tematu** (reputacja nadawcy na domenach WP): BLOKUJE przy „!”, tagach scalania (`${…}`, `{{…}}`) i cenach („zł”, „%”); OSTRZEGA przy innych cyfrach.
 Zablokowany szablon jest pomijany w kolejce, a zakładka pokazuje jego nazwę pliku i powód.
 
 Import z wysłanych kampanii Wix: `npm run import:webinar-templates -- --write` (bez `--write` tylko podgląd). Importuje tylko kampanie z edytora HTML.
-Z podglądu Wix usuwa linki śledzące starej kampanii, stopkę wstrzykniętą przez Wix i piksel, zamienia adres zapisu na `{{WEBINAR_URL}}`.
+Z podglądu Wix usuwa linki śledzące starej kampanii, stopkę wstrzykniętą przez Wix, piksel i własny link wypisania, zamienia adres zapisu na `{{WEBINAR_URL}}`.
 Nie nadpisuje istniejących plików.
 
 ## „Wyślij test” = ta sama ścieżka co produkcja
@@ -61,16 +71,16 @@ Tabela w zakładce: data, slot, wariant, status, temat, CTR z Wix (unikalne klik
 
 - `src/lib/__tests__/webinarMail.test.ts` (Vitest): 06:00 Warszawa w CET i CEST, sendAt 07:00, idempotencja, AUTO OFF / PAUZA / skipDates, każdy bezpiecznik osobno,
   walidator tematu, naprzemienne warianty, pusta kolejka, DRY_RUN end-to-end, payloady Wix, ścieżka testowa (ten sam create+publish,
-  bezpiecznik odbiorców z `contacts-all` odrzuconym bez kontaktu z Wix, brak zużycia szablonu i wariantu).
+  bezpiecznik odbiorców z `contacts-all` odrzuconym bez kontaktu z Wix, brak zużycia szablonu i wariantu), nierozwiązane znaczniki
+  (szablon z `{{unsubscribe}}` odrzucony, ten sam bez niego przechodzi, `{{X}}` / `${…}` blokuje walidator, bezpiecznik, test i produkcję).
 - `npm run assert:webinar-mails`: struktura szablonów, zgodność crona, `included_files`, brak `publishCampaign` w funkcji admin,
-  jedna ścieżka publikacji, brak Send Test, skonfigurowany kontakt testowy.
+  jedna ścieżka publikacji, brak Send Test, skonfigurowany kontakt testowy, zero `{{unsubscribe}}` w szablonach,
+  każdy gotowy szablon renderuje się bez `{{…}}` i `${…}`.
 - `WEBINAR_MAIL_DRY_RUN=1` w Netlify zamienia każde uruchomienie funkcji w próbę (bez zajęcia klucza, bez kampanii, bez publikacji).
   Próbę można też zrobić przyciskiem w zakładce.
 
 ## Czego kod nie wie
 
-- Czy `{{unsubscribe}}` w kampanii z edytora HTML jest rozwiązywane przez Wix przy wysyłce. Tak wyglądają ostatnie kampanie wysłane z dashboardu
-  (m.in. dzisiejsza czwartkowa), dlatego import zamienia też starszy `[LINK WYPISANIA Z WIX]` na `{{unsubscribe}}`. Warto to potwierdzić w mailu testowym.
 - Preheadera nie da się odczytać z wysłanych kampanii przez API (lista i podgląd go nie zwracają), więc zaimportowane szablony mają pusty preheader.
 
 ## Stan na 2026-11-19 (wieczór)
@@ -103,11 +113,17 @@ Tabela w zakładce: data, slot, wariant, status, temat, CTR z Wix (unikalne klik
    Deploy potwierdzony tylko po hashu w bundlu strony.
 2. **Klucz Wix nie ma uprawnienia do Email Subscriptions** (`POST /email-marketing/v1/email-subscriptions` → 403). Kontakt testowy ma subskrypcję
    `NOT_SET` zamiast `SUBSCRIBED`; nie przeszkadza (4 maile dostarczone), ale nie da się tego ustawić z kodu.
-3. **`{{unsubscribe}}` z szablonu niepotwierdzony w doręczonym mailu.** W podglądzie Wix jest nadal jako `{{unsubscribe}}` (w linku śledzącym);
-   skrzynka fundacja@wceen.com nie jest dostępna z tej sesji. Do sprawdzenia: otworzyć jeden z 4 testowych maili z 19.11 ~18:29 i kliknąć „wypisz”.
-   Niezależnie od tego Wix dokleja własną stopkę.
-4. **Na tym komputerze nie ma Node.js ani npm w PATH.** `verify` uruchomione samodzielnym Node 24 (Netlify buduje na Node 20) i npm pobranym
+3. **Na tym komputerze nie ma Node.js ani npm w PATH.** `verify` uruchomione samodzielnym Node 24 (Netlify buduje na Node 20) i npm pobranym
    do katalogu tymczasowego. Pierwszy przebieg vitest padł na starcie workera `financePanel.test.tsx` (jsdom z OneDrive ładuje się ~46 s,
    limit 60 s); po rozgrzaniu cache: zielone.
-5. **Unregister SW + clear cache** wymaga przeglądarki z otwartym Stanleyem; z tej sesji niewykonalne.
-6. Czwartkowy szablon `02-2026-10-29-contact-name-first…` jest zablokowany przez walidator tematu (tag scalania) i pomijany w kolejce: do poprawy tematu.
+4. **Unregister SW + clear cache** wymaga przeglądarki z otwartym Stanleyem; z tej sesji niewykonalne.
+5. **Czwartek: 2 szablony zablokowane przez `${contact.name.first}`**, którego Wix nie podmienia: `01-2026-10-20-…pamiec-cztery-razy-lepsza`
+   (w treści) i `02-2026-10-29-contact-name-first…` (w temacie i treści). Kolejka je pomija; w czwartek gotowe są 3 szablony (03, 04, 05),
+   więc zakładka pokazuje bursztynowy `MAILE_KOLEJKA_NISKA`. Treść zostawiona bez zmian; do poprawy: usunąć `${contact.name.first}` (np. „Cześć,”).
+
+## Stan na 2026-11-19 (noc): martwy link wypisania
+
+- Usunięte `<a href="{{unsubscribe}}">…Wypisz się…</a>`: wt 01, 02, 03, 04 i czw 01, 03, 05: po 1 (razem 7); czw 02, 04: 0. W `{{unsubscribe}}` nie ma już żadnego szablonu.
+- Dry-run `webinar-mail-run` na wtorek 24.11 06:00 (prawdziwy Wix): szablon `01-2026-10-20-1000-slow-17-godzin-zero-wkuwania.html`, wariant `landing`,
+  `sendAt 2026-11-24T06:00:00Z`; bezpieczniki KONTO_ACTIVE, TEMAT, LINK_200, BRAK_WYSYLKI_DZIS, PAUZA_WYLACZONA, ZNACZNIKI_ROZWIAZANE, SENDAT_W_PRZYSZLOSCI: OK;
+  bramka AUTO_OFF (`wouldPublish: false`). Finalny HTML: 0 × `{{`, 0 × `${`; 4 linki `<a>`: 3 × `www.wceen.com` (link zapisu), 1 × `mailto:` (wceen.com).
