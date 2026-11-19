@@ -7,3 +7,7 @@ export function withStanleyAuth(
   inner: (event: any, context?: any) => Promise<any>,
   options?: { env?: Record<string, string | undefined> },
 ): (event: any, context?: any) => Promise<any>
+export function withStanleyAuthV2(
+  inner: (req: Request, context?: any) => Promise<Response>,
+  options?: { env?: Record<string, string | undefined> },
+): (req: Request, context?: any) => Promise<Response>

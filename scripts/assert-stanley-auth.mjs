@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Static check of the shared password (x-stanley-token):
 //  1. every function in netlify/functions that exports a handler goes through withStanleyAuth()
-//     and none of them sets a wildcard CORS origin;
+//     (v1) or withStanleyAuthV2() (v2, export default), and none of them sets a wildcard CORS origin.
+//     Exceptions, by name only: scheduled functions (config.schedule, not callable over HTTP) and the
+//     PUBLIC read-only health endpoints listed below;
 //  2. nothing in src/ calls /.netlify/functions/* with plain fetch() — only src/lib/stanleyAuth.ts
 //     (the wrapper itself and the password check) may.
 // Prints the grep-style result it bases the verdict on. No secrets involved.
@@ -16,12 +18,23 @@ const pass = (m) => console.log(`  pass ${m}`)
 
 console.log('\n== netlify/functions')
 const fnDir = join(root, 'netlify', 'functions')
+// Public on purpose: GET only, read only, no template content, campaign IDs, e-mails or secrets (see the file header).
+const PUBLIC = new Set(['webinar-mail-health.js'])
 for (const f of readdirSync(fnDir).filter((n) => n.endsWith('.js')).sort()) {
   const s = readFileSync(join(fnDir, f), 'utf8')
-  if (!/export (const|async function) handler\b/.test(s)) { console.log(`  skip ${f} (helper, not a function)`); continue }
-  if (!/export const handler = withStanleyAuth\(/.test(s)) fail(`${f}: handler is not wrapped in withStanleyAuth`)
+  const v1 = /export (const|async function) handler\b/.test(s)
+  const v2 = /export default\b/.test(s)
+  if (!v1 && !v2) { console.log(`  skip ${f} (helper, not a function)`); continue }
+  if (v2 && /export const config = \{ schedule:/.test(s)) { pass(`${f}: scheduled function (v2), not callable over HTTP`); continue }
+  if (v2 && PUBLIC.has(f)) {
+    if (/Access-Control-Allow-Origin['"]?\s*:\s*['"]\*/.test(s)) fail(`${f}: wildcard CORS origin`)
+    else pass(`${f}: PUBLIC read-only endpoint (v2), on the allow-list`)
+    continue
+  }
+  if (v2 && !/export default withStanleyAuthV2\(/.test(s)) fail(`${f}: v2 function is not wrapped in withStanleyAuthV2`)
+  else if (v1 && !/export const handler = withStanleyAuth\(/.test(s)) fail(`${f}: handler is not wrapped in withStanleyAuth`)
   else if (/Access-Control-Allow-Origin['"]?\s*:\s*['"]\*/.test(s)) fail(`${f}: wildcard CORS origin`)
-  else pass(`${f}: withStanleyAuth, no wildcard CORS`)
+  else pass(`${f}: ${v2 ? 'withStanleyAuthV2 (v2)' : 'withStanleyAuth'}, no wildcard CORS`)
 }
 
 console.log('\n== src: calls to /.netlify/functions/*')

@@ -11,6 +11,7 @@
 // a preflight, and it carries no data. CORS is limited to the app's own origin.
 //
 // Usage in a function:   export const handler = withStanleyAuth(async (event, context) => { ... })
+//   (Functions API v2:     export default withStanleyAuthV2(async (req, context) => new Response(...)))
 
 import { createHash, timingSafeEqual } from 'node:crypto'
 
@@ -75,5 +76,28 @@ export function withStanleyAuth(inner, options = {}) {
     const res = await inner(event, context)
     // The app's origin replaces whatever CORS the function set before (it used to be "*").
     return { ...res, headers: { ...(res?.headers ?? {}), ...cors } }
+  }
+}
+
+/**
+ * The same guard for a Functions API v2 function (`export default withStanleyAuthV2(async (req, context) => Response)`).
+ * One check (checkAccess), one CORS policy: only the shape changes (Request/Response instead of event/{statusCode}).
+ * @param {(req: Request, context?: any) => Promise<Response>} inner
+ * @param {{ env?: NodeJS.ProcessEnv }} [options]
+ */
+export function withStanleyAuthV2(inner, options = {}) {
+  return async (req, context) => {
+    const env = options.env ?? process.env
+    const cors = corsHeaders(env)
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors })
+
+    const access = checkAccess({ headers: Object.fromEntries(req.headers) }, env)
+    if (access === 'unconfigured') return new Response(null, { status: 503, headers: { ...cors, 'Cache-Control': 'no-store' } })
+    if (access === 'denied') return new Response(null, { status: 401, headers: { ...cors, 'Cache-Control': 'no-store' } })
+
+    const res = await inner(req, context)
+    const headers = new Headers(res.headers)
+    for (const [k, v] of Object.entries(cors)) headers.set(k, v)
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
   }
 }

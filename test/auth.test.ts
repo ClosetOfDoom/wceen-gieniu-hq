@@ -110,6 +110,41 @@ describe.each(FUNCTIONS)('funkcja %s', (name) => {
   })
 })
 
+describe('webinar-mail-admin (Functions API v2, Request → Response)', () => {
+  type V2 = (req: Request, context?: unknown) => Promise<Response>
+  const loadV2 = async (): Promise<V2> => (await import('../netlify/functions/webinar-mail-admin.js')).default as V2
+  const req = (headers: Record<string, string> = {}, method = 'GET') => new Request('https://app.example/.netlify/functions/webinar-mail-admin', { method, headers })
+
+  it('bez nagłówka / zły nagłówek → 401 bez treści (nie 500), bez dotykania Blobs i Wix', async () => {
+    const h = await loadV2()
+    for (const r of [req(), req({ 'x-stanley-token': 'zle-haslo' })]) {
+      const res = await h(r)
+      expect(res.status).toBe(401)
+      expect(await res.text()).toBe('')
+      expect(res.headers.get('Access-Control-Allow-Origin')).toBe(appOrigin())
+    }
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('brak zmiennej → 503; OPTIONS → 204 z CORS aplikacji', async () => {
+    const h = await loadV2()
+    expect((await h(req({}, 'OPTIONS'))).status).toBe(204)
+    vi.stubEnv('STANLEY_ACCESS_TOKEN', '')
+    const res = await h(req({ 'x-stanley-token': TEST_TOKEN }))
+    expect(res.status).toBe(503)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('dobry nagłówek → handler się wykonuje (bez kluczy Wix: 503 z komunikatem JSON, CORS aplikacji, nie "*")', async () => {
+    vi.stubEnv('WIX_API_KEY', ''); vi.stubEnv('WIX_SITE_ID', '')
+    const h = await loadV2()
+    const res = await h(req({ 'x-stanley-token': TEST_TOKEN }))
+    expect(res.status).toBe(503)
+    expect((await res.json()).error).toBeTruthy()
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(appOrigin())
+  })
+})
+
 describe('tts-health ?live=1 tylko po zalogowaniu', () => {
   it('bez hasła ?live=1 daje 401 i nie woła ElevenLabs; z hasłem wywołanie live idzie do ElevenLabs', async () => {
     const handler = await load('tts-health')

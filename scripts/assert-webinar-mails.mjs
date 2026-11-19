@@ -57,8 +57,21 @@ if (/included_files\s*=\s*\[[^\]]*webinar-mails\/\*\*/.test(toml)) ok('netlify.t
 else fail('netlify.toml: [functions] included_files must contain "webinar-mails/**"')
 
 const admin = readFileSync(join(root, 'netlify/functions/webinar-mail-admin.js'), 'utf8')
-if (/withStanleyAuth\(/.test(admin)) ok('webinar-mail-admin is behind the shared password')
-else fail('webinar-mail-admin is not wrapped in withStanleyAuth')
+if (/export default withStanleyAuthV2\(/.test(admin)) ok('webinar-mail-admin is a v2 function behind the shared password')
+else fail('webinar-mail-admin must be `export default withStanleyAuthV2(...)` (Blobs strong consistency needs v2)')
+
+// One access path to Netlify Blobs: only webinarMailStore.js imports @netlify/blobs; every function using the store is v2.
+const blobUsers = []
+for (const dir of ['netlify/functions', 'netlify/shared']) {
+  for (const f of readdirSync(join(root, dir))) {
+    if (!/\.(js|mjs)$/.test(f)) continue
+    const text = readFileSync(join(root, dir, f), 'utf8')
+    if (/@netlify\/blobs|connectLambda|getStore\(/.test(text)) blobUsers.push(`${dir}/${f}`)
+    if (dir === 'netlify/functions' && /createBlobStore\(/.test(text) && !/export default\b/.test(text)) fail(`${dir}/${f}: uses the Blobs store but is not a v2 function`)
+  }
+}
+if (blobUsers.length === 1 && blobUsers[0] === 'netlify/shared/webinarMailStore.js') ok('Netlify Blobs only through webinarMailStore.js (no connectLambda, no other getStore)')
+else fail(`Netlify Blobs must be reached only through netlify/shared/webinarMailStore.js; found in: ${blobUsers.join(', ')}`)
 if (!/publishCampaign/.test(admin)) ok('webinar-mail-admin cannot publish to the audience (no publishCampaign call)')
 else fail('webinar-mail-admin must not call publishCampaign')
 
