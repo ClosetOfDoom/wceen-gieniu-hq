@@ -244,7 +244,10 @@ export function assertTestAudience(audience, config = WEBINAR_MAIL_CONFIG) {
   return true
 }
 
-/** sendAt of a test: now + testLeadMinutes, rounded up to the full minute. */
+/**
+ * sendAt of a test: now + testLeadMinutes, rounded up to the full minute. A test cannot go out at once: Wix rejects
+ * a publish without sendAt (HTTP 403, empty message; checked live 2026-11-19 23:0xZ, twice on the same draft).
+ */
 export function testSendAt(now, config = WEBINAR_MAIL_CONFIG) {
   return new Date(Math.ceil((now.getTime() + config.testLeadMinutes * 60000) / 60000) * 60000)
 }
@@ -256,6 +259,8 @@ export function testSendAt(now, config = WEBINAR_MAIL_CONFIG) {
  */
 export async function createAndPublish({ wix, subject, preheader, html, sendAt, audience, test = false }, config = WEBINAR_MAIL_CONFIG) {
   if (test) assertTestAudience(audience, config)
+  // Production always carries its 07:00 sendAt (SENDAT_W_PRZYSZLOSCI in the run); without one nothing reaches Wix.
+  if (!sendAt || !Number.isFinite(Date.parse(sendAt))) throw new Error('BEZPIECZNIK WYSYŁKI: brak poprawnego sendAt (Wix odrzuca publikację bez sendAt, HTTP 403)')
   // Same check as the render: nothing with a raw {{...}} / ${...} ever reaches Wix, test or production.
   const left = unresolvedTags(html)
   if (left.length) throw new Error(`BEZPIECZNIK TREŚCI: nierozwiązane znaczniki w finalnym HTML (${left.join(', ')})`)

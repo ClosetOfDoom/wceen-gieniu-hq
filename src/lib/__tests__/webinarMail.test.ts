@@ -592,7 +592,7 @@ describe('test audience safeguard', () => {
 
   it('a publish error still reports the created campaignId', async () => {
     const { wix } = fakeWix({ publishCampaign: async () => { throw new Error('HTTP 428') } })
-    await expect(createAndPublish({ wix, subject: 'T', html: 'x', sendAt: 's', audience: testAudience(), test: true })).rejects.toMatchObject({ campaignId: 'camp-1' })
+    await expect(createAndPublish({ wix, subject: 'T', html: 'x', sendAt: '2026-12-01T06:00:00.000Z', audience: testAudience(), test: true })).rejects.toMatchObject({ campaignId: 'camp-1' })
   })
 
   it('test sendAt is at least 30 minutes ahead, on a full minute', () => {
@@ -600,6 +600,17 @@ describe('test audience safeguard', () => {
     const at = testSendAt(now)
     expect(at.toISOString()).toBe('2026-11-19T15:32:00.000Z')
     expect(at.getTime() - now.getTime()).toBeGreaterThanOrEqual(30 * 60000)
+  })
+
+  it('T3: no publish without a valid sendAt — test or production — and nothing reaches Wix (Wix answers 403 to it)', async () => {
+    for (const test of [true, false]) {
+      for (const sendAt of [undefined, null, '', 'teraz']) {
+        const { wix, calls } = fakeWix()
+        const audience = test ? testAudience() : CFG.audience
+        await expect(createAndPublish({ wix, subject: 'T', html: '<p>x</p>', sendAt: sendAt as unknown as string, audience, test })).rejects.toThrow(/BEZPIECZNIK WYSYŁKI/)
+        expect(calls.create).not.toHaveBeenCalled(); expect(calls.publish).not.toHaveBeenCalled()
+      }
+    }
   })
 
   it('no Wix Send Test anywhere: the client has no sendTest', () => {
@@ -724,7 +735,7 @@ describe('unresolved tags in the final HTML', () => {
     expect(checks.find((c) => c.id === 'ZNACZNIKI_ROZWIAZANE')).toMatchObject({ ok: false })
     const { wix, calls } = fakeWix()
     for (const test of [false, true]) {
-      await expect(createAndPublish({ wix, subject: 'T', html: '<a href="https://a.pl">x</a> {{unsubscribe}}', sendAt: 's', audience: test ? testAudience() : CFG.audience, test })).rejects.toThrow(/BEZPIECZNIK TREŚCI/)
+      await expect(createAndPublish({ wix, subject: 'T', html: '<a href="https://a.pl">x</a> {{unsubscribe}}', sendAt: '2026-12-01T06:00:00.000Z', audience: test ? testAudience() : CFG.audience, test })).rejects.toThrow(/BEZPIECZNIK TREŚCI/)
     }
     expect(calls.create).not.toHaveBeenCalled(); expect(calls.publish).not.toHaveBeenCalled()
   })

@@ -209,9 +209,11 @@ export function WebinarMailPanel() {
             key={q.slot} q={q} status={status} busy={busy}
             onDryRun={() => act(async () => { const r = await dryRunSlot(q.slot); setDry(r.outcome); await load() })}
             onTest={() => act(async () => {
-              if (!window.confirm(`Opublikować test „${q.next?.subject}” tylko do ${status.config.testRecipient}? Ta sama ścieżka co produkcja, wysyłka za ok. ${status.config.testLeadMinutes} min (do bazy nic nie idzie, szablon nie jest zużywany).`)) return
+              if (!window.confirm(`Wysłać test „${q.next?.subject}” tylko do ${status.config.testRecipient}?
+
+Ta sama ścieżka co produkcja (kampania w Wix), ale do jednego kontaktu. Mail wyjdzie za ok. ${status.config.testLeadMinutes} min: Wix nie przyjmuje wysyłki natychmiastowej. Do bazy kontaktów nic nie idzie, szablon nie jest zużywany.`)) return
               const r = await sendTestMail(q.slot)
-              setMessage(`TEST zaplanowany na ${new Date(r.sendAt).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })} do ${r.to}: „${r.subject}” (${VARIANT_LABEL[r.variant] ?? r.variant}), kampania ${r.campaignId.slice(0, 8)}.`)
+              setMessage(`TEST zaplanowany na ${new Date(r.sendAt).toLocaleTimeString('pl-PL', { timeZone: 'Europe/Warsaw', hour: '2-digit', minute: '2-digit' })} do ${r.to}: „${r.subject}” (${VARIANT_LABEL[r.variant] ?? r.variant}), kampania ${r.campaignId.slice(0, 8)}. W sekcji Testy: „zaplanowany”, po tej godzinie „wysłany”.`)
               await load()
             })}
           />

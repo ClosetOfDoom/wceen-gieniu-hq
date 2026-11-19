@@ -27,7 +27,10 @@ export const WEBINAR_MAIL_CONFIG = Object.freeze({
    */
   testRecipient: 'fundacja@wceen.com',
   testContactId: 'b2ccc71f-2623-4c42-8ef5-ea288c327706',
-  /** A test is scheduled this many minutes ahead (Wix minimum for sendAt is 30). */
+  /**
+   * A test is scheduled this many minutes ahead (Wix minimum for sendAt is 30). It cannot be immediate: Wix answers
+   * HTTP 403 to a publish without sendAt (tried live 2026-11-19, see docs/webinar-mails.md, Blokady).
+   */
   testLeadMinutes: 31,
   /**
    * Two UTC hours, so that 06:00 Warsaw is hit in winter (CET = UTC+1 → 05:00 UTC) and in summer
