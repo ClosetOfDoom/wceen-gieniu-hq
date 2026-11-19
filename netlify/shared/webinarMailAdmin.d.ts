@@ -18,5 +18,9 @@ export interface HealthSummary {
   pauza: boolean | null
   kolejka: { wtorek: number | null; czwartek: number | null }
   nastepnaWysylka: string | null
+  /** Codes of the alerts active now (same rules as the MAILE tab). */
+  alarmy: string[] | null
+  /** The 5 newest log entries, without campaign IDs, subjects or e-mails. */
+  ostatnieWpisy: { data: string; slot: string; status: 'zaplanowany' | 'wysłany' | 'błąd' | 'nieznany'; test: boolean }[] | null
 }
 export function healthSummary(args: { deps: Pick<RunDeps, 'store' | 'loadTemplates'>; build: string; now?: Date; config?: WebinarMailConfig }): Promise<HealthSummary>

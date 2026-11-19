@@ -666,13 +666,13 @@ describe('Wix client payloads', () => {
 // ── Public health summary (webinar-mail-health) ──────────────────────────────────
 
 describe('healthSummary (public webinar-mail-health)', () => {
-  it('returns exactly the allowed fields: build, blobsRead, auto, pauza, kolejka{wtorek,czwartek}, nastepnaWysylka', async () => {
+  it('returns exactly the allowed fields: build, blobsRead, auto, pauza, kolejka{wtorek,czwartek}, nastepnaWysylka, alarmy, ostatnieWpisy', async () => {
     const s = setup({ auto: false, pause: true, templates: [T(1), T(2), { file: '03-bad.html', html: tpl('Zły!') }] })
     await s.ready
     const h = await healthSummary({ deps: s.deps, build: 'abc1234', now: new Date('2026-11-20T10:00:00Z') })
-    expect(Object.keys(h).sort()).toEqual(['auto', 'blobsRead', 'build', 'kolejka', 'nastepnaWysylka', 'pauza'])
+    expect(Object.keys(h).sort()).toEqual(['alarmy', 'auto', 'blobsRead', 'build', 'kolejka', 'nastepnaWysylka', 'ostatnieWpisy', 'pauza'])
     expect(Object.keys(h.kolejka).sort()).toEqual(['czwartek', 'wtorek'])
-    expect(h).toEqual({ build: 'abc1234', blobsRead: 'ok', auto: false, pauza: true, kolejka: { wtorek: 2, czwartek: 2 }, nastepnaWysylka: '2026-11-24T06:00:00.000Z' })
+    expect(h).toEqual({ build: 'abc1234', blobsRead: 'ok', auto: false, pauza: true, kolejka: { wtorek: 2, czwartek: 2 }, nastepnaWysylka: '2026-11-24T06:00:00.000Z', alarmy: ['MAILE_KOLEJKA_NISKA'], ostatnieWpisy: [] })
   })
 
   it('no template content, file names, subjects, campaign IDs, e-mails or test contact in the body', async () => {
@@ -690,10 +690,53 @@ describe('healthSummary (public webinar-mail-health)', () => {
 
   it('a failing store read → blobsRead "error", store fields null (never made-up values)', async () => {
     const boom = async () => { throw new Error('Netlify Blobs has failed to perform a read using strong consistency') }
-    const deps = { store: { getState: boom, getLog: boom } as never, loadTemplates: async () => [T(1)] }
+    const deps = { store: { getState: boom, getLog: boom, getLastRun: boom, getRun: boom } as never, loadTemplates: async () => [T(1)] }
     const h = await healthSummary({ deps, build: 'x', now: new Date('2026-11-20T10:00:00Z') })
-    expect(h).toMatchObject({ blobsRead: 'error', auto: null, pauza: null, kolejka: { wtorek: null, czwartek: null } })
+    expect(h).toMatchObject({ blobsRead: 'error', auto: null, pauza: null, kolejka: { wtorek: null, czwartek: null }, alarmy: null, ostatnieWpisy: null })
     expect(h.nastepnaWysylka).toBe('2026-11-24T06:00:00.000Z')
+  })
+
+  // T4: the production state of 19.11 night: AUTO switched on at 22:38Z (no autoChangedAt stored yet), the two test
+  // publishes of 22:39Z / 22:40Z, no run record for 19.11.
+  const NIGHT_19_11 = () => {
+    const s = setup({ auto: true, log: [
+      { key: 'TEST-2026-11-19-tuesday-landing', date: '2026-11-19', slot: 'tuesday', variant: 'landing', campaignId: 'd7f50e0f-0000-0000-0000-000000000000', templateFile: '01-t.html', subject: 'Temat numer jeden', sendAt: '2026-11-19T23:11:00.000Z', status: 'test', test: true, createdAt: '2026-11-19T22:39:14.000Z', dryRun: false },
+      { key: 'TEST-2026-11-19-thursday-landing', date: '2026-11-19', slot: 'thursday', variant: 'landing', campaignId: 'e6cff03c-0000-0000-0000-000000000000', templateFile: '01-t.html', subject: 'Temat numer jeden', sendAt: '2026-11-19T23:12:00.000Z', status: 'test', test: true, createdAt: '2026-11-19T22:40:05.000Z', dryRun: false },
+    ] as LogEntry[] })
+    return s
+  }
+
+  it('alarmy: no MAILE_NIE_ODPALILY for 19.11 (AUTO on only at 22:38Z); ostatnieWpisy: the 19.11 tests as test: true, not "błąd"', async () => {
+    const s = NIGHT_19_11(); await s.ready
+    const h = await healthSummary({ deps: s.deps, build: 'x', now: new Date('2026-11-19T22:55:00Z') })   // 23:55 Warsaw, Thursday
+    expect(h.auto).toBe(true)
+    expect(h.alarmy).not.toContain('MAILE_NIE_ODPALILY')
+    expect(h.ostatnieWpisy).toEqual([
+      { data: '2026-11-19', slot: 'czwartek', status: 'zaplanowany', test: true },
+      { data: '2026-11-19', slot: 'wtorek', status: 'zaplanowany', test: true },
+    ])
+    const later = await healthSummary({ deps: s.deps, build: 'x', now: new Date('2026-11-20T08:00:00Z') })
+    expect(later.ostatnieWpisy?.map((w) => w.status)).toEqual(['wysłany', 'wysłany'])
+  })
+
+  it('alarmy: a real missed Tuesday run shows up; a failed run shows MAILE_AWARIA', async () => {
+    const s = NIGHT_19_11(); await s.ready
+    expect((await healthSummary({ deps: s.deps, build: 'x', now: new Date('2026-11-24T05:50:00Z') })).alarmy).toContain('MAILE_NIE_ODPALILY')
+    const f = setup({ templates: [T(1), T(2), T(3), T(4), T(5)], wix: { accountDetails: async () => ({ status: 'SUSPENDED' }) } })
+    await run(f, new Date('2026-11-24T05:00:00Z'))
+    expect((await healthSummary({ deps: f.deps, build: 'x', now: new Date('2026-11-24T05:30:00Z') })).alarmy).toEqual(['MAILE_AWARIA'])
+  })
+
+  it('ostatnieWpisy: at most 5, newest first, no campaign IDs / subjects / files / e-mails', async () => {
+    const log: LogEntry[] = Array.from({ length: 7 }, (_, i) => ({ key: `2026-11-${String(10 + i).padStart(2, '0')}-tuesday`, date: `2026-11-${String(10 + i).padStart(2, '0')}`, slot: 'tuesday', variant: 'landing', campaignId: `camp-secret-${i}`, templateFile: `0${i}-t.html`, subject: 'Tajny temat', sendAt: `2026-11-${String(10 + i).padStart(2, '0')}T06:00:00.000Z`, status: i === 6 ? 'failed' : 'scheduled', createdAt: `2026-11-${String(10 + i).padStart(2, '0')}T05:00:00.000Z`, dryRun: false }))
+    const s = setup({ log }); await s.ready
+    const h = await healthSummary({ deps: s.deps, build: 'x', now: new Date('2026-11-20T10:00:00Z') })
+    expect(h.ostatnieWpisy).toHaveLength(5)
+    expect(h.ostatnieWpisy?.[0]).toEqual({ data: '2026-11-16', slot: 'wtorek', status: 'błąd', test: false })
+    expect(h.ostatnieWpisy?.map((w) => w.data)).toEqual(['2026-11-16', '2026-11-15', '2026-11-14', '2026-11-13', '2026-11-12'])
+    for (const w of h.ostatnieWpisy ?? []) expect(Object.keys(w).sort()).toEqual(['data', 'slot', 'status', 'test'])
+    const text = JSON.stringify(h)
+    for (const bad of ['camp-secret', 'Tajny', '-t.html', '@', 'http', CFG.testContactId]) expect(text).not.toContain(bad)
   })
 
   it('nextPlannedSend: 07:00 Warsaw of the next Tue/Thu still ahead, CET and CEST, skipDates skipped', () => {

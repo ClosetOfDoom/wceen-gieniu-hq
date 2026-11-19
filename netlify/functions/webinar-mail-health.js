@@ -1,9 +1,10 @@
 // Netlify Function (Functions API v2): webinar-mail-health — PUBLIC, GET only, read only.
 //
 // Proof that the webinar mail machinery can read its state in production, without the shared password.
-// Returns EXACTLY: { build, blobsRead: "ok"|"error", auto, pauza, kolejka: { wtorek, czwartek }, nastepnaWysylka }.
-// No template content or names, no campaign IDs, no e-mails, no secrets (healthSummary builds the whole body).
-// Same store read as webinar-mail-run: createBlobStore() from webinarMailStore.js (getState + getLog).
+// Returns EXACTLY: { build, blobsRead: "ok"|"error", auto, pauza, kolejka: { wtorek, czwartek }, nastepnaWysylka,
+//   alarmy: [codes of active alerts], ostatnieWpisy: [{ data, slot, status, test }] (max 5) }.
+// No template content, names or subjects, no campaign IDs, no e-mails, no secrets (healthSummary builds the whole body).
+// Same store read as webinar-mail-run: createBlobStore() from webinarMailStore.js (getState, getLog, getLastRun, getRun).
 // On the allow-list of public functions in scripts/assert-stanley-auth.mjs.
 
 import { healthSummary } from '../shared/webinarMailAdmin.js'
@@ -18,7 +19,8 @@ export default async function handler(req) {
   if (req.method !== 'GET') return new Response(JSON.stringify({ error: 'tylko GET' }), { status: 405, headers: { ...headers, Allow: 'GET' } })
   let store = null
   try { store = createBlobStore() } catch (e) { console.error('[webinar-mail-health] store init failed:', String(e?.message ?? e).slice(0, 200)) }
-  const failing = { getState: async () => { throw new Error('store unavailable') }, getLog: async () => { throw new Error('store unavailable') } }
+  const unavailable = async () => { throw new Error('store unavailable') }
+  const failing = { getState: unavailable, getLog: unavailable, getLastRun: unavailable, getRun: unavailable }
   const deps = { store: store ?? failing, loadTemplates: (slot) => loadTemplates(WEBINAR_MAIL_CONFIG.slots[slot].dir) }
   const body = await healthSummary({ deps, build: await readBuildHash() })
   return new Response(JSON.stringify(body), { status: 200, headers })

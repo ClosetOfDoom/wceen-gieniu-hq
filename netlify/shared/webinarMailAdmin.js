@@ -7,7 +7,7 @@ import {
   assertTestAudience, createAndPublish, testAudience, testSendAt,
 } from './webinarMail.js'
 import { WEBINAR_MAIL_CONFIG } from './webinarMailConfig.js'
-import { LOG_STATUS, isProductionSend, isTestEntry } from './webinarMailStatus.js'
+import { LOG_STATUS, isProductionSend, isTestEntry, sendStatusView } from './webinarMailStatus.js'
 
 const publicConfig = (c) => ({
   wakeHour: c.wakeHour, sendAtLocal: c.sendAtLocal, lowQueueThreshold: c.lowQueueThreshold, skipDates: [...c.skipDates], cron: c.cron, testRecipient: c.testRecipient, testLeadMinutes: c.testLeadMinutes,
@@ -47,12 +47,20 @@ export async function adminStatus({ deps, now = new Date(), config = WEBINAR_MAI
   const rows = newestFirst.filter((e) => !isTestEntry(e)).map(toRow)
   const tests = newestFirst.filter((e) => isTestEntry(e)).map(toRow)
 
+  const alerts = await currentAlerts({ store, state, lastRun, queues, now, config })
+  const next = nextWakeUp(now, config)
+  return { now: now.toISOString(), state, config: publicConfig(config), nextWakeUp: next ? { date: next.date, slot: next.slot, at: next.at.toISOString() } : null, queues, log: rows, tests, statsError, lastRun, lastDryRun, alerts }
+}
+
+/**
+ * The alerts right now, the same for the tab (adminStatus) and the public health. queues: [{ slot, empty, low,
+ * readyCount, loadError? }] (a slot whose templates cannot be read counts as empty).
+ */
+async function currentAlerts({ store, state, lastRun, queues, now, config }) {
   const p = warsawParts(now)
   const slotToday = slotForWeekday(p.weekday, config)
   const runToday = slotToday ? await store.getRun(`${p.date}-${slotToday}`) : null
-  const alerts = buildAlerts({ state, lastRun, runToday, queues: queues.map((q) => ({ slot: q.slot, empty: q.empty || Boolean(q.loadError), low: q.low, readyCount: q.readyCount })), now }, config)
-  const next = nextWakeUp(now, config)
-  return { now: now.toISOString(), state, config: publicConfig(config), nextWakeUp: next ? { date: next.date, slot: next.slot, at: next.at.toISOString() } : null, queues, log: rows, tests, statsError, lastRun, lastDryRun, alerts }
+  return buildAlerts({ state, lastRun, runToday, queues: queues.map((q) => ({ slot: q.slot, empty: q.empty || Boolean(q.loadError), low: q.low, readyCount: q.readyCount })), now }, config)
 }
 
 /** The instant of the next 06:00 Warsaw wake-up of one slot (today if it is still ahead). */
@@ -162,9 +170,11 @@ const SLOT_PL = { tuesday: 'wtorek', thursday: 'czwartek' }
 
 /**
  * The PUBLIC health summary (webinar-mail-health). Exactly these fields and nothing else: no template content or
- * names, no campaign IDs, no e-mails, no secrets. Reads the store the same way webinar-mail-run does
- * (store.getState + store.getLog of createBlobStore). When the read fails: blobsRead "error" and the
- * store-derived fields are null (never a made-up false / count).
+ * names, no subjects, no campaign IDs, no e-mails, no secrets. Reads the store the same way webinar-mail-run does
+ * (createBlobStore: getState, getLog, getLastRun, getRun). When the read fails: blobsRead "error" and the
+ * store-derived fields are null (never a made-up false / count / empty list).
+ *   alarmy        codes of the alerts active now (the same buildAlerts as the MAILE tab), e.g. ["MAILE_KOLEJKA_NISKA"]
+ *   ostatnieWpisy the 5 newest send-log entries: { data, slot (wtorek|czwartek), status (sendStatusView code), test }
  */
 export async function healthSummary({ deps, build, now = new Date(), config = WEBINAR_MAIL_CONFIG }) {
   let state = null
@@ -176,13 +186,40 @@ export async function healthSummary({ deps, build, now = new Date(), config = WE
   }
   const blobsRead = state && log ? 'ok' : 'error'
   const kolejka = {}
+  const queues = []
   for (const slot of SLOT_NAMES) {
     let n = null
     if (log) {
-      try { n = buildQueue(slot, await deps.loadTemplates(slot), log, config).readyCount } catch { n = null }
+      try {
+        const q = buildQueue(slot, await deps.loadTemplates(slot), log, config)
+        n = q.readyCount
+        queues.push({ slot, empty: q.empty, low: q.low, readyCount: q.readyCount })
+      } catch {
+        queues.push({ slot, empty: true, low: true, readyCount: 0, loadError: true })
+      }
     }
     kolejka[SLOT_PL[slot] ?? slot] = n
   }
+
+  let alarmy = null
+  if (state && log) {
+    try {
+      const lastRun = await deps.store.getLastRun()
+      const alerts = await currentAlerts({ store: deps.store, state, lastRun, queues, now, config })
+      alarmy = [...new Set(alerts.map((a) => a.rule))]
+    } catch (e) {
+      console.error('[webinar-mail-health] alerts failed:', String(e?.message ?? e).slice(0, 200))
+    }
+  }
+
+  const ostatnieWpisy = log
+    ? [...log]
+        .filter((e) => !e.dryRun)
+        .sort((a, b) => String(b.createdAt ?? b.date).localeCompare(String(a.createdAt ?? a.date)))
+        .slice(0, 5)
+        .map((e) => ({ data: String(e.date ?? ''), slot: SLOT_PL[e.slot] ?? String(e.slot ?? ''), status: sendStatusView(e, now).code, test: isTestEntry(e) }))
+    : null
+
   const next = nextPlannedSend(now, config)
   return {
     build: String(build ?? 'unknown'),
@@ -191,5 +228,7 @@ export async function healthSummary({ deps, build, now = new Date(), config = WE
     pauza: state ? Boolean(state.pause) : null,
     kolejka,
     nastepnaWysylka: next ? next.toISOString() : null,
+    alarmy,
+    ostatnieWpisy,
   }
 }
