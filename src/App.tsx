@@ -14,6 +14,7 @@ import { StatusBadge } from './components/StatusBadge'
 import { GieniuAvatar } from './components/GieniuAvatar'
 import { AutomationRuns } from './components/AutomationRuns'
 import { WebinarFunnelPanel } from './components/WebinarFunnelPanel'
+import { WebinarMailPanel, MailAlertLines, useWebinarMailAlerts } from './components/WebinarMailPanel'
 import { RevenueTrendChart } from './components/RevenueTrendChart'
 import { InsightChart } from './components/InsightChart'
 import { CampaignsPanel } from './components/CampaignsPanel'
@@ -98,6 +99,7 @@ type NavSection =
   | 'command-center'
   | 'campaigns'
   | 'webinars'
+  | 'webinar-mails'
   | 'funding'
   | 'automation'
   | 'diagnostics'
@@ -111,6 +113,7 @@ const NAV_ITEMS: { key: NavSection; icon: string; label: string }[] = [
   { key: 'command-center', icon: '⚔',  label: 'Command Center' },
   { key: 'campaigns',      icon: '📜', label: 'Campaigns'       },
   { key: 'webinars',       icon: '🎙', label: 'Webinars'        },
+  { key: 'webinar-mails',  icon: '✉',  label: 'Maile webinarowe' },
   { key: 'funding',        icon: '🪙', label: 'Funding'         },
   { key: 'automation',     icon: '⚙',  label: 'Sync / Automation' },
   { key: 'diagnostics',    icon: '🔬', label: 'Diagnostics'     },
@@ -185,6 +188,7 @@ const MOBILE_NAV_ITEMS: { key: NavSection; icon: string; label: string }[] = [
   { key: 'command-center', icon: '⚔',  label: 'Home'       },
   { key: 'campaigns',      icon: '📜', label: 'Campaigns'  },
   { key: 'webinars',       icon: '🎙', label: 'Webinars'   },
+  { key: 'webinar-mails',  icon: '✉',  label: 'Maile'      },
   { key: 'funding',        icon: '🪙', label: 'Funding'    },
   { key: 'automation',     icon: '⚙',  label: 'Sync'       },
   { key: 'diagnostics',    icon: '🔬', label: 'Status'     },
@@ -728,6 +732,9 @@ function RightPanel({
 export default function App() {
   const { theme, toggleTheme } = useTheme()
   const [section, setSection] = useState<NavSection>('command-center')
+  // Failures of the automatic webinar mails (the function writes them to Blobs; the app only shows them).
+  const webinarMailAlerts = useWebinarMailAlerts()
+  const webinarMailRed = webinarMailAlerts.filter(a => a.severity === 'red')
   const [range, setRange] = useState<TimeRange>('today')   // panel-wide time range
   // Which KPI card is expanded into a time-series / breakdown chart below the grid.
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null)
@@ -1844,12 +1851,13 @@ export default function App() {
                         make this panel permanently non-empty and stop anyone reading
                         it. See NOTIFYING_SEVERITIES in netlify/shared/alertRules.js;
                         the split lives there, not in this file. */}
-                    {alerts.notifying.length === 0 ? (
+                    {alerts.notifying.length === 0 && webinarMailRed.length === 0 ? (
                       <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--emerald)' }}>
                         Brak aktywnych alarmów.
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <MailAlertLines alerts={webinarMailRed} />
                         {alerts.notifying.map((a, i) => (
                           <div
                             key={`${a.rule}-${i}`}
@@ -2111,6 +2119,13 @@ export default function App() {
                 onCommand={handleJsuCommand}
                 gieniuResponse=""
               />
+            </div>
+          )}
+
+          {/* ── WEBINAR MAILS ─────────────────────────────────────── */}
+          {section === 'webinar-mails' && (
+            <div className="panel-illuminate card">
+              <WebinarMailPanel />
             </div>
           )}
 

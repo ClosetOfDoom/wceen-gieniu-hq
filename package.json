@@ -16,6 +16,8 @@
     "assert:nav": "node scripts/assert-nav.mjs",
     "assert:data-contract": "node scripts/assert-data-contract.mjs",
     "assert:ops-week-report": "node scripts/assert-ops-week-report.mjs",
+    "assert:webinar-mails": "node scripts/assert-webinar-mails.mjs",
+    "import:webinar-templates": "node scripts/import-webinar-templates.mjs",
     "assert:webinar-schedule": "node scripts/assert-webinar-schedule.mjs",
     "assert:price-classification": "node scripts/assert-price-classification.mjs",
     "assert:data-sources": "node scripts/assert-data-sources.mjs",
@@ -40,7 +42,7 @@
     "assert:stt-language": "node scripts/assert-stt-language.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "npm run typecheck && npm run test && npm run assert:profit-metrics && npm run assert:data-sources && npm run assert:data-contract && npm run assert:price-classification && npm run assert:orders && npm run assert:data-source-reads && npm run assert:wix-export && npm run assert:migrations && npm run assert:paste && npm run assert:meta-attribution && npm run assert:ad-spend-scope && npm run assert:stanley-auth",
+    "verify": "npm run typecheck && npm run test && npm run assert:profit-metrics && npm run assert:data-sources && npm run assert:data-contract && npm run assert:price-classification && npm run assert:orders && npm run assert:data-source-reads && npm run assert:wix-export && npm run assert:migrations && npm run assert:paste && npm run assert:meta-attribution && npm run assert:ad-spend-scope && npm run assert:stanley-auth && npm run assert:webinar-mails",
     "assert:data-source-reads": "node scripts/assert-supabase-reads.mjs",
     "assert:wix-export": "node scripts/assert-wix-export.mjs",
     "prebuild": "npm run verify",
@@ -48,6 +50,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
+    "@netlify/blobs": "^10.7.13",
     "@supabase/supabase-js": "^2.43.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

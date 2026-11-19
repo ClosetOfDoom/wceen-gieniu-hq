@@ -6,6 +6,10 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# The webinar mail templates are read from disk by webinar-mail-run / webinar-mail-admin.
+[functions]
+  included_files = ["webinar-mails/**"]
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

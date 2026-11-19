@@ -1,0 +1,56 @@
+// webinarMailConfig.js — the ONE place with the settings of the automatic webinar mails.
+//
+// Tuesday = language webinar, Thursday = memory webinar, both at 18:00 Europe/Warsaw.
+// The function wakes at 06:00 Warsaw time, builds a Wix campaign from the next unsent template
+// of the slot and (only when AUTO is ON and PAUZA is OFF) publishes it with sendAt 07:00.
+// AUTO / PAUZA live in Netlify Blobs (toggled in the app), not here.
+
+export const WEBINAR_MAIL_CONFIG = Object.freeze({
+  timezone: 'Europe/Warsaw',
+  /** Local hour at which the run is allowed to proceed (the cron fires at two UTC hours, see CRON). */
+  wakeHour: 6,
+  /** Local time of the scheduled send. Wix needs sendAt to be at least 30 minutes ahead. */
+  sendAtLocal: '07:00',
+  minLeadMinutes: 30,
+  /** Warning in the app when the queue of ready templates has this many or fewer. */
+  lowQueueThreshold: 3,
+  /** Local dates (Europe/Warsaw) on which nothing is sent. */
+  skipDates: Object.freeze(['2026-12-24', '2026-12-31']),
+  /** Placeholder for the registration link inside the templates. */
+  placeholder: '{{WEBINAR_URL}}',
+  /** Everything goes to ALL Wix contacts: the same audience the dashboard campaigns used ("contacts-all"). */
+  audience: Object.freeze({ labelIds: Object.freeze(['contacts-all']), activeContactsOnly: false }),
+  /** Where "Send Test Email" goes. */
+  testRecipient: 'fundacja@wceen.com',
+  /**
+   * Two UTC hours, so that 06:00 Warsaw is hit in winter (CET = UTC+1 → 05:00 UTC) and in summer
+   * (CEST = UTC+2 → 04:00 UTC). On Tue/Thu the run at the wrong hour exits straight away.
+   */
+  cron: '0 4,5 * * 2,4',
+  slots: Object.freeze({
+    tuesday: Object.freeze({
+      label: 'Webinar językowy (wtorek)',
+      weekday: 2,
+      webinarTime: '18:00',
+      dir: 'webinar-mails/tuesday',
+      /** Variants alternate per slot: landing page, then ClickMeeting registration, then landing again... */
+      variants: Object.freeze({
+        landing: 'https://www.wceen.com/webinar-jezyk-w-17h',
+        clickmeeting: 'https://fundacjawceen.clickmeeting.com/nauka-jezykow-w-xxi-wieku/register',
+      }),
+      /** Fragments that identify a mail of this slot (used by the "no send today" safeguard). */
+      markers: Object.freeze(['nauka-jezykow-w-xxi-wieku', 'webinar-jezyk-w-17h']),
+    }),
+    thursday: Object.freeze({
+      label: 'Webinar pamięciowy (czwartek)',
+      weekday: 4,
+      webinarTime: '18:00',
+      dir: 'webinar-mails/thursday',
+      variants: Object.freeze({
+        landing: 'https://www.wceen.com/darmowy-webinar',
+        clickmeeting: 'https://fundacjawceen.clickmeeting.com/pamiec-czwartek/register',
+      }),
+      markers: Object.freeze(['pamiec-czwartek', 'darmowy-webinar']),
+    }),
+  }),
+})
