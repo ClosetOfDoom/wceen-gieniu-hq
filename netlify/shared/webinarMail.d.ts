@@ -32,6 +32,8 @@ export interface LogEntry {
   error?: string | null
   createdAt?: string
   dryRun?: boolean
+  /** true for "Wyślij test" entries: never use a template up, never count for the link variant. */
+  test?: boolean
   registrations?: number | null
 }
 export interface QueueEntryCheck extends TemplateCheck { used: boolean }
@@ -59,13 +61,24 @@ export function evaluateSafeguards(ctx: {
   now: Date
 }, config?: WebinarMailConfig): SafeguardCheck[]
 
+export interface MailAudience {
+  readonly labelIds?: readonly string[]
+  readonly contactIds?: readonly string[]
+  readonly segmentIds?: readonly string[]
+  readonly activeContactsOnly?: boolean
+}
+export function testAudience(config?: WebinarMailConfig): MailAudience
+export function assertTestAudience(audience: unknown, config?: WebinarMailConfig): true
+export function testSendAt(now: Date, config?: WebinarMailConfig): Date
+export function createAndPublish(args: { wix: WixLike; subject: string; preheader?: string; html: string; sendAt: string; audience: MailAudience; test?: boolean }, config?: WebinarMailConfig): Promise<string>
+
 export interface WixLike {
   accountDetails(): Promise<{ status?: string }>
   listRecentCampaigns(): Promise<{ campaignId: string; distributionStatus?: string; datePublished?: string | null; emailSubject?: string }[]>
   previewCampaign(id: string): Promise<{ html: string; emailSubject?: string }>
   createCampaign(input: { subject: string; preheader?: string; html: string }): Promise<string>
-  publishCampaign(id: string, input: { subject: string; sendAt: string; audience: WebinarMailConfig['audience'] }): Promise<unknown>
-  sendTest(id: string, input: { to: string; subject: string }): Promise<unknown>
+  publishCampaign(id: string, input: { subject: string; sendAt: string; audience: MailAudience }): Promise<unknown>
+  getCampaign(id: string): Promise<{ campaignId: string; distributionStatus: string | null; visibilityStatus: string | null; datePublished: string | null; mailsSent: number | null; delivered: number | null }>
   deleteCampaign(id: string): Promise<unknown>
   campaignStats(ids: string[]): Promise<Record<string, { delivered: number; opened: number; clicked: number }>>
 }
@@ -102,8 +115,6 @@ export interface MailStoreLike {
   getLastDryRun(): Promise<RunOutcome | null>
   setLastDryRun(record: RunOutcome): Promise<void>
   setRegistrations(key: string, value: number | null): Promise<void>
-  getTestDraft(slot: string, file: string): Promise<{ campaignId: string; variant: string; url: string } | null>
-  setTestDraft(slot: string, file: string, record: unknown): Promise<void>
 }
 
 export interface RunDeps {

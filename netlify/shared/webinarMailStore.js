@@ -5,7 +5,6 @@
 //   claim/<key>            idempotency claim, written with onlyIfNew BEFORE the campaign is created
 //   run/<key>              the last run record of that date-slot (also skips and failures)
 //   last-run, last-dry-run the most recent real run / dry run
-//   test/<slot>/<file>     the draft campaign used for Send Test Email (reused: Wix rate-limits tests per campaign)
 //
 // The in-memory twin has the same interface and is what the tests use.
 
@@ -49,8 +48,6 @@ function wrap(kv) {
     async setLastRun(record) { await kv.setJSON('last-run', record) },
     async getLastDryRun() { return kv.getJSON('last-dry-run') },
     async setLastDryRun(record) { await kv.setJSON('last-dry-run', record) },
-    async getTestDraft(slot, file) { return kv.getJSON(`test/${slot}/${file}`) },
-    async setTestDraft(slot, file, record) { await kv.setJSON(`test/${slot}/${file}`, record) },
   }
 }
 

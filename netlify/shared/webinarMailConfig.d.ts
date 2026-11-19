@@ -19,6 +19,8 @@ export interface WebinarMailConfig {
   readonly placeholder: string
   readonly audience: { readonly labelIds: readonly string[]; readonly activeContactsOnly: boolean }
   readonly testRecipient: string
+  readonly testContactId: string
+  readonly testLeadMinutes: number
   readonly cron: string
   readonly slots: Readonly<Record<SlotName, SlotConfig>>
 }

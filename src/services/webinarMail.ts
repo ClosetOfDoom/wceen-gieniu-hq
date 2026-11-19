@@ -78,6 +78,7 @@ export interface WebinarMailStatus {
     skipDates: string[]
     cron: string
     testRecipient: string
+    testLeadMinutes: number
     slots: Record<MailSlot, { label: string; webinarTime: string; variants: Record<string, string> }>
   }
   nextWakeUp: { date: string; slot: MailSlot; at: string } | null
@@ -114,5 +115,6 @@ export const setMailState = (patch: { auto?: boolean; pause?: boolean }) => post
 export const ackMailFailure = () => post<{ ok: true }>({ action: 'ack' })
 export const setRegistrations = (key: string, value: number | null) => post<{ ok: true }>({ action: 'set-registrations', key, value })
 export const dryRunSlot = (slot: MailSlot) => post<{ ok: true; outcome: RunRecord }>({ action: 'dry-run', slot })
+/** "Wyślij test": the same Create + Publish as production, to the one test contact, sendAt now + testLeadMinutes. */
 export const sendTestMail = (slot: MailSlot) =>
-  post<{ ok: true; template: string; subject: string; variant: string; campaignId: string; to: string }>({ action: 'send-test', slot })
+  post<{ ok: true; test: true; template: string; subject: string; variant: string; campaignId: string; sendAt: string; to: string }>({ action: 'send-test', slot })

@@ -56,5 +56,25 @@ else fail('webinar-mail-admin is not wrapped in withStanleyAuth')
 if (!/publishCampaign/.test(admin)) ok('webinar-mail-admin cannot publish to the audience (no publishCampaign call)')
 else fail('webinar-mail-admin must not call publishCampaign')
 
+// One publication path: production and "Wyślij test" both go through createAndPublish; Wix Send Test is not used.
+const adminShared = readFileSync(join(root, 'netlify/shared/webinarMailAdmin.js'), 'utf8')
+const core = readFileSync(join(root, 'netlify/shared/webinarMail.js'), 'utf8')
+if (/createAndPublish\([^)]*test: true/.test(adminShared) && !/publishCampaign\(/.test(adminShared)) ok('"Wyślij test" goes through createAndPublish({ test: true }), never publishCampaign directly')
+else fail('webinarMailAdmin.js: the test must use createAndPublish({ ..., test: true }) and nothing else')
+if ((core.match(/wix\.publishCampaign\(/g) ?? []).length === 1 && /if \(test\) assertTestAudience\(/.test(core)) ok('exactly one wix.publishCampaign call in the code (inside createAndPublish, guarded for tests)')
+else fail('webinarMail.js: wix.publishCampaign must be called only inside createAndPublish, after assertTestAudience for tests')
+const sendTestUsers = []
+for (const dir of ['netlify/functions', 'netlify/shared', 'src/services', 'src/components']) {
+  for (const f of readdirSync(join(root, dir))) {
+    if (!/\.(js|ts|tsx|mjs)$/.test(f)) continue
+    const text = readFileSync(join(root, dir, f), 'utf8')
+    if (/\/campaigns\/[^'"`]*\/test\b|\bsendTest\s*[:(]|toEmailAddress/.test(text)) sendTestUsers.push(`${dir}/${f}`)
+  }
+}
+if (!sendTestUsers.length) ok('no Wix Send Test call anywhere in the functions or the app')
+else fail(`Wix Send Test still used in: ${sendTestUsers.join(', ')}`)
+if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(CFG.testContactId)) ok(`test contact configured (${CFG.testRecipient})`)
+else fail('WEBINAR_MAIL_CONFIG.testContactId is missing or not a GUID')
+
 console.log(errors ? `\n${errors} problem(s)` : '\nall good')
 process.exit(errors ? 1 : 0)

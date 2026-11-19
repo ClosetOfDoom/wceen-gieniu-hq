@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   runWebinarMail, validateSubject, validateTemplate, buildQueue, nextVariant, evaluateSafeguards,
   warsawParts, warsawLocalToUtc, buildAlerts, ctrOf, renderCampaignHtml, SLOT_NAMES,
+  assertTestAudience, createAndPublish, testAudience, testSendAt,
   type RunDeps, type WixLike, type TemplateFile, type LogEntry,
 } from '../../../netlify/shared/webinarMail.js'
 import { WEBINAR_MAIL_CONFIG as CFG } from '../../../netlify/shared/webinarMailConfig.js'
@@ -28,14 +29,14 @@ const CET_TUE_0600 = new Date('2026-12-01T05:00:00Z')
 const CEST_TUE_0600 = new Date('2026-06-02T04:00:00Z')
 
 function fakeWix(over: Partial<WixLike> = {}) {
-  const calls = { create: vi.fn(), publish: vi.fn(), sendTest: vi.fn() }
+  const calls = { create: vi.fn(), publish: vi.fn() }
   const wix: WixLike = {
     accountDetails: async () => ({ status: 'ACTIVE' }),
     listRecentCampaigns: async () => [],
     previewCampaign: async () => ({ html: '' }),
     createCampaign: async (i) => { calls.create(i); return 'camp-' + calls.create.mock.calls.length },
     publishCampaign: async (id, i) => { calls.publish(id, i) },
-    sendTest: async (id, i) => { calls.sendTest(id, i) },
+    getCampaign: async (id) => ({ campaignId: id, distributionStatus: 'SCHEDULED', visibilityStatus: 'PUBLISHED', datePublished: null, mailsSent: null, delivered: null }),
     deleteCampaign: async () => undefined,
     campaignStats: async () => ({}),
     ...over,
@@ -468,15 +469,93 @@ describe('admin actions', () => {
     expect(s.calls.create).not.toHaveBeenCalled(); expect(s.calls.publish).not.toHaveBeenCalled()
   })
 
-  it('send-test goes to the test address only, reuses its draft, and never publishes', async () => {
+  it('send-test uses the SAME create+publish path, to exactly the one test contact, sendAt >= 30 min ahead', async () => {
     const s = setup()
-    const a = await adminAction({ action: 'send-test', body: { slot: 'tuesday' }, deps: s.deps })
-    const b = await adminAction({ action: 'send-test', body: { slot: 'tuesday' }, deps: s.deps })
-    expect(a).toMatchObject({ ok: true, to: 'fundacja@wceen.com' }); expect(b.campaignId).toBe(a.campaignId)
-    expect(s.calls.create).toHaveBeenCalledTimes(1); expect(s.calls.sendTest).toHaveBeenCalledTimes(2)
-    expect(s.calls.sendTest.mock.calls.every((c) => c[1].to === 'fundacja@wceen.com')).toBe(true)
-    expect(s.calls.publish).not.toHaveBeenCalled()
+    const now = new Date('2026-11-19T15:00:20Z')
+    const r = await adminAction({ action: 'send-test', body: { slot: 'tuesday', variant: 'clickmeeting' }, deps: s.deps, now })
+    expect(r).toMatchObject({ ok: true, test: true, to: 'fundacja@wceen.com', contactId: CFG.testContactId, variant: 'clickmeeting', template: '01-t.html' })
+    expect(s.calls.create).toHaveBeenCalledTimes(1); expect(s.calls.publish).toHaveBeenCalledTimes(1)
+    const pub = s.calls.publish.mock.calls[0][1]
+    expect(pub.audience).toEqual({ contactIds: [CFG.testContactId] })
+    expect(pub.audience).not.toHaveProperty('labelIds')
+    expect((new Date(pub.sendAt).getTime() - now.getTime()) / 60000).toBeGreaterThanOrEqual(30)
+    expect(s.calls.create.mock.calls[0][0].html).toContain(CFG.slots.tuesday.variants.clickmeeting)
+    expect(s.calls.create.mock.calls[0][0].html).not.toContain('{{WEBINAR_URL}}')
     expect((await adminAction({ action: 'nope', body: {}, deps: s.deps })).ok).toBe(false)
+  })
+
+  it('send-test does not use the template up and does not move the link variant (logged as TEST)', async () => {
+    const s = setup()
+    await adminAction({ action: 'send-test', body: { slot: 'tuesday', variant: 'landing' }, deps: s.deps })
+    await adminAction({ action: 'send-test', body: { slot: 'tuesday', variant: 'clickmeeting' }, deps: s.deps })
+    const log = await s.store.getLog()
+    expect(log).toHaveLength(2)
+    expect(log.every((e) => e.test === true && e.status === 'test' && e.key.startsWith('TEST-'))).toBe(true)
+    const q = buildQueue('tuesday', [T(1), T(2), T(3), T(4), T(5)], log)
+    expect(q.next?.file).toBe('01-t.html'); expect(q.usedCount).toBe(0)
+    expect(nextVariant('tuesday', log)).toBe('landing')
+    // and the real run afterwards still takes template 01 with the first variant, to contacts-all
+    const real = await run(s, CET_TUE_0600)
+    expect(real).toMatchObject({ status: 'scheduled' }); expect(real.plan).toMatchObject({ template: '01-t.html', variant: 'landing' })
+    expect(s.calls.publish.mock.calls[2][1].audience).toEqual(CFG.audience)
+  })
+
+  it('send-test rejects an audience chosen by the caller (contacts-all, other contact) before anything reaches Wix', async () => {
+    const s = setup()
+    const audiences = [{ labelIds: ['contacts-all'] }, { contactIds: [CFG.testContactId], labelIds: ['contacts-all'] }, { contactIds: ['00000000-0000-0000-0000-000000000000'] }]
+    for (const audience of audiences) {
+      const r = await adminAction({ action: 'send-test', body: { slot: 'thursday', audience }, deps: s.deps })
+      expect(r.ok).toBe(false); expect(String(r.error)).toMatch(/BEZPIECZNIK TESTU/)
+    }
+    expect(s.calls.create).not.toHaveBeenCalled(); expect(s.calls.publish).not.toHaveBeenCalled()
+    expect((await adminAction({ action: 'send-test', body: { slot: 'thursday', variant: 'x' }, deps: s.deps })).ok).toBe(false)
+  })
+})
+
+// ── Safeguard of the test path ──────────────────────────────────────────────────
+
+describe('test audience safeguard', () => {
+  it('accepts exactly { contactIds: [testContactId] }', () => {
+    expect(testAudience()).toEqual({ contactIds: [CFG.testContactId] })
+    expect(assertTestAudience(testAudience())).toBe(true)
+    expect(CFG.testContactId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+  })
+
+  it('rejects contacts-all and every other list or label', () => {
+    const bad: unknown[] = [
+      CFG.audience, // the production audience: contacts-all
+      { labelIds: ['contacts-all'] },
+      { labelIds: ['contacts-all'], contactIds: [CFG.testContactId] },
+      { contactIds: [CFG.testContactId], segmentIds: ['11111111-1111-1111-1111-111111111111'] },
+      { contactIds: [CFG.testContactId], activeContactsOnly: false },
+      { contactIds: [CFG.testContactId, '22222222-2222-2222-2222-222222222222'] },
+      { contactIds: ['22222222-2222-2222-2222-222222222222'] },
+      { contactIds: [] }, {}, null, undefined, 'contacts-all',
+    ]
+    for (const a of bad) expect(() => assertTestAudience(a)).toThrow(/BEZPIECZNIK TESTU/)
+  })
+
+  it('createAndPublish(test) with contacts-all never calls Wix', async () => {
+    const { wix, calls } = fakeWix()
+    await expect(createAndPublish({ wix, subject: 'Temat', html: '<p>x</p>', sendAt: '2026-12-01T06:00:00.000Z', audience: CFG.audience, test: true })).rejects.toThrow(/BEZPIECZNIK TESTU/)
+    expect(calls.create).not.toHaveBeenCalled(); expect(calls.publish).not.toHaveBeenCalled()
+  })
+
+  it('a publish error still reports the created campaignId', async () => {
+    const { wix } = fakeWix({ publishCampaign: async () => { throw new Error('HTTP 428') } })
+    await expect(createAndPublish({ wix, subject: 'T', html: 'x', sendAt: 's', audience: testAudience(), test: true })).rejects.toMatchObject({ campaignId: 'camp-1' })
+  })
+
+  it('test sendAt is at least 30 minutes ahead, on a full minute', () => {
+    const now = new Date('2026-11-19T15:00:20Z')
+    const at = testSendAt(now)
+    expect(at.toISOString()).toBe('2026-11-19T15:32:00.000Z')
+    expect(at.getTime() - now.getTime()).toBeGreaterThanOrEqual(30 * 60000)
+  })
+
+  it('no Wix Send Test anywhere: the client has no sendTest', () => {
+    const wix = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: (async () => new Response('{}')) as unknown as typeof fetch })
+    expect('sendTest' in wix).toBe(false)
   })
 })
 
@@ -501,14 +580,14 @@ describe('Wix client payloads', () => {
     expect([b.emailSubject, b.emailPreheader]).toEqual(['Temat', 'Zajawka'])
   })
 
-  it('publish: sendAt, contacts-all label, subject — and the test mail goes to the given address', async () => {
+  it('publish: sendAt, contacts-all label, subject — and the test audience sends only contactIds', async () => {
     seen.length = 0
     const wix = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl })
     await wix.publishCampaign('cid', { subject: 'Temat', sendAt: '2026-12-01T06:00:00.000Z', audience: CFG.audience })
     expect(seen[0].url).toMatch(/\/campaigns\/cid\/publish$/)
     expect(seen[0].body).toEqual({ emailDistributionOptions: { emailSubject: 'Temat', labelIds: ['contacts-all'], activeContactsOnly: false, sendAt: '2026-12-01T06:00:00.000Z' } })
-    await wix.sendTest('cid', { to: 'fundacja@wceen.com', subject: 'Temat' })
-    expect(seen[1].body).toEqual({ toEmailAddress: 'fundacja@wceen.com', emailSubject: 'Temat' })
+    await wix.publishCampaign('cid', { subject: 'Temat', sendAt: '2026-11-19T15:32:00.000Z', audience: testAudience() })
+    expect(seen[1].body).toEqual({ emailDistributionOptions: { emailSubject: 'Temat', contactIds: [CFG.testContactId], sendAt: '2026-11-19T15:32:00.000Z' } })
   })
 
   it('an API error never contains the key', async () => {

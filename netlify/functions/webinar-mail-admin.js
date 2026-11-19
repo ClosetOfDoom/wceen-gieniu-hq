@@ -6,8 +6,9 @@
 //   POST { action: 'ack' }                           acknowledge the last failed run (clears the red alert)
 //   POST { action: 'set-registrations', key, value } manual ClickMeeting registrations count
 //   POST { action: 'dry-run', slot }                 the whole run for the next wake-up, without publishing
-//   POST { action: 'send-test', slot }               Send Test Email of the next template to the test address
-// Nothing here can publish a campaign to the audience: only webinar-mail-run does that.
+//   POST { action: 'send-test', slot, variant? }     "Wyślij test": the same Create + Publish as production, sendAt now+31 min,
+//                                                    to exactly ONE contact (testContactId); any other audience is rejected
+// Nothing here can publish a campaign to the audience (contacts-all): only webinar-mail-run does that.
 
 import { connectLambda } from '@netlify/blobs'
 import { withStanleyAuth } from '../shared/auth.js'

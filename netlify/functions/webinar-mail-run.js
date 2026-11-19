@@ -19,7 +19,7 @@ import { WEBINAR_MAIL_CONFIG } from '../shared/webinarMailConfig.js'
 /** A Wix client whose every call fails with the same clear message (missing env), so the run records it. */
 function unavailableWix(message) {
   const fail = async () => { throw new Error(message) }
-  return { accountDetails: fail, listRecentCampaigns: fail, previewCampaign: fail, createCampaign: fail, publishCampaign: fail, sendTest: fail, deleteCampaign: fail, campaignStats: fail }
+  return { accountDetails: fail, listRecentCampaigns: fail, previewCampaign: fail, createCampaign: fail, publishCampaign: fail, getCampaign: fail, deleteCampaign: fail, campaignStats: fail }
 }
 
 export default async function handler() {

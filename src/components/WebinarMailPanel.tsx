@@ -191,8 +191,10 @@ export function WebinarMailPanel() {
             key={q.slot} q={q} status={status} busy={busy}
             onDryRun={() => act(async () => { const r = await dryRunSlot(q.slot); setDry(r.outcome); await load() })}
             onTest={() => act(async () => {
-              if (!window.confirm(`Wysłać test „${q.next?.subject}” na ${status.config.testRecipient}? (do bazy nic nie idzie)`)) return
-              const r = await sendTestMail(q.slot); setMessage(`Test wysłany na ${r.to}: „${r.subject}” (${VARIANT_LABEL[r.variant] ?? r.variant}).`)
+              if (!window.confirm(`Opublikować test „${q.next?.subject}” tylko do ${status.config.testRecipient}? Ta sama ścieżka co produkcja, wysyłka za ok. ${status.config.testLeadMinutes} min (do bazy nic nie idzie, szablon nie jest zużywany).`)) return
+              const r = await sendTestMail(q.slot)
+              setMessage(`TEST zaplanowany na ${new Date(r.sendAt).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })} do ${r.to}: „${r.subject}” (${VARIANT_LABEL[r.variant] ?? r.variant}), kampania ${r.campaignId.slice(0, 8)}.`)
+              await load()
             })}
           />
         ))}

@@ -20,8 +20,15 @@ export const WEBINAR_MAIL_CONFIG = Object.freeze({
   placeholder: '{{WEBINAR_URL}}',
   /** Everything goes to ALL Wix contacts: the same audience the dashboard campaigns used ("contacts-all"). */
   audience: Object.freeze({ labelIds: Object.freeze(['contacts-all']), activeContactsOnly: false }),
-  /** Where "Send Test Email" goes. */
+  /**
+   * "Wyślij test" = the SAME Create + Publish as production, but to exactly ONE Wix contact.
+   * testContactId is the Wix contact of testRecipient (created 2026-11-19, subscription NOT_SET = not unsubscribed).
+   * Any other audience (a label such as contacts-all, a segment, more contacts) is rejected by assertTestAudience.
+   */
   testRecipient: 'fundacja@wceen.com',
+  testContactId: 'b2ccc71f-2623-4c42-8ef5-ea288c327706',
+  /** A test is scheduled this many minutes ahead (Wix minimum for sendAt is 30). */
+  testLeadMinutes: 31,
   /**
    * Two UTC hours, so that 06:00 Warsaw is hit in winter (CET = UTC+1 → 05:00 UTC) and in summer
    * (CEST = UTC+2 → 04:00 UTC). On Tue/Thu the run at the wrong hour exits straight away.

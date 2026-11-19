@@ -124,7 +124,8 @@ const USED_STATUS = new Set(['scheduled'])
  * entries and failed runs never use a template up.
  */
 export function buildQueue(slot, templates, log, config = WEBINAR_MAIL_CONFIG) {
-  const used = new Set(log.filter((e) => e.slot === slot && !e.dryRun && USED_STATUS.has(e.status)).map((e) => e.templateFile))
+  // Test sends ("Wyślij test") and dry runs never use a template up.
+  const used = new Set(log.filter((e) => e.slot === slot && !e.dryRun && !e.test && USED_STATUS.has(e.status)).map((e) => e.templateFile))
   const entries = [...templates]
     .sort((a, b) => a.file.localeCompare(b.file))
     .map((t) => ({ ...validateTemplate(t.file, t.html, config), used: used.has(t.file) }))
@@ -146,7 +147,7 @@ export function buildQueue(slot, templates, log, config = WEBINAR_MAIL_CONFIG) {
 export function nextVariant(slot, log, config = WEBINAR_MAIL_CONFIG) {
   const names = Object.keys(config.slots[slot].variants)
   const done = log
-    .filter((e) => e.slot === slot && !e.dryRun && e.status === 'scheduled' && e.variant)
+    .filter((e) => e.slot === slot && !e.dryRun && !e.test && e.status === 'scheduled' && e.variant)
     .sort((a, b) => String(a.date).localeCompare(String(b.date)))
   if (done.length === 0) return names[0]
   const i = names.indexOf(done[done.length - 1].variant)
@@ -196,6 +197,54 @@ export async function findSendsToday({ slot, today, wix, knownIds = [] }, config
     if (markers.some((m) => html.includes(m))) hits.push(c)
   }
   return hits
+}
+
+// ── The ONE publication path (production and "Wyślij test") ──────────────────────
+//
+// Production and the test differ ONLY in the audience: production = config.audience (contacts-all),
+// test = exactly one contact (config.testContactId). Wix "Send Test Email" is not used anywhere.
+
+/** The only audience a test may have: exactly the one test contact, nothing else. */
+export function testAudience(config = WEBINAR_MAIL_CONFIG) {
+  return Object.freeze({ contactIds: Object.freeze([config.testContactId]) })
+}
+
+/**
+ * Hard safeguard of the test path. Throws unless the audience is EXACTLY { contactIds: [testContactId] }:
+ * any label (contacts-all included), segment, activeContactsOnly, extra or different contact is rejected.
+ */
+export function assertTestAudience(audience, config = WEBINAR_MAIL_CONFIG) {
+  const problems = []
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(config.testContactId ?? ''))) problems.push('brak poprawnego testContactId w konfiguracji')
+  const a = audience && typeof audience === 'object' ? audience : {}
+  const extra = Object.keys(a).filter((k) => k !== 'contactIds')
+  if (extra.length) problems.push(`niedozwolone pola odbiorców: ${extra.join(', ')}`)
+  const ids = Array.isArray(a.contactIds) ? a.contactIds : null
+  if (!ids || ids.length !== 1 || ids[0] !== config.testContactId) problems.push('contactIds musi być dokładnie [kontakt testowy]')
+  if (problems.length) throw new Error(`BEZPIECZNIK TESTU: odrzucono odbiorców (${problems.join('; ')})`)
+  return true
+}
+
+/** sendAt of a test: now + testLeadMinutes, rounded up to the full minute. */
+export function testSendAt(now, config = WEBINAR_MAIL_CONFIG) {
+  return new Date(Math.ceil((now.getTime() + config.testLeadMinutes * 60000) / 60000) * 60000)
+}
+
+/**
+ * Create the HTML campaign and publish it with emailDistributionOptions. Used by the scheduled run AND by
+ * "Wyślij test". With test: true the audience must pass assertTestAudience BEFORE anything reaches Wix.
+ * On a publish error the thrown error carries the campaignId of the created draft.
+ */
+export async function createAndPublish({ wix, subject, preheader, html, sendAt, audience, test = false }, config = WEBINAR_MAIL_CONFIG) {
+  if (test) assertTestAudience(audience, config)
+  const campaignId = await wix.createCampaign({ subject, preheader, html })
+  try {
+    await wix.publishCampaign(campaignId, { subject, sendAt, audience })
+  } catch (e) {
+    e.campaignId = campaignId
+    throw e
+  }
+  return campaignId
 }
 
 // ── The run ─────────────────────────────────────────────────────────────────────
@@ -279,9 +328,9 @@ export async function runWebinarMail({ now, deps, dryRun = false, force = false,
 
     let campaignId = null
     try {
-      campaignId = await wix.createCampaign({ title: `[auto] ${subject}`, subject, preheader, html })
-      await wix.publishCampaign(campaignId, { subject, sendAt: sendAt.toISOString(), audience: config.audience })
+      campaignId = await createAndPublish({ wix, subject, preheader, html, sendAt: sendAt.toISOString(), audience: config.audience }, config)
     } catch (e) {
+      campaignId = e.campaignId ?? null
       await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: 'failed', error: scrub(e.message), createdAt: now.toISOString(), dryRun: false })
       return finish({ status: 'failed', reason: 'publish-failed', detail: scrub(e.message), campaignId, plan, checks })
     }

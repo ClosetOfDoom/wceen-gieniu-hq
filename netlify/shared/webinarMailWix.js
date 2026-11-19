@@ -4,11 +4,12 @@
 //   GET  /email-marketing/v1/account-details
 //   GET  /email-marketing/v1/campaigns            (list; statuses, distributionStatus, publishingData)
 //   POST /email-marketing/v1/campaigns            (create from HTML: campaignEditorType HTML)
-//   POST /email-marketing/v1/campaigns/{id}/publish   (emailDistributionOptions: labelIds, sendAt ...)
-//   POST /email-marketing/v1/campaigns/{id}/test      (Send Test Email)
+//   POST /email-marketing/v1/campaigns/{id}/publish   (emailDistributionOptions: labelIds | contactIds, sendAt ...)
+//   GET  /email-marketing/v1/campaigns/{id}           (status of one campaign)
 //   POST /email-marketing/v1/campaigns/{id}/preview   (rendered HTML + subject)
 //   GET  /email-marketing/v1/campaigns/statistics
 //   DELETE /email-marketing/v1/campaigns/{id}
+// Wix "Send Test Email" is deliberately NOT used: a test is a real publish to one contact (see createAndPublish).
 // The API key is never logged or returned; error text is scrubbed of it.
 
 const BASE = 'https://www.wixapis.com'
@@ -70,19 +71,26 @@ export function createWixClient({ apiKey, siteId, fetchImpl = fetch } = {}) {
       return id
     },
 
+    /** audience: { labelIds, activeContactsOnly } (production) or { contactIds } (test). Only given fields are sent. */
     async publishCampaign(campaignId, { subject, sendAt, audience }) {
-      return call('POST', `/email-marketing/v1/campaigns/${campaignId}/publish`, {
-        emailDistributionOptions: {
-          emailSubject: subject,
-          labelIds: [...audience.labelIds],
-          activeContactsOnly: Boolean(audience.activeContactsOnly),
-          sendAt,
-        },
-      })
+      const options = { emailSubject: subject, sendAt }
+      if (audience.labelIds) options.labelIds = [...audience.labelIds]
+      if (audience.contactIds) options.contactIds = [...audience.contactIds]
+      if ('activeContactsOnly' in audience) options.activeContactsOnly = Boolean(audience.activeContactsOnly)
+      return call('POST', `/email-marketing/v1/campaigns/${campaignId}/publish`, { emailDistributionOptions: options })
     },
 
-    async sendTest(campaignId, { to, subject }) {
-      return call('POST', `/email-marketing/v1/campaigns/${campaignId}/test`, { toEmailAddress: to, emailSubject: subject })
+    async getCampaign(campaignId) {
+      const j = await call('GET', `/email-marketing/v1/campaigns/${campaignId}`)
+      const c = j.campaign ?? {}
+      return {
+        campaignId: c.campaignId ?? campaignId,
+        distributionStatus: c.distributionStatus ?? null,
+        visibilityStatus: c.visibilityStatus ?? null,
+        datePublished: c.publishingData?.datePublished ?? null,
+        mailsSent: c.publishingData?.statistics?.total?.mailsSent ?? null,
+        delivered: c.publishingData?.statistics?.emailCampaign?.delivered ?? null,
+      }
     },
 
     async deleteCampaign(campaignId) {
