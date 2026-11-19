@@ -92,6 +92,15 @@ for (const dir of ['netlify/functions', 'netlify/shared', 'src/services', 'src/c
 }
 if (!sendTestUsers.length) ok('no Wix Send Test call anywhere in the functions or the app')
 else fail(`Wix Send Test still used in: ${sendTestUsers.join(', ')}`)
+// T1: one status list. The tab and the backend never compare send-log statuses by hand.
+const panel = readFileSync(join(root, 'src/components/WebinarMailPanel.tsx'), 'utf8')
+// log rows are e / r / row / entry; run outcomes (run.status, lastRun.status) are a different list
+const literalStatus = /\b(?:e|r|row|entry)\.status\s*[!=]==?\s*['"](scheduled|failed|test|test-failed)['"]/
+const handMapped = [['src/components/WebinarMailPanel.tsx', panel], ['netlify/shared/webinarMail.js', core], ['netlify/shared/webinarMailAdmin.js', adminShared]]
+  .filter(([, text]) => literalStatus.test(text)).map(([f]) => f)
+if (/from '\.\.\/\.\.\/netlify\/shared\/webinarMailStatus\.js'/.test(panel) && /sendStatusView\(/.test(panel) && !handMapped.length) ok('send-log statuses come from netlify/shared/webinarMailStatus.js only (panel uses sendStatusView)')
+else fail(`send-log statuses mapped by hand outside webinarMailStatus.js: ${handMapped.join(', ') || 'panel does not use sendStatusView'}`)
+
 if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(CFG.testContactId)) ok(`test contact configured (${CFG.testRecipient})`)
 else fail('WEBINAR_MAIL_CONFIG.testContactId is missing or not a GUID')
 

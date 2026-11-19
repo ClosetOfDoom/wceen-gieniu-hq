@@ -8,6 +8,7 @@
 //   with sendAt 07:00. A DRY_RUN does everything except the claim, the create and the publish.
 
 import { WEBINAR_MAIL_CONFIG } from './webinarMailConfig.js'
+import { LOG_STATUS, isProductionSend } from './webinarMailStatus.js'
 
 export const SLOT_NAMES = Object.freeze(['tuesday', 'thursday'])
 
@@ -134,16 +135,14 @@ export function renderCampaignHtml(html, url, config = WEBINAR_MAIL_CONFIG) {
 
 // ── Queue and variants ──────────────────────────────────────────────────────────
 
-const USED_STATUS = new Set(['scheduled'])
-
 /**
  * Queue of one slot. Templates are used in file-name order, each exactly once, NO wrap-around:
  * when all are used the queue is empty. Blocked templates are skipped (and listed), DRY_RUN
  * entries and failed runs never use a template up.
  */
 export function buildQueue(slot, templates, log, config = WEBINAR_MAIL_CONFIG) {
-  // Test sends ("Wyślij test") and dry runs never use a template up.
-  const used = new Set(log.filter((e) => e.slot === slot && !e.dryRun && !e.test && USED_STATUS.has(e.status)).map((e) => e.templateFile))
+  // Only production sends use a template up; tests ("Wyślij test") and dry runs never do (webinarMailStatus.js).
+  const used = new Set(log.filter((e) => e.slot === slot && isProductionSend(e)).map((e) => e.templateFile))
   const entries = [...templates]
     .sort((a, b) => a.file.localeCompare(b.file))
     .map((t) => ({ ...validateTemplate(t.file, t.html, config), used: used.has(t.file) }))
@@ -165,7 +164,7 @@ export function buildQueue(slot, templates, log, config = WEBINAR_MAIL_CONFIG) {
 export function nextVariant(slot, log, config = WEBINAR_MAIL_CONFIG) {
   const names = Object.keys(config.slots[slot].variants)
   const done = log
-    .filter((e) => e.slot === slot && !e.dryRun && !e.test && e.status === 'scheduled' && e.variant)
+    .filter((e) => e.slot === slot && isProductionSend(e) && e.variant)
     .sort((a, b) => String(a.date).localeCompare(String(b.date)))
   if (done.length === 0) return names[0]
   const i = names.indexOf(done[done.length - 1].variant)
@@ -307,7 +306,7 @@ export async function runWebinarMail({ now, deps, dryRun = false, force = false,
     const [state, log] = await Promise.all([store.getState(), store.getLog()])
     const gates = []
 
-    if (!dryRun && log.some((e) => e.key === key && !e.dryRun && e.status === 'scheduled')) {
+    if (!dryRun && log.some((e) => e.key === key && isProductionSend(e))) {
       return finish({ status: 'skipped', reason: 'already-done' })
     }
     if (config.skipDates.includes(parts.date)) gates.push({ id: 'SKIP_DATE', reason: 'skip-date' })
@@ -354,10 +353,10 @@ export async function runWebinarMail({ now, deps, dryRun = false, force = false,
       campaignId = await createAndPublish({ wix, subject, preheader, html, sendAt: sendAt.toISOString(), audience: config.audience }, config)
     } catch (e) {
       campaignId = e.campaignId ?? null
-      await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: 'failed', error: scrub(e.message), createdAt: now.toISOString(), dryRun: false })
+      await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: LOG_STATUS.FAILED, error: scrub(e.message), createdAt: now.toISOString(), dryRun: false })
       return finish({ status: 'failed', reason: 'publish-failed', detail: scrub(e.message), campaignId, plan, checks })
     }
-    await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: 'scheduled', createdAt: now.toISOString(), dryRun: false })
+    await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: LOG_STATUS.SCHEDULED, createdAt: now.toISOString(), dryRun: false })
     return finish({ status: 'scheduled', reason: 'published', campaignId, plan, checks, readyAfter: queue.readyCount - 1 })
   } catch (e) {
     return finish({ status: 'failed', reason: 'exception', detail: scrub(e.message) })

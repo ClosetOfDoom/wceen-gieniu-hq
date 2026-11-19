@@ -3,12 +3,25 @@ import {
   ackMailFailure, dryRunSlot, fetchWebinarMailStatus, sendTestMail, setMailState, setRegistrations,
   type MailAlert, type MailSlot, type RunRecord, type SendRow, type SlotQueue, type WebinarMailStatus,
 } from '../services/webinarMail'
+import { isProductionSend, isTestEntry, sendStatusView } from '../../netlify/shared/webinarMailStatus.js'
 
 const MONO = { fontFamily: 'var(--font-mono)' } as const
 const fmtWarsaw = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw', weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
 const SLOT_SHORT: Record<MailSlot, string> = { tuesday: 'wtorek', thursday: 'czwartek' }
 const VARIANT_LABEL: Record<string, string> = { landing: 'landing', clickmeeting: 'ClickMeeting' }
+const TONE_COLOR = { ok: 'var(--emerald)', pending: 'var(--teal, var(--emerald))', error: 'var(--red)', muted: 'var(--muted2)' } as const
+
+/** Status cell: the ONE mapping (sendStatusView), with a TEST badge on test publishes. */
+function StatusCell({ row, now }: { row: SendRow; now: Date }) {
+  const v = sendStatusView(row, now)
+  return (
+    <td style={{ color: TONE_COLOR[v.tone] }}>
+      {v.test && <span data-testid="test-badge" style={{ border: '1px solid var(--amber)', color: 'var(--amber)', borderRadius: 3, padding: '0 4px', marginRight: 6, fontSize: '0.64rem' }}>TEST</span>}
+      {v.code}{v.code === 'błąd' && row.error ? `: ${row.error.slice(0, 60)}` : ''}
+    </td>
+  )
+}
 
 /** Polls the status so the Command Center can show the red alerts without opening the tab. */
 export function useWebinarMailAlerts(): MailAlert[] {
@@ -144,6 +157,10 @@ export function WebinarMailPanel() {
   if (!status) return <div style={{ ...MONO, color: 'var(--muted2)', fontSize: '0.8rem' }}>Wczytuję maile webinarowe…</div>
 
   const { state } = status
+  const now = new Date(status.now)
+  // Older backends (before T1) still sent tests inside `log`: split them here with the same shared rule.
+  const production = status.log.filter((r) => !isTestEntry(r))
+  const tests = [...(status.tests ?? []), ...status.log.filter((r) => isTestEntry(r))]
   const toggleAuto = () => act(async () => {
     if (!state.auto && !window.confirm('Włączyć AUTO? Od następnego wtorku/czwartku o 6:00 funkcja sama zaplanuje kampanię na 7:00 do WSZYSTKICH kontaktów Wix.')) return
     await setMailState({ auto: !state.auto }); await load()
@@ -206,7 +223,7 @@ export function WebinarMailPanel() {
       <div>
         <div className="section-title" style={{ marginBottom: 8 }}>Wysyłki</div>
         {status.statsError && <div style={{ ...MONO, fontSize: '0.7rem', color: 'var(--amber)' }}>CTR z Wix niedostępny: {status.statsError}</div>}
-        {status.log.length === 0 ? (
+        {production.length === 0 ? (
           <div style={{ ...MONO, fontSize: '0.76rem', color: 'var(--muted2)' }}>Żadna kampania nie poszła jeszcze przez Stanleya.</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -215,15 +232,15 @@ export function WebinarMailPanel() {
                 <th style={{ padding: '4px 8px' }}>Data</th><th>Slot</th><th>Wariant</th><th>Status</th><th>Temat</th><th>CTR (Wix)</th><th>Rejestracje CM</th>
               </tr></thead>
               <tbody>
-                {status.log.map((r) => (
+                {production.map((r) => (
                   <tr key={`${r.key}-${r.status}-${r.campaignId}`} style={{ borderTop: '1px solid var(--border)' }}>
                     <td style={{ padding: '4px 8px' }}>{r.date}</td>
                     <td>{SLOT_SHORT[r.slot]}</td>
                     <td>{r.variant ? (VARIANT_LABEL[r.variant] ?? r.variant) : '—'}</td>
-                    <td style={{ color: r.status === 'scheduled' ? 'var(--emerald)' : 'var(--red)' }}>{r.status === 'scheduled' ? 'zaplanowana' : `błąd${r.error ? `: ${r.error.slice(0, 60)}` : ''}`}</td>
+                    <StatusCell row={r} now={now} />
                     <td>{r.subject}</td>
                     <td>{r.ctr == null ? '—' : `${r.ctr.toFixed(2)}% (${r.clicked}/${r.delivered})`}</td>
-                    <td>{r.status === 'scheduled' ? <RegistrationsCell row={r} onSaved={load} /> : '—'}</td>
+                    <td>{isProductionSend(r) ? <RegistrationsCell row={r} onSaved={load} /> : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -231,6 +248,34 @@ export function WebinarMailPanel() {
           </div>
         )}
       </div>
+
+      {tests.length > 0 && (
+        <div data-testid="mail-tests">
+          <div className="section-title" style={{ marginBottom: 8 }}>Testy</div>
+          <div style={{ ...MONO, fontSize: '0.7rem', color: 'var(--muted2)', marginBottom: 6 }}>
+            Publikacje „Wyślij test” tylko do {status.config.testRecipient}. Nie zużywają szablonu, nie liczą się do wariantów A/B ani CTR.
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ ...MONO, fontSize: '0.72rem', borderCollapse: 'collapse', width: '100%' }}>
+              <thead><tr style={{ color: 'var(--muted2)', textAlign: 'left' }}>
+                <th style={{ padding: '4px 8px' }}>Data</th><th>Slot</th><th>Wariant</th><th>Status</th><th>Temat</th><th>Opublikowano</th>
+              </tr></thead>
+              <tbody>
+                {tests.map((r) => (
+                  <tr key={`${r.key}-${r.status}-${r.campaignId}-${r.createdAt}`} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: '4px 8px' }}>{r.date}</td>
+                    <td>{SLOT_SHORT[r.slot]}</td>
+                    <td>{r.variant ? (VARIANT_LABEL[r.variant] ?? r.variant) : '—'}</td>
+                    <StatusCell row={r} now={now} />
+                    <td>{r.subject}</td>
+                    <td>{fmtWarsaw(r.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

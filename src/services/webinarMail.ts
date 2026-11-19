@@ -42,8 +42,12 @@ export interface SendRow {
   campaignId: string | null
   templateFile: string
   subject: string
+  /** One of LOG_STATUSES (netlify/shared/webinarMailStatus.js); shown through sendStatusView, never compared by hand. */
   status: string
+  /** A "Wyślij test" entry: listed under "Testy", never in the CTR / A/B statistics. */
+  test?: boolean
   sendAt: string | null
+  createdAt?: string | null
   error: string | null
   registrations: number | null
   delivered: number | null
@@ -83,7 +87,10 @@ export interface WebinarMailStatus {
   }
   nextWakeUp: { date: string; slot: MailSlot; at: string } | null
   queues: SlotQueue[]
+  /** Production sends only. */
   log: SendRow[]
+  /** Test publishes ("Wyślij test"), newest first. Missing in responses of builds before T1. */
+  tests?: SendRow[]
   statsError: string | null
   lastRun: RunRecord | null
   lastDryRun: RunRecord | null

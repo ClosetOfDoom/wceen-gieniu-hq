@@ -7,6 +7,7 @@ import {
   assertTestAudience, createAndPublish, testAudience, testSendAt,
 } from './webinarMail.js'
 import { WEBINAR_MAIL_CONFIG } from './webinarMailConfig.js'
+import { LOG_STATUS, isProductionSend, isTestEntry } from './webinarMailStatus.js'
 
 const publicConfig = (c) => ({
   wakeHour: c.wakeHour, sendAtLocal: c.sendAtLocal, lowQueueThreshold: c.lowQueueThreshold, skipDates: [...c.skipDates], cron: c.cron, testRecipient: c.testRecipient, testLeadMinutes: c.testLeadMinutes,
@@ -32,22 +33,26 @@ export async function adminStatus({ deps, now = new Date(), config = WEBINAR_MAI
     })
   }
 
-  // CTR from Wix for the sends that went out (statistics are unique clickers / delivered).
-  const sent = log.filter((e) => e.campaignId && e.status === 'scheduled')
+  // CTR from Wix only for production sends: tests never enter the CTR / A/B statistics (webinarMailStatus.js).
+  const sent = log.filter((e) => e.campaignId && isProductionSend(e))
   let stats = {}
   let statsError = null
   try { stats = await wix.campaignStats(sent.map((e) => e.campaignId)) } catch (e) { statsError = String(e.message).slice(0, 200) }
-  const rows = [...log].reverse().map((e) => {
-    const st = stats[e.campaignId]
-    return { key: e.key, date: e.date, slot: e.slot, variant: e.variant ?? null, campaignId: e.campaignId ?? null, templateFile: e.templateFile, subject: e.subject, status: e.status, sendAt: e.sendAt ?? null, error: e.error ?? null, registrations: e.registrations ?? null, delivered: st?.delivered ?? null, clicked: st?.clicked ?? null, ctr: st ? ctrOf(st) : null }
-  })
+  const toRow = (e) => {
+    const st = isProductionSend(e) ? stats[e.campaignId] : undefined
+    return { key: e.key, date: e.date, slot: e.slot, variant: e.variant ?? null, campaignId: e.campaignId ?? null, templateFile: e.templateFile, subject: e.subject, status: e.status, test: isTestEntry(e), sendAt: e.sendAt ?? null, createdAt: e.createdAt ?? null, error: e.error ?? null, registrations: e.registrations ?? null, delivered: st?.delivered ?? null, clicked: st?.clicked ?? null, ctr: st ? ctrOf(st) : null }
+  }
+  const newestFirst = [...log].filter((e) => !e.dryRun).reverse()
+  // "Wysyłki" = production only; "Testy" = the test publishes, shown apart and never counted.
+  const rows = newestFirst.filter((e) => !isTestEntry(e)).map(toRow)
+  const tests = newestFirst.filter((e) => isTestEntry(e)).map(toRow)
 
   const p = warsawParts(now)
   const slotToday = slotForWeekday(p.weekday, config)
   const runToday = slotToday ? await store.getRun(`${p.date}-${slotToday}`) : null
   const alerts = buildAlerts({ state, lastRun, runToday, queues: queues.map((q) => ({ slot: q.slot, empty: q.empty || Boolean(q.loadError), low: q.low, readyCount: q.readyCount })), now }, config)
   const next = nextWakeUp(now, config)
-  return { now: now.toISOString(), state, config: publicConfig(config), nextWakeUp: next ? { date: next.date, slot: next.slot, at: next.at.toISOString() } : null, queues, log: rows, statsError, lastRun, lastDryRun, alerts }
+  return { now: now.toISOString(), state, config: publicConfig(config), nextWakeUp: next ? { date: next.date, slot: next.slot, at: next.at.toISOString() } : null, queues, log: rows, tests, statsError, lastRun, lastDryRun, alerts }
 }
 
 /** The instant of the next 06:00 Warsaw wake-up of one slot (today if it is still ahead). */
@@ -125,10 +130,10 @@ export async function adminAction({ action, body, deps, now = new Date(), config
       } catch (e) {
         campaignId = e.campaignId ?? null
         const error = String(e.message).slice(0, 300)
-        await store.addLog({ key, date: warsawParts(now).date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt, status: 'test-failed', error, test: true, createdAt: now.toISOString(), dryRun: false })
+        await store.addLog({ key, date: warsawParts(now).date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt, status: LOG_STATUS.TEST_FAILED, error, test: true, createdAt: now.toISOString(), dryRun: false })
         return { ok: false, error, campaignId }
       }
-      await store.addLog({ key, date: warsawParts(now).date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt, status: 'test', test: true, createdAt: now.toISOString(), dryRun: false })
+      await store.addLog({ key, date: warsawParts(now).date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt, status: LOG_STATUS.TEST, test: true, createdAt: now.toISOString(), dryRun: false })
       console.log('[webinar-mail TEST]', JSON.stringify({ slot, variant, template: template.file, campaignId, sendAt, contactId: config.testContactId }))
       return { ok: true, test: true, slot, template: template.file, subject, variant, url, campaignId, sendAt, to: config.testRecipient, contactId: config.testContactId }
     }

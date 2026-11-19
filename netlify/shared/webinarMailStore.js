@@ -9,6 +9,7 @@
 // The in-memory twin has the same interface and is what the tests use.
 
 import { getStore } from '@netlify/blobs'
+import { LOG_STATUS } from './webinarMailStatus.js'
 
 export const DEFAULT_STATE = Object.freeze({ auto: false, pause: false, ackedRunAt: null, updatedAt: null })
 
@@ -26,7 +27,7 @@ function wrap(kv) {
       return rows.filter(Boolean).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt).localeCompare(String(b.createdAt)))
     },
     async addLog(entry) {
-      const suffix = entry.status === 'scheduled' ? '' : `~${Date.now()}`
+      const suffix = entry.status === LOG_STATUS.SCHEDULED ? '' : `~${Date.now()}`
       await kv.setJSON(`log/${entry.key}${suffix}`, entry)
     },
     async updateLog(storageKey, patch) {
