@@ -60,6 +60,8 @@ export interface MetaAdDaily {
   cpc?: number | null
   cpm?: number | null
   meta_purchase_value?: number | null
+  /** The raw Meta Insights row as ingested; whether it is filled is read from the rows (src/lib/metaCoverage.ts). */
+  raw_payload?: unknown
 }
 
 export interface AutomationRun {

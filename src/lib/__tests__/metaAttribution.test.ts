@@ -43,13 +43,18 @@ describe('the period before the fix is named, not counted', () => {
     expect(metaPurchasesAreCollected('2099-01-01')).toBe(false)
   })
 
-  it('the report says NIEPOBIERANE rather than printing a zero', async () => {
+  it('the report note is read from the rows: no rows → "cannot tell", rows → since when / X z Y', async () => {
     const { metaPurchasesNote } = await import('../exportReport')
-    const note = metaPurchasesNote()
-    expect(note).toContain('NIEPOBIERANE')
-    expect(note).toContain('nie wiemy')
-    // The measured evidence travels with the claim.
-    expect(note).toContain('46')
+    expect(metaPurchasesNote()).toContain('nie da się odczytać')
+    const note = metaPurchasesNote([
+      { date: '2026-11-17', spend: 100, meta_purchases: 0, raw_payload: null },
+      { date: '2026-11-18', spend: 100, meta_purchases: 3, raw_payload: null },
+      { date: '2026-11-19', spend: 100, meta_purchases: 0, raw_payload: { actions: [] } },
+    ])
+    expect(note).toContain('meta_purchases > 0 od 2026-11-18')
+    expect(note).toContain('2 z 3')
+    expect(note).toContain('raw_payload wypełniony od 2026-11-19')
+    expect(note).not.toContain('NIEPOBIERANE')
   })
 
 })

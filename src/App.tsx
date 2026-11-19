@@ -1655,6 +1655,7 @@ export default function App() {
       cpa: cpaBlended,
       roas: roasBlended,
       campaignRows,
+      campaignDailyRows,
       campaignError: campaignFetchError,
       alerts: alerts.all,
       todayContext: todayCtx,
@@ -1674,7 +1675,7 @@ export default function App() {
     setTimeout(() => setCopyState('idle'), 2000)
   }, [
     range, rangeFrom, rangeTo, rangeSub, displayPerf, prevTrendRows, trendRows,
-    profitData, cpaBlended, roasBlended, campaignRows, campaignFetchError,
+    profitData, cpaBlended, roasBlended, campaignRows, campaignDailyRows, campaignFetchError,
     ppGoal, revGoal, cpaGoalRes, roasGoalRes, ppOrdersRange, ppExpected,
     rangeTargetDays, goalDaysIn, alerts, todayCtx,
   ])

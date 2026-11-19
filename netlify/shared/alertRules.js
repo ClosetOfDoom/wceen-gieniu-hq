@@ -341,11 +341,9 @@ function creativeCtrOn(adDays) {
 
 // ── 5 and 6. rules that wait for their columns ──────────────────────────────
 //
-// The columns were added on 2026-10-03
-// (supabase/migrations/20261003_meta_reach_initiate_checkout.sql) and the
-// ingest now writes them, but historical rows stay NULL and the first run has
-// to happen before anything is there. So both rules check COVERAGE first and,
-// while it is zero, refuse by name. They never return a green light they have
+// The columns come from supabase/migrations/20261003_meta_reach_initiate_checkout.sql;
+// historical rows stay NULL. Whether THIS window has values is read from the rows
+// (coverage below), never assumed from a date. While it is zero, the rule refuses by name. They never return a green light they have
 // not earned, and they never read NULL as 0.
 //
 // The refusal strings are shaped to pass validateRefusal() in
@@ -371,8 +369,8 @@ function frequencyOn(adDays) {
   if (withValue === 0) {
     return alert('none', 'CZĘSTOTLIWOŚĆ',
       'Nie mam tej danej. meta_ads_daily.reach jest puste dla całego okna '
-      + `(${rows} wierszy, 0 z wartością) — kolumna istnieje od migracji 2026-10-03, `
-      + 'ale ingest Meta Insights API jeszcze jej nie zapełnił. Zasięgu nie da się '
+      + `(${rows} wierszy, 0 z wartością) — ingest Meta Insights API nie zapisał jej dla żadnej doby tego okna. `
+      + 'Zasięgu nie da się '
       + 'odtworzyć z innych kolumn: nie jest addytywny, więc suma dobowych reach '
       + 'to nie reach zakresu.',
       { refusal: true, table: 'meta_ads_daily', column: 'reach', rows, withValue })
@@ -413,8 +411,7 @@ function clickToCheckoutOn(adDays) {
   if (withValue === 0) {
     return alert('none', 'KLIK_DO_KASY',
       'Nie mam tej danej. meta_ads_daily.initiate_checkout jest puste dla całego okna '
-      + `(${rows} wierszy, 0 z wartością) — kolumna istnieje od migracji 2026-10-03, `
-      + 'ale ingest Meta Insights API jeszcze jej nie zapełnił.',
+      + `(${rows} wierszy, 0 z wartością) — ingest Meta Insights API nie zapisał jej dla żadnej doby tego okna.`,
       { refusal: true, table: 'meta_ads_daily', column: 'initiate_checkout', rows, withValue })
   }
 

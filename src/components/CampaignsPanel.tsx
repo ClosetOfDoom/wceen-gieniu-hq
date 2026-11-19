@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { metaCoverage, metaCoverageSentences, META_VS_WIX } from '../lib/metaCoverage'
 import {
   fetchCampaignRows, buildCampaignDiagnosis, SCOPE_THRESHOLDS,
   type CampaignDiagnosis, type CampaignScope, type CampaignEntry,
@@ -306,6 +307,8 @@ export function CampaignsPanel() {
     })
   }, [range])
 
+  const coverageMeta = useMemo(() => metaCoverage(fetchResult?.dailyRows ?? []), [fetchResult])
+
   // Actual data coverage — what dates the rows really span (fixes header vs data).
   const coverage = datesPresent.length === 0
     ? '—'
@@ -458,21 +461,18 @@ export function CampaignsPanel() {
             })()}
           </div>
           <DiagnosisCard text={diagnosis.diagnosisText} scope={scope} />
-          {/* Honest provenance. NOT "the sync undercounts Meta" — that was the
-              old assumption and it is withdrawn. Measured 2026-10-27: Business
-              Manager reports 46 purchases for PP-22.06.2026 over 20-26.10 and
-              meta_ads_daily holds 5, so the gap is in our ingest, not in Meta. */}
-          <div style={{
+          {/* Provenance of the Meta purchase column, COMPUTED from the range's daily rows (src/lib/metaCoverage.ts):
+              since when meta_purchases > 0, spend days with 0 purchases, since when raw_payload is filled.
+              Nothing here is hard-coded about the state of the database. */}
+          <div data-testid="meta-coverage-note" style={{
             marginTop: '14px', fontFamily: 'var(--font-mono)', fontSize: '0.68rem',
             color: 'var(--text2)', lineHeight: 1.75, padding: '12px 14px',
             background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.25)',
             borderRadius: '4px',
           }}>
-            <span style={{ color: 'var(--amber)', fontWeight: 600 }}>⚠ „Purch." nie jest zasilane — ingest nie pobiera pola z Meta.</span>{' '}
-            Stanley sumuje kolumnę <span style={{ color: 'var(--muted)' }}>meta_purchases</span> z <span style={{ color: 'var(--muted)' }}>meta_ads_daily</span> — i pokazuje ją wiernie.
-            Audyt bazy: konwersje są zapisane jako <b>0 w ~95% dni</b> (spend jest, zakupów brak), a <span style={{ color: 'var(--muted)' }}>raw_payload</span> jest pusty — więc pełnej liczby (Meta Ads Manager „Wyniki") <b>nie ma w Supabase</b> i kod jej nie odtworzy.
-            Źródło = <b>zapis z Make</b> (brak dosyncu atrybutowanych konwersji), nie agregacja Stanleya.
-            {' '}Realne konwersje/sprzedaż licz z <b>Wix orders / revenue</b> (Command Center, Real ROAS/CPA) — to dane transakcyjne, niezależne od atrybucji Meta.
+            <span style={{ color: 'var(--amber)', fontWeight: 600 }}>„Purch.” = meta_ads_daily.meta_purchases (stan bazy w wybranym zakresie):</span>{' '}
+            {metaCoverageSentences(coverageMeta).join(' ')}
+            {' '}{META_VS_WIX}
             {usedDate ? ` Najnowsza data w meta_ads_daily: ${usedDate}.` : ''}
           </div>
         </>

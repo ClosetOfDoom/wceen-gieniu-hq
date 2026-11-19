@@ -15,7 +15,7 @@ import type { ProfitData } from './profitData'
 import type { GoalResult } from './goalProgress'
 import type { TimeRange } from './timeRange'
 import { RANGE_LABELS } from './timeRange'
-import { META_PURCHASES_FIXED_ON } from './orderWindow'
+import { metaCoverage, metaCoverageSentences, type MetaCoverageRow } from './metaCoverage'
 import { classifyCampaignScope } from './campaignDiagnosis'
 import {
   adScopeOf, isExcludedFromWixBlended, excludedSpendLines, totalSpendOf, CREATIVE_ALARM_NOTE,
@@ -62,6 +62,8 @@ export interface ReportInput {
 
   /** Per-ad Meta rows for the range, as loaded for the campaign inspector. */
   campaignRows: MetaAdDaily[]
+  /** Ungrouped per-ad-per-day rows (campaign-data dailyRows): what the meta_purchases note is computed from. */
+  campaignDailyRows?: MetaCoverageRow[]
   /** Set when the campaign fetch itself failed, so "no rows" can be explained. */
   campaignError?: string | null
 
@@ -111,7 +113,7 @@ function datesBetween(from: string, to: string): string[] {
 
 // ── sections ─────────────────────────────────────────────────────────────────
 
-const RULES = `## ZASADY DANYCH (czytaj przed analizą)
+const rules = (i: ReportInput): string => `## ZASADY DANYCH (czytaj przed analizą)
 - Wix = jedyne źródło prawdy transakcyjnej. Liczby Meta pochodzą z piksela
   i mierzą co innego: inne okno atrybucji, view-through, brak UTM. Nie są
   z definicji zaniżone — po prostu nie liczą tego samego.
@@ -124,7 +126,7 @@ const RULES = `## ZASADY DANYCH (czytaj przed analizą)
 - meta_purchases i initiate_checkout to liczby Meta (pixel): bez UTM,
   niełączalne z zamówieniem Wix. Wskaźnik trendu w jednym lejku — nigdy
   atrybucja i nigdy mianownik konwersji liczonej przeciw Wixowi.
-- ${metaPurchasesNote()}
+- ${metaPurchasesNote(i.campaignDailyRows)}
 - reach NIE jest addytywny: suma dobowych zasięgów to nie zasięg zakresu.
 - Marże są szacunkowe, z katalogu produktów, nie z faktur.
 - Dane brakujące są nazwane wprost. Nie uzupełniaj ich estymacją.`
@@ -248,21 +250,16 @@ function dailySection(i: ReportInput): string {
 }
 
 /**
- * What meta_purchases is worth right now.
- *
- * A zero in that column is not "nobody bought" — it is "we did not ask". Until
- * META_PURCHASES_FIXED_ON is set, every period predates the fix and the report
- * must say so rather than printing a zero that reads like a result.
+ * What meta_purchases holds in THIS range, read from the range's daily rows (metaCoverage) — not assumed.
+ * Without rows (fetch failed or not passed) it says that it cannot tell, instead of guessing either way.
  */
-export function metaPurchasesNote(): string {
-  if (META_PURCHASES_FIXED_ON == null) {
-    return 'meta_purchases: NIEPOBIERANE. Ingest nie ściąga tego pola z Meta — '
-      + 'zmierzone 2026-10-27: Business Manager pokazuje 46 zakupów za 20-26.10, '
-      + 'baza ma 5. Zero w tej kolumnie NIE znaczy "brak zakupów", tylko '
-      + '"nie wiemy". Nie licz z niej CPA, ROAS ani konwersji.'
+export function metaPurchasesNote(dailyRows?: readonly MetaCoverageRow[] | null): string {
+  if (!dailyRows || dailyRows.length === 0) {
+    return 'meta_purchases: brak wierszy meta_ads_daily dla tego zakresu — stanu kolumny nie da się odczytać. '
+      + 'Nie licz z niej CPA, ROAS ani konwersji.'
   }
-  return `meta_purchases: pobierane od ${META_PURCHASES_FIXED_ON}. `
-    + 'Wcześniejsze doby pozostają NIEPOBIERANE — zero w nich nie znaczy zera zakupów.'
+  return `meta_purchases (stan bazy): ${metaCoverageSentences(metaCoverage(dailyRows)).join(' ')} `
+    + 'Zero w dobie z wydatkiem nie musi znaczyć zera zakupów; liczba Meta to piksel, nie Wix.'
 }
 
 function productsSection(i: ReportInput): string {
@@ -572,7 +569,7 @@ export function buildReport(i: ReportInput): string {
     `Wygenerowano: ${i.generatedAt}`,
     `Build: ${i.buildHash}`,
     '',
-    RULES,
+    rules(i),
     '',
     TARGETS,
     '',
