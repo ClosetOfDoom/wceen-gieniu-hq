@@ -207,6 +207,11 @@ AUTO włączone przez Filipa 19.11 ok. 22:38Z; ta runda nie zmieniała AUTO ani 
   Testy: włączenie 19.11 22:38Z → brak alarmu za 19.11; włączenie w poniedziałek → alarm we wtorek po 06:45 bez śladu biegu.
 - **T3 (1a8b768)**: publikacja testu bez `sendAt` odrzucona przez Wix (blokada 7), więc zostaje +31 min. Twardy bezpiecznik `sendAt`,
   poprawiony tekst okna potwierdzenia („mail wyjdzie za ok. 31 min: Wix nie przyjmuje wysyłki natychmiastowej”).
+  Prawdziwy test (wtorek, szablon `01-2026-10-20-1000-slow-17-godzin-zero-wkuwania`, wariant `landing`, ówczesny kontakt testowy
+  `fundacja@wceen.com`): kampania `e2b2c40c…`, opublikowana 22:52:48Z z `sendAt 23:24:00Z`; Wix: `IN_DETECTION` → `SCHEDULED` →
+  `DISTRIBUTED`, dostarczone 1 po 31 min 43 s od publikacji. Log: `TEST · zaplanowany` przed `sendAt`.
+- Testy z aplikacji z 19.11 (`d7f50e0f…` wtorek 22:39:20Z, `e6cff03c…` czwartek 22:40:11Z): Wix `DISTRIBUTED`, dostarczone 1, odbite 0;
+  health po wdrożeniu: `status: "wysłany"`, `test: true`.
 - **T4 (dab5bd6)**: `webinar-mail-health` ma też `alarmy` (kody aktywnych alarmów, te same reguły co zakładka) i `ostatnieWpisy`
   (max 5: `{ data, slot, status, test }`, bez ID kampanii, tematów, plików i e-maili).
 
