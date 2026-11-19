@@ -22,11 +22,13 @@ export const WEBINAR_MAIL_CONFIG = Object.freeze({
   audience: Object.freeze({ labelIds: Object.freeze(['contacts-all']), activeContactsOnly: false }),
   /**
    * "Wyślij test" = the SAME Create + Publish as production, but to exactly ONE Wix contact.
-   * testContactId is the Wix contact of testRecipient (created 2026-11-19, subscription NOT_SET = not unsubscribed).
+   * testContactId is the existing Wix contact whose PRIMARY e-mail is testRecipient (checked 2026-11-20: SUBSCRIBED,
+   * deliverability VALID; Wix sends a contactIds publish to the primary e-mail). Until 2026-11-20 the test contact was
+   * fundacja@wceen.com (b2ccc71f-…).
    * Any other audience (a label such as contacts-all, a segment, more contacts) is rejected by assertTestAudience.
    */
-  testRecipient: 'fundacja@wceen.com',
-  testContactId: 'b2ccc71f-2623-4c42-8ef5-ea288c327706',
+  testRecipient: 'fundacjawceen@gmail.com',
+  testContactId: 'df6fa121-fe39-426b-bc1b-fc8734bd0812',
   /**
    * A test is scheduled this many minutes ahead (Wix minimum for sendAt is 30). It cannot be immediate: Wix answers
    * HTTP 403 to a publish without sendAt (tried live 2026-11-19, see docs/webinar-mails.md, Blokady).

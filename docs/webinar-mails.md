@@ -20,7 +20,9 @@ AUTO wyłączone, PAUZA i `skipDates` (2026-12-24, 2026-12-31) to stany celowe: 
 ## Alarmy (czerwone, widoczne w zakładce i w „Alarmy · pełne doby” na Command Center)
 
 - `MAILE_AWARIA`: ostatnie uruchomienie nie przeszło (bezpiecznik, błąd publikacji, wyjątek, pusta kolejka). Znika po kolejnym udanym biegu albo po „Przyjąłem do wiadomości”.
-- `MAILE_NIE_ODPALILY`: dzień wysyłki, po 06:45, AUTO włączone, PAUZA wyłączona, a brak śladu uruchomienia.
+- `MAILE_NIE_ODPALILY`: dzień wysyłki, po 06:45, AUTO włączone **przed** planowym uruchomieniem tego dnia (06:00 Warszawa), PAUZA wyłączona,
+  a brak śladu uruchomienia. Czas włączenia to `state.autoChangedAt` (zapisywany przy każdej zmianie AUTO); stan sprzed tej poprawki
+  używa `autoChangedAtFallback` = wdrożenie T2 (2026-11-19T23:01Z). AUTO włączone po 06:00 nie daje alarmu za ten dzień.
 - `MAILE_KOLEJKA_PUSTA` (czerwony) i `MAILE_KOLEJKA_NISKA` (bursztynowy, ≤ 3 gotowych szablonów).
 
 ## Szablony
@@ -54,9 +56,11 @@ wywołuje `send-test` w `webinar-mail-admin`, które idzie przez **tę samą fun
 | | odbiorcy | sendAt |
 |---|---|---|
 | produkcja (`webinar-mail-run`) | `labelIds: ['contacts-all']`, `activeContactsOnly: false` | 07:00 Warszawa |
-| test (`send-test`) | `contactIds: [testContactId]` i nic więcej | teraz + 31 min (minimum Wix to 30) |
+| test (`send-test`) | `contactIds: [testContactId]` i nic więcej | teraz + 31 min (minimum Wix to 30; bez `sendAt` Wix daje 403, blokada 7) |
 
-- Kontakt testowy: `fundacja@wceen.com`, `testContactId = b2ccc71f-2623-4c42-8ef5-ea288c327706` (w `webinarMailConfig.js`, nie w sekretach).
+- Kontakt testowy (od 2026-11-20): `fundacjawceen@gmail.com`, `testContactId = df6fa121-fe39-426b-bc1b-fc8734bd0812` (istniejący kontakt Wix,
+  ten adres jest jego **głównym** e-mailem, subskrypcja `SUBSCRIBED`, doręczalność `VALID`; w `webinarMailConfig.js`, nie w sekretach).
+  Wcześniej: `fundacja@wceen.com` (`b2ccc71f-…`).
 - **Bezpiecznik** `assertTestAudience`: przed jakimkolwiek wywołaniem Wix odrzuca każdą listę inną niż dokładnie `{ contactIds: [testContactId] }`:
   etykietę (w tym `contacts-all`), segment, `activeContactsOnly`, inny lub dodatkowy kontakt. Wywołujący nie wybiera odbiorców.
 - Test **nie zużywa szablonu** i **nie liczy się do naprzemiennych wariantów linku**: wpis w logu ma `test: true`, status `test`, klucz `TEST-<data>-<slot>-<wariant>`.
@@ -123,6 +127,28 @@ Tabela w zakładce: data, slot, wariant, status, temat, CTR z Wix (unikalne klik
 6. **Cyfry w tematach**: walidator tylko OSTRZEGA o cyfrach (blokuje „!”, tagi, „zł”, „%”). Gotowe tematy z cyframi: czw 01, czw 04,
    wt 02, wt 04 (godzina „18:00”) i wt 01 („1000 słów. 17 godzin…”). Bez nowego copy od autora tematy zostają; jeśli cyfry mają blokować, trzeba zaostrzyć
    `validateSubject` i dać nowe tematy.
+7. **Test nie może wyjść natychmiast.** Publish bez `sendAt` (ta sama `createAndPublish`, tylko kontakt testowy) Wix odrzuca:
+   `POST /email-marketing/v1/campaigns/{id}/publish` → **HTTP 403** z pustym `message` (19.11 ok. 22:51Z, dwa razy na tym samym szkicu;
+   szkic `0b6f5e46…` skasowany, nie ma go już na liście szkiców). Test zostaje z `sendAt` = teraz + 31 min. `createAndPublish` odmawia
+   każdej publikacji bez poprawnego `sendAt` (test i produkcja) przed wywołaniem Wix (`BEZPIECZNIK WYSYŁKI`).
+8. **Test z T3 nie jest w logu produkcji.** Prawdziwy test T3 szedł z tej sesji (klucz Wix z `.env.local`, log w pamięci), bo nie ma tu hasła
+   do `webinar-mail-admin` (blokada 1). Kampania jest w Wix; w `webinar-mail-health` → `ostatnieWpisy` są tylko testy kliknięte w aplikacji.
+9. **Nadawca zależny od slotu (wtorek „Filip Dąbrowski”, czwartek „Marek Szurawski”) NIEWDROŻONY: klucz API „STANLEY” nie ma uprawnienia
+   do Sender Details API.** 2026-11-19 ok. 23:17Z (20.11 00:17 Warszawa): `GET https://www.wixapis.com/sender-details/v1/sender-details` → **HTTP 403** (pusty `message`),
+   `GET …/sender-details/v1/sender-details/default` → **HTTP 403**. Wszystkie metody tego API (List, Get Default, Create, Mark as Default)
+   wymagają według dokumentacji Wix uprawnienia:
+
+   **„Access Verticals by Automations” (`SCOPE.CRM.ACCESS-VERTICALS-BY-AUTOMATIONS`)**
+
+   Do zrobienia przez właściciela konta: Wix → API Keys Manager → klucz „STANLEY” → dodać to uprawnienie dla witryny. Potem kod może
+   przełączać domyślnego nadawcę przed publikacją (Campaign API publikuje tylko od nadawcy domyślnego). Jeśli po dodaniu uprawnienia nadal
+   będzie 403, to Wix nie przyjmuje tu tożsamości klucza API (wtedy zostaje ręczna zmiana nazwy nadawcy w panelu).
+   Plan: konto `ACTIVE`, pakiet `EmailMarketing_Unlimited`. Drugi nadawca wymaga planu Core lub Advanced; czy ten pakiet go obejmuje,
+   pokaże dopiero Create Sender Details (błąd `OVER_QUOTA`, jeśli nie). W wysyłce nic nie zmieniono.
+   **Stan teraz** (stary odczyt `GET /email-marketing/v1/sender-details`, działa): nadawca „Marek Szurawski”, adres Gmail fundacji
+   (ten sam co nowy kontakt testowy). Listy wszystkich nadawców i flagi „domyślny” bez nowego API nie da się odczytać.
+   **Skutek: wtorek 24.11 07:00 wyjdzie jako „Marek Szurawski”**, chyba że przed 07:00 ktoś zmieni nazwę nadawcy w panelu Wix
+   (Email Marketing → ustawienia nadawcy) albo doda uprawnienie (wtedy trzeba wdrożyć przełączanie).
 
 ## Stan na 2026-11-19 (noc): martwy link wypisania
 
@@ -167,3 +193,27 @@ Nowe blokady i uwagi z tej rundy:
   `node node_modules/playwright/cli.js install chromium`).
 - **`assert-campaigns` pada** (`campaignDiagnosis.ts does not query meta_ads_daily`) już przed tą rundą; nie jest w `verify`, nie ruszane.
 - `META_PURCHASES_FIXED_ON` w `src/lib/orderWindow.ts` zostaje `null` (to bramka metryk, nie tekst); teksty już go nie używają.
+
+## Stan na 2026-11-19 (noc, 4): statusy testów, fałszywy alarm, test od razu, health z alarmami
+
+AUTO włączone przez Filipa 19.11 ok. 22:38Z; ta runda nie zmieniała AUTO ani PAUZY.
+
+- **T1 (62ab17c)**: KROK 0: ścieżka testowa zapisuje `status: 'test'` (błąd: `'test-failed'`), `test: true`, klucz `TEST-…`. Panel mapował wszystko
+  poza `'scheduled'` na „błąd” (stąd dwa testy z 19.11 22:39Z / 22:40Z jako „błąd”). Teraz jedna lista: `netlify/shared/webinarMailStatus.js`
+  (`LOG_STATUSES`, `isTestEntry`, `isProductionSend`, `sendStatusView` → zaplanowany / wysłany / błąd), używana przez kolejkę, wariant linku,
+  idempotencję slotu, pobieranie CTR i zakładkę. Testy w osobnej sekcji „Testy” z oznaczeniem TEST, bez CTR i bez wpływu na A/B.
+  `assert:webinar-mails` odrzuca ręczne porównania statusów wpisów.
+- **T2 (85a604f)**: `autoChangedAt` w stanie; `MAILE_NIE_ODPALILY` tylko gdy AUTO było włączone przed 06:00 danego dnia (sekcja Alarmy).
+  Testy: włączenie 19.11 22:38Z → brak alarmu za 19.11; włączenie w poniedziałek → alarm we wtorek po 06:45 bez śladu biegu.
+- **T3 (1a8b768)**: publikacja testu bez `sendAt` odrzucona przez Wix (blokada 7), więc zostaje +31 min. Twardy bezpiecznik `sendAt`,
+  poprawiony tekst okna potwierdzenia („mail wyjdzie za ok. 31 min: Wix nie przyjmuje wysyłki natychmiastowej”).
+- **T4 (dab5bd6)**: `webinar-mail-health` ma też `alarmy` (kody aktywnych alarmów, te same reguły co zakładka) i `ostatnieWpisy`
+  (max 5: `{ data, slot, status, test }`, bez ID kampanii, tematów, plików i e-maili).
+
+## Stan na 2026-11-20: nadawca zależny od slotu, kontakt testowy
+
+- KROK 0 (Sender Details API): **403** dla klucza „STANLEY” (blokada 9, z nazwą uprawnienia). Zgodnie z poleceniem nic w wysyłce nie zmieniono:
+  bez konfiguracji `fromName` per slot, bez przełączania domyślnego nadawcy, bez alarmu `NADAWCA_NIE_USTAWIONY`, bez pól nadawców w health
+  (bez dostępu do API byłyby nieprawdziwe).
+- Kontakt testowy zmieniony na `fundacjawceen@gmail.com` (`df6fa121-…`, istniejący kontakt, adres główny). Twardy bezpiecznik jednego kontaktu
+  (`assertTestAudience`) bez zmian; etykieta przycisku bierze adres z konfiguracji („Wyślij test na fundacjawceen@gmail.com”).

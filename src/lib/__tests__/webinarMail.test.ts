@@ -522,7 +522,7 @@ describe('admin actions', () => {
     const s = setup()
     const now = new Date('2026-11-19T15:00:20Z')
     const r = await adminAction({ action: 'send-test', body: { slot: 'tuesday', variant: 'clickmeeting' }, deps: s.deps, now })
-    expect(r).toMatchObject({ ok: true, test: true, to: 'fundacja@wceen.com', contactId: CFG.testContactId, variant: 'clickmeeting', template: '01-t.html' })
+    expect(r).toMatchObject({ ok: true, test: true, to: 'fundacjawceen@gmail.com', contactId: 'df6fa121-fe39-426b-bc1b-fc8734bd0812', variant: 'clickmeeting', template: '01-t.html' })
     expect(s.calls.create).toHaveBeenCalledTimes(1); expect(s.calls.publish).toHaveBeenCalledTimes(1)
     const pub = s.calls.publish.mock.calls[0][1]
     expect(pub.audience).toEqual({ contactIds: [CFG.testContactId] })
