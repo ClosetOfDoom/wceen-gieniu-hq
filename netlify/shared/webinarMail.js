@@ -4,8 +4,8 @@
 //
 // Flow of one run (runWebinarMail):
 //   Warsaw clock → send day? → wake hour? → idempotency (<date>-<slot>) → skipDates → PAUZA → AUTO
-//   → next unsent, valid template → link variant → safeguards → claim → create campaign → publish
-//   with sendAt 07:00. A DRY_RUN does everything except the claim, the create and the publish.
+//   → next unsent, valid template → link variant → safeguards → claim → sender name of the slot → create campaign
+//   → publish with sendAt 07:00. A DRY_RUN does everything except the claim, the create and the publish.
 
 import { WEBINAR_MAIL_CONFIG } from './webinarMailConfig.js'
 import { LOG_STATUS, isProductionSend } from './webinarMailStatus.js'
@@ -252,26 +252,51 @@ export function testSendAt(now, config = WEBINAR_MAIL_CONFIG) {
   return new Date(Math.ceil((now.getTime() + config.testLeadMinutes * 60000) / 60000) * 60000)
 }
 
+const hideEmails = (text) => String(text ?? '').replace(/[^\s@<>"'()]+@[^\s@<>"'()]+/g, '[e-mail]')
+
+/**
+ * BEZPIECZNIK NADAWCA: set the sender NAME of the slot in Wix and confirm it by a read. Never throws: a failure is
+ * returned as { ok: false, error } and the send goes on anyway (under whatever name Wix has), with the amber
+ * NADAWCA_NIE_USTAWIONY alert and a log entry. No e-mail address is ever returned or logged.
+ */
+export async function ensureSenderName(wix, fromName) {
+  const expected = String(fromName ?? '').trim()
+  try {
+    if (!expected) throw new Error('brak fromName slotu w konfiguracji')
+    if (typeof wix.setSenderName !== 'function' || typeof wix.getSenderName !== 'function') throw new Error('klient Wix nie obsługuje nazwy nadawcy')
+    await wix.setSenderName(expected)
+    const actual = await wix.getSenderName()
+    if (actual !== expected) throw new Error(`odczyt po zmianie: „${actual ?? '—'}” zamiast „${expected}”`)
+    return { expected, ok: true }
+  } catch (e) {
+    return { expected, ok: false, error: hideEmails(scrub(e?.message ?? e)).slice(0, 300) }
+  }
+}
+
 /**
  * Create the HTML campaign and publish it with emailDistributionOptions. Used by the scheduled run AND by
- * "Wyślij test". With test: true the audience must pass assertTestAudience BEFORE anything reaches Wix.
- * On a publish error the thrown error carries the campaignId of the created draft.
+ * "Wyślij test" (the same path). With test: true the audience must pass assertTestAudience BEFORE anything reaches Wix.
+ * Order: safeguards → sender name of the slot (ensureSenderName, confirmed by a read) → create → publish.
+ * Returns { campaignId, sender }. On a publish error the thrown error carries campaignId and sender.
  */
-export async function createAndPublish({ wix, subject, preheader, html, sendAt, audience, test = false }, config = WEBINAR_MAIL_CONFIG) {
+export async function createAndPublish({ wix, subject, preheader, html, sendAt, audience, fromName, test = false }, config = WEBINAR_MAIL_CONFIG) {
   if (test) assertTestAudience(audience, config)
   // Production always carries its 07:00 sendAt (SENDAT_W_PRZYSZLOSCI in the run); without one nothing reaches Wix.
   if (!sendAt || !Number.isFinite(Date.parse(sendAt))) throw new Error('BEZPIECZNIK WYSYŁKI: brak poprawnego sendAt (Wix odrzuca publikację bez sendAt, HTTP 403)')
   // Same check as the render: nothing with a raw {{...}} / ${...} ever reaches Wix, test or production.
   const left = unresolvedTags(html)
   if (left.length) throw new Error(`BEZPIECZNIK TREŚCI: nierozwiązane znaczniki w finalnym HTML (${left.join(', ')})`)
-  const campaignId = await wix.createCampaign({ subject, preheader, html })
+  const sender = await ensureSenderName(wix, fromName)
+  let campaignId = null
   try {
+    campaignId = await wix.createCampaign({ subject, preheader, html })
     await wix.publishCampaign(campaignId, { subject, sendAt, audience })
   } catch (e) {
     e.campaignId = campaignId
+    e.sender = sender
     throw e
   }
-  return campaignId
+  return { campaignId, sender }
 }
 
 // ── The run ─────────────────────────────────────────────────────────────────────
@@ -354,15 +379,16 @@ export async function runWebinarMail({ now, deps, dryRun = false, force = false,
     if (!(await store.claim(key))) return finish({ status: 'skipped', reason: 'already-claimed', plan })
 
     let campaignId = null
+    let sender = null
     try {
-      campaignId = await createAndPublish({ wix, subject, preheader, html, sendAt: sendAt.toISOString(), audience: config.audience }, config)
+      ;({ campaignId, sender } = await createAndPublish({ wix, subject, preheader, html, sendAt: sendAt.toISOString(), audience: config.audience, fromName: config.slots[slot].fromName }, config))
     } catch (e) {
       campaignId = e.campaignId ?? null
-      await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: LOG_STATUS.FAILED, error: scrub(e.message), createdAt: now.toISOString(), dryRun: false })
-      return finish({ status: 'failed', reason: 'publish-failed', detail: scrub(e.message), campaignId, plan, checks })
+      await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: LOG_STATUS.FAILED, error: scrub(e.message), sender: e.sender ?? null, createdAt: now.toISOString(), dryRun: false })
+      return finish({ status: 'failed', reason: 'publish-failed', detail: scrub(e.message), campaignId, plan, checks, sender: e.sender ?? null })
     }
-    await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: LOG_STATUS.SCHEDULED, createdAt: now.toISOString(), dryRun: false })
-    return finish({ status: 'scheduled', reason: 'published', campaignId, plan, checks, readyAfter: queue.readyCount - 1 })
+    await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: LOG_STATUS.SCHEDULED, sender, createdAt: now.toISOString(), dryRun: false })
+    return finish({ status: 'scheduled', reason: 'published', campaignId, plan, checks, sender, readyAfter: queue.readyCount - 1 })
   } catch (e) {
     return finish({ status: 'failed', reason: 'exception', detail: scrub(e.message) })
   }
@@ -392,9 +418,11 @@ export function autoOnBeforeRun(state, date, config = WEBINAR_MAIL_CONFIG) {
  *     only when AUTO was already on BEFORE that day's planned run (06:00 Warsaw): state.autoChangedAt, or
  *     config.autoChangedAtFallback for a state written before the stamp existed. Turning AUTO on at 23:38 is not a missed run.
  *   - queue of a slot empty (red) or ≤ threshold (amber)
+ *   - NADAWCA_NIE_USTAWIONY (amber): the newest send (production or test) could not set / confirm the sender name of
+ *     its slot and went out under whatever name Wix had. Clears itself with the next send that sets the name.
  * Neutral states (AUTO off, PAUZA, skipDate) are NOT alerts.
  */
-export function buildAlerts({ state, lastRun, runToday, queues, now }, config = WEBINAR_MAIL_CONFIG) {
+export function buildAlerts({ state, lastRun, runToday, queues, now, log = [] }, config = WEBINAR_MAIL_CONFIG) {
   const alerts = []
   if (lastRun && lastRun.status === 'failed' && !lastRun.dryRun && state.ackedRunAt !== lastRun.at) {
     alerts.push({ severity: 'red', rule: 'MAILE_AWARIA', message: `${config.slots[lastRun.slot]?.label ?? lastRun.slot}, ${lastRun.date}: ${lastRun.reason}${lastRun.detail ? ` — ${lastRun.detail}` : ''}`, runAt: lastRun.at })
@@ -404,6 +432,11 @@ export function buildAlerts({ state, lastRun, runToday, queues, now }, config = 
   const late = p.hour > config.wakeHour || (p.hour === config.wakeHour && p.minute >= 45)
   if (slotToday && late && state.auto && !state.pause && !config.skipDates.includes(p.date) && !runToday && autoOnBeforeRun(state, p.date, config)) {
     alerts.push({ severity: 'red', rule: 'MAILE_NIE_ODPALILY', message: `${config.slots[slotToday].label}, ${p.date}: po 06:45 nie ma śladu uruchomienia funkcji (AUTO jest włączone)` })
+  }
+  const lastSend = [...(log ?? [])].filter((e) => !e.dryRun && e.sender && typeof e.sender === 'object')
+    .sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? ''))).pop()
+  if (lastSend && lastSend.sender.ok === false) {
+    alerts.push({ severity: 'amber', rule: 'NADAWCA_NIE_USTAWIONY', message: `${config.slots[lastSend.slot]?.label ?? lastSend.slot}, ${lastSend.date}${lastSend.test ? ' (test)' : ''}: nie udało się ustawić nadawcy „${lastSend.sender.expected}”, mail wyszedł z nazwą, jaką miał Wix (${lastSend.sender.error ?? 'bez szczegółów'})` })
   }
   for (const q of queues) {
     const label = config.slots[q.slot].label

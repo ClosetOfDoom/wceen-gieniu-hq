@@ -153,7 +153,7 @@ describe('webinar-mail-health (publiczny, tylko GET, tylko odczyt)', () => {
     const res = await h(new Request('https://app.example/.netlify/functions/webinar-mail-health'))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(Object.keys(body).sort()).toEqual(['alarmy', 'auto', 'blobsRead', 'build', 'kolejka', 'nastepnaWysylka', 'ostatnieWpisy', 'pauza'])
+    expect(Object.keys(body).sort()).toEqual(['aktualnyNadawca', 'alarmy', 'auto', 'blobsRead', 'build', 'kolejka', 'nadawcy', 'nastepnaWysylka', 'ostatnieWpisy', 'pauza'])
     expect(['ok', 'error']).toContain(body.blobsRead)
     expect((await h(new Request('https://app.example/x', { method: 'POST', body: '{}' }))).status).toBe(405)
   })

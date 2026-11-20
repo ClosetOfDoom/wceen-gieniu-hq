@@ -44,12 +44,21 @@ export const WEBINAR_MAIL_CONFIG = Object.freeze({
    * MAILE_NIE_ODPALILY only counts days whose 06:00 run came AFTER AUTO was on (state.autoChangedAt ?? this).
    */
   autoChangedAtFallback: '2026-11-19T23:01:00.000Z',
+  /**
+   * Sender NAME per slot (fromName of the slot below). Before every publish (production and test) createAndPublish sets it
+   * with PATCH /email-marketing/v1/sender-details and confirms it by a read. Only the name changes: the sender address is
+   * re-sent exactly as Wix reports it (Wix requires the field), never a different one (that would need verification).
+   * Between sends Wix keeps whatever the last publish set; restingFromName is what is left after manual tests.
+   */
+  restingFromName: 'Marek Szurawski',
   slots: Object.freeze({
     tuesday: Object.freeze({
       label: 'Webinar językowy (wtorek)',
       weekday: 2,
       webinarTime: '18:00',
       dir: 'webinar-mails/tuesday',
+      /** Sender name of the Tuesday mails (the address stays the same). */
+      fromName: 'Filip Dąbrowski',
       /** Variants alternate per slot: landing page, then ClickMeeting registration, then landing again... */
       variants: Object.freeze({
         landing: 'https://www.wceen.com/webinar-jezyk-w-17h',
@@ -63,6 +72,8 @@ export const WEBINAR_MAIL_CONFIG = Object.freeze({
       weekday: 4,
       webinarTime: '18:00',
       dir: 'webinar-mails/thursday',
+      /** Sender name of the Thursday mails (the address stays the same). */
+      fromName: 'Marek Szurawski',
       variants: Object.freeze({
         landing: 'https://www.wceen.com/darmowy-webinar',
         clickmeeting: 'https://fundacjawceen.clickmeeting.com/pamiec-czwartek/register',

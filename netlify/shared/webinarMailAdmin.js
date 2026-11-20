@@ -11,7 +11,7 @@ import { LOG_STATUS, isProductionSend, isTestEntry, sendStatusView } from './web
 
 const publicConfig = (c) => ({
   wakeHour: c.wakeHour, sendAtLocal: c.sendAtLocal, lowQueueThreshold: c.lowQueueThreshold, skipDates: [...c.skipDates], cron: c.cron, testRecipient: c.testRecipient, testLeadMinutes: c.testLeadMinutes,
-  slots: Object.fromEntries(SLOT_NAMES.map((s) => [s, { label: c.slots[s].label, webinarTime: c.slots[s].webinarTime, variants: { ...c.slots[s].variants } }])),
+  slots: Object.fromEntries(SLOT_NAMES.map((s) => [s, { label: c.slots[s].label, webinarTime: c.slots[s].webinarTime, fromName: c.slots[s].fromName, variants: { ...c.slots[s].variants } }])),
 })
 
 /** Everything the tab shows, in one object. */
@@ -47,7 +47,7 @@ export async function adminStatus({ deps, now = new Date(), config = WEBINAR_MAI
   const rows = newestFirst.filter((e) => !isTestEntry(e)).map(toRow)
   const tests = newestFirst.filter((e) => isTestEntry(e)).map(toRow)
 
-  const alerts = await currentAlerts({ store, state, lastRun, queues, now, config })
+  const alerts = await currentAlerts({ store, state, lastRun, queues, now, config, log })
   const next = nextWakeUp(now, config)
   return { now: now.toISOString(), state, config: publicConfig(config), nextWakeUp: next ? { date: next.date, slot: next.slot, at: next.at.toISOString() } : null, queues, log: rows, tests, statsError, lastRun, lastDryRun, alerts }
 }
@@ -56,11 +56,11 @@ export async function adminStatus({ deps, now = new Date(), config = WEBINAR_MAI
  * The alerts right now, the same for the tab (adminStatus) and the public health. queues: [{ slot, empty, low,
  * readyCount, loadError? }] (a slot whose templates cannot be read counts as empty).
  */
-async function currentAlerts({ store, state, lastRun, queues, now, config }) {
+async function currentAlerts({ store, state, lastRun, queues, now, config, log = [] }) {
   const p = warsawParts(now)
   const slotToday = slotForWeekday(p.weekday, config)
   const runToday = slotToday ? await store.getRun(`${p.date}-${slotToday}`) : null
-  return buildAlerts({ state, lastRun, runToday, queues: queues.map((q) => ({ slot: q.slot, empty: q.empty || Boolean(q.loadError), low: q.low, readyCount: q.readyCount })), now }, config)
+  return buildAlerts({ state, lastRun, runToday, queues: queues.map((q) => ({ slot: q.slot, empty: q.empty || Boolean(q.loadError), low: q.low, readyCount: q.readyCount })), now, log }, config)
 }
 
 /** The instant of the next 06:00 Warsaw wake-up of one slot (today if it is still ahead). */
@@ -135,17 +135,18 @@ export async function adminAction({ action, body, deps, now = new Date(), config
       const { subject, preheader } = q.next
       const key = `TEST-${warsawParts(now).date}-${slot}-${variant}`
       let campaignId = null
+      let sender = null
       try {
-        campaignId = await createAndPublish({ wix, subject, preheader, html, sendAt, audience, test: true }, config)
+        ;({ campaignId, sender } = await createAndPublish({ wix, subject, preheader, html, sendAt, audience, fromName: config.slots[slot].fromName, test: true }, config))
       } catch (e) {
         campaignId = e.campaignId ?? null
         const error = String(e.message).slice(0, 300)
-        await store.addLog({ key, date: warsawParts(now).date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt, status: LOG_STATUS.TEST_FAILED, error, test: true, createdAt: now.toISOString(), dryRun: false })
-        return { ok: false, error, campaignId }
+        await store.addLog({ key, date: warsawParts(now).date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt, status: LOG_STATUS.TEST_FAILED, error, sender: e.sender ?? null, test: true, createdAt: now.toISOString(), dryRun: false })
+        return { ok: false, error, campaignId, sender: e.sender ?? null }
       }
-      await store.addLog({ key, date: warsawParts(now).date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt, status: LOG_STATUS.TEST, test: true, createdAt: now.toISOString(), dryRun: false })
-      console.log('[webinar-mail TEST]', JSON.stringify({ slot, variant, template: template.file, campaignId, sendAt, contactId: config.testContactId }))
-      return { ok: true, test: true, slot, template: template.file, subject, variant, url, campaignId, sendAt, to: config.testRecipient, contactId: config.testContactId }
+      await store.addLog({ key, date: warsawParts(now).date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt, status: LOG_STATUS.TEST, sender, test: true, createdAt: now.toISOString(), dryRun: false })
+      console.log('[webinar-mail TEST]', JSON.stringify({ slot, variant, template: template.file, campaignId, sendAt, contactId: config.testContactId, sender }))
+      return { ok: true, test: true, slot, template: template.file, subject, variant, url, campaignId, sendAt, sender, to: config.testRecipient, contactId: config.testContactId }
     }
     default:
       return { ok: false, error: `nieznana akcja: ${action}` }
@@ -175,6 +176,8 @@ const SLOT_PL = { tuesday: 'wtorek', thursday: 'czwartek' }
  * store-derived fields are null (never a made-up false / count / empty list).
  *   alarmy        codes of the alerts active now (the same buildAlerts as the MAILE tab), e.g. ["MAILE_KOLEJKA_NISKA"]
  *   ostatnieWpisy the 5 newest send-log entries: { data, slot (wtorek|czwartek), status (sendStatusView code), test }
+ *   nadawcy         sender NAME per slot from the config: { wtorek, czwartek }
+ *   aktualnyNadawca the sender NAME Wix has right now (deps.wix.getSenderName), null when it cannot be read. Never an address.
  */
 export async function healthSummary({ deps, build, now = new Date(), config = WEBINAR_MAIL_CONFIG }) {
   let state = null
@@ -205,7 +208,7 @@ export async function healthSummary({ deps, build, now = new Date(), config = WE
   if (state && log) {
     try {
       const lastRun = await deps.store.getLastRun()
-      const alerts = await currentAlerts({ store: deps.store, state, lastRun, queues, now, config })
+      const alerts = await currentAlerts({ store: deps.store, state, lastRun, queues, now, config, log })
       alarmy = [...new Set(alerts.map((a) => a.rule))]
     } catch (e) {
       console.error('[webinar-mail-health] alerts failed:', String(e?.message ?? e).slice(0, 200))
@@ -220,6 +223,14 @@ export async function healthSummary({ deps, build, now = new Date(), config = WE
         .map((e) => ({ data: String(e.date ?? ''), slot: SLOT_PL[e.slot] ?? String(e.slot ?? ''), status: sendStatusView(e, now).code, test: isTestEntry(e) }))
     : null
 
+  let aktualnyNadawca = null
+  try {
+    const name = deps.wix?.getSenderName ? await deps.wix.getSenderName() : null
+    aktualnyNadawca = typeof name === 'string' && !name.includes('@') ? name : null
+  } catch (e) {
+    console.error('[webinar-mail-health] sender read failed:', String(e?.message ?? e).slice(0, 200))
+  }
+
   const next = nextPlannedSend(now, config)
   return {
     build: String(build ?? 'unknown'),
@@ -230,5 +241,7 @@ export async function healthSummary({ deps, build, now = new Date(), config = WE
     nastepnaWysylka: next ? next.toISOString() : null,
     alarmy,
     ostatnieWpisy,
+    nadawcy: Object.fromEntries(SLOT_NAMES.map((s) => [SLOT_PL[s] ?? s, config.slots[s].fromName])),
+    aktualnyNadawca,
   }
 }

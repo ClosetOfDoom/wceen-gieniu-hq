@@ -9,6 +9,12 @@
 //   POST /email-marketing/v1/campaigns/{id}/preview   (rendered HTML + subject)
 //   GET  /email-marketing/v1/campaigns/statistics
 //   DELETE /email-marketing/v1/campaigns/{id}
+//   GET   /email-marketing/v1/sender-details      (fromName, fromEmail, dateVerified)
+//   PATCH /email-marketing/v1/sender-details      ({ senderDetails: { fromName, fromEmail } } → { verificationNeeded })
+//     Only the NAME is ever changed. Wix rejects a PATCH without fromEmail (HTTP 400 "fromEmail is not a valid email
+//     address", checked 2026-11-20), so the address is re-sent exactly as the GET just returned it; with the same address
+//     Wix answers 200, verificationNeeded false, and dateVerified stays. The new Sender Details API
+//     (/sender-details/v1) gives this key HTTP 403, so it is not used. The address never leaves this module.
 // Wix "Send Test Email" is deliberately NOT used: a test is a real publish to one contact (see createAndPublish).
 // The API key is never logged or returned; error text is scrubbed of it.
 
@@ -91,6 +97,27 @@ export function createWixClient({ apiKey, siteId, fetchImpl = fetch } = {}) {
         mailsSent: c.publishingData?.statistics?.total?.mailsSent ?? null,
         delivered: c.publishingData?.statistics?.emailCampaign?.delivered ?? null,
       }
+    },
+
+    /** The current sender NAME (the address is deliberately not returned). */
+    async getSenderName() {
+      const j = await call('GET', '/email-marketing/v1/sender-details')
+      return j.senderDetails?.fromName ?? null
+    },
+
+    /** Set the sender NAME; the address is re-sent unchanged (see the header). No PATCH when the name is already right. */
+    async setSenderName(fromName) {
+      const name = String(fromName ?? '').trim()
+      if (!name || name.length > 100) throw new Error('niepoprawna nazwa nadawcy')
+      const current = (await call('GET', '/email-marketing/v1/sender-details')).senderDetails ?? {}
+      const fromEmail = current.fromEmail
+      if (typeof fromEmail !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromEmail)) {
+        throw new Error('Wix nie podał obecnego adresu nadawcy, nazwy nie zmieniono')
+      }
+      if (current.fromName === name) return { fromName: name, changed: false }
+      const j = await call('PATCH', '/email-marketing/v1/sender-details', { senderDetails: { fromName: name, fromEmail } })
+      if (j.verificationNeeded) throw new Error('Wix żąda weryfikacji adresu nadawcy po zmianie nazwy (adresu nie zmieniano), sprawdź panel Wix')
+      return { fromName: name, changed: true }
     },
 
     async deleteCampaign(campaignId) {

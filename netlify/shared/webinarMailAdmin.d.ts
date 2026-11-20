@@ -1,5 +1,5 @@
 import type { SlotName, WebinarMailConfig } from './webinarMailConfig.js'
-import type { RunDeps, RunOutcome } from './webinarMail.js'
+import type { RunDeps, RunOutcome, WixLike } from './webinarMail.js'
 
 export function adminStatus(args: { deps: RunDeps; now?: Date; config?: WebinarMailConfig }): Promise<Record<string, any>>
 export function nextWakeInstantOfSlot(slot: SlotName, now: Date, config?: WebinarMailConfig): Date
@@ -22,5 +22,9 @@ export interface HealthSummary {
   alarmy: string[] | null
   /** The 5 newest log entries, without campaign IDs, subjects or e-mails. */
   ostatnieWpisy: { data: string; slot: string; status: 'zaplanowany' | 'wysłany' | 'błąd' | 'nieznany'; test: boolean }[] | null
+  /** Sender NAME per slot (config). */
+  nadawcy: { wtorek: string; czwartek: string }
+  /** Sender NAME in Wix now; null when it cannot be read. Never an address. */
+  aktualnyNadawca: string | null
 }
-export function healthSummary(args: { deps: Pick<RunDeps, 'store' | 'loadTemplates'>; build: string; now?: Date; config?: WebinarMailConfig }): Promise<HealthSummary>
+export function healthSummary(args: { deps: Pick<RunDeps, 'store' | 'loadTemplates'> & { wix?: Pick<WixLike, 'getSenderName'> | null }; build: string; now?: Date; config?: WebinarMailConfig }): Promise<HealthSummary>

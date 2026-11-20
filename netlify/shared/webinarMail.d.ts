@@ -36,6 +36,8 @@ export interface LogEntry {
   /** true for "Wyślij test" entries: never use a template up, never count for the link variant. */
   test?: boolean
   registrations?: number | null
+  /** Sender name of the slot: was it set and confirmed before the publish (no e-mail address). */
+  sender?: { expected: string; ok: boolean; error?: string } | null
 }
 export interface QueueEntryCheck extends TemplateCheck { used: boolean }
 export interface Queue {
@@ -72,7 +74,9 @@ export interface MailAudience {
 export function testAudience(config?: WebinarMailConfig): MailAudience
 export function assertTestAudience(audience: unknown, config?: WebinarMailConfig): true
 export function testSendAt(now: Date, config?: WebinarMailConfig): Date
-export function createAndPublish(args: { wix: WixLike; subject: string; preheader?: string; html: string; sendAt: string; audience: MailAudience; test?: boolean }, config?: WebinarMailConfig): Promise<string>
+export interface SenderResult { expected: string; ok: boolean; error?: string }
+export function ensureSenderName(wix: WixLike, fromName: string | undefined): Promise<SenderResult>
+export function createAndPublish(args: { wix: WixLike; subject: string; preheader?: string; html: string; sendAt: string; audience: MailAudience; fromName?: string; test?: boolean }, config?: WebinarMailConfig): Promise<{ campaignId: string; sender: SenderResult }>
 
 export interface WixLike {
   accountDetails(): Promise<{ status?: string }>
@@ -83,6 +87,8 @@ export interface WixLike {
   getCampaign(id: string): Promise<{ campaignId: string; distributionStatus: string | null; visibilityStatus: string | null; datePublished: string | null; mailsSent: number | null; delivered: number | null }>
   deleteCampaign(id: string): Promise<unknown>
   campaignStats(ids: string[]): Promise<Record<string, { delivered: number; opened: number; clicked: number }>>
+  getSenderName?(): Promise<string | null>
+  setSenderName?(fromName: string): Promise<{ fromName: string; changed: boolean }>
 }
 export function findSendsToday(args: { slot: SlotName; today: string; wix: WixLike; knownIds?: string[] }, config?: WebinarMailConfig): Promise<{ campaignId: string }[]>
 
@@ -102,6 +108,7 @@ export interface RunOutcome {
   wouldPublish?: boolean
   readyAfter?: number
   storeError?: string
+  sender?: SenderResult | null
 }
 
 export interface MailStoreLike {
@@ -136,4 +143,5 @@ export function buildAlerts(args: {
   runToday: RunOutcome | null
   queues: { slot: SlotName; empty: boolean; low: boolean; readyCount: number }[]
   now: Date
+  log?: LogEntry[]
 }, config?: WebinarMailConfig): MailAlertResult[]

@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   runWebinarMail, validateSubject, validateTemplate, buildQueue, nextVariant, evaluateSafeguards,
   warsawParts, warsawLocalToUtc, buildAlerts, autoOnBeforeRun, ctrOf, renderCampaignHtml, SLOT_NAMES,
-  assertTestAudience, createAndPublish, testAudience, testSendAt, unresolvedTags,
+  assertTestAudience, createAndPublish, testAudience, testSendAt, unresolvedTags, ensureSenderName,
   type RunDeps, type WixLike, type TemplateFile, type LogEntry,
 } from '../../../netlify/shared/webinarMail.js'
 import { WEBINAR_MAIL_CONFIG as CFG } from '../../../netlify/shared/webinarMailConfig.js'
@@ -29,13 +29,15 @@ const CET_TUE_0600 = new Date('2026-12-01T05:00:00Z')
 const CEST_TUE_0600 = new Date('2026-06-02T04:00:00Z')
 
 function fakeWix(over: Partial<WixLike> = {}) {
-  const calls = { create: vi.fn(), publish: vi.fn() }
+  const calls = { create: vi.fn(), publish: vi.fn(), order: [] as string[], senderName: 'Marek Szurawski' }
   const wix: WixLike = {
+    getSenderName: async () => { calls.order.push('get-sender'); return calls.senderName },
+    setSenderName: async (n) => { calls.order.push(`set-sender:${n}`); calls.senderName = n; return { fromName: n, changed: true } },
     accountDetails: async () => ({ status: 'ACTIVE' }),
     listRecentCampaigns: async () => [],
     previewCampaign: async () => ({ html: '' }),
-    createCampaign: async (i) => { calls.create(i); return 'camp-' + calls.create.mock.calls.length },
-    publishCampaign: async (id, i) => { calls.publish(id, i) },
+    createCampaign: async (i) => { calls.create(i); calls.order.push('create'); return 'camp-' + calls.create.mock.calls.length },
+    publishCampaign: async (id, i) => { calls.publish(id, i); calls.order.push('publish') },
     getCampaign: async (id) => ({ campaignId: id, distributionStatus: 'SCHEDULED', visibilityStatus: 'PUBLISHED', datePublished: null, mailsSent: null, delivered: null }),
     deleteCampaign: async () => undefined,
     campaignStats: async () => ({}),
@@ -670,9 +672,9 @@ describe('healthSummary (public webinar-mail-health)', () => {
     const s = setup({ auto: false, pause: true, templates: [T(1), T(2), { file: '03-bad.html', html: tpl('Zły!') }] })
     await s.ready
     const h = await healthSummary({ deps: s.deps, build: 'abc1234', now: new Date('2026-11-20T10:00:00Z') })
-    expect(Object.keys(h).sort()).toEqual(['alarmy', 'auto', 'blobsRead', 'build', 'kolejka', 'nastepnaWysylka', 'ostatnieWpisy', 'pauza'])
+    expect(Object.keys(h).sort()).toEqual(['aktualnyNadawca', 'alarmy', 'auto', 'blobsRead', 'build', 'kolejka', 'nadawcy', 'nastepnaWysylka', 'ostatnieWpisy', 'pauza'])
     expect(Object.keys(h.kolejka).sort()).toEqual(['czwartek', 'wtorek'])
-    expect(h).toEqual({ build: 'abc1234', blobsRead: 'ok', auto: false, pauza: true, kolejka: { wtorek: 2, czwartek: 2 }, nastepnaWysylka: '2026-11-24T06:00:00.000Z', alarmy: ['MAILE_KOLEJKA_NISKA'], ostatnieWpisy: [] })
+    expect(h).toEqual({ build: 'abc1234', blobsRead: 'ok', auto: false, pauza: true, kolejka: { wtorek: 2, czwartek: 2 }, nastepnaWysylka: '2026-11-24T06:00:00.000Z', alarmy: ['MAILE_KOLEJKA_NISKA'], ostatnieWpisy: [], nadawcy: { wtorek: 'Filip Dąbrowski', czwartek: 'Marek Szurawski' }, aktualnyNadawca: 'Marek Szurawski' })
   })
 
   it('no template content, file names, subjects, campaign IDs, e-mails or test contact in the body', async () => {
@@ -845,5 +847,122 @@ describe('import from a sent Wix campaign', () => {
 
   it('stripWixInjection leaves a mail without the injection untouched', () => {
     expect(stripWixInjection('<body><p>x</p></body>')).toBe('<body><p>x</p></body>')
+  })
+})
+
+// ── Sender name per slot (PATCH /email-marketing/v1/sender-details, only fromName) ────────────────────
+
+describe('sender name of the slot (BEZPIECZNIK NADAWCA)', () => {
+  it('config: Tuesday → Filip Dąbrowski, Thursday → Marek Szurawski, resting name Marek', () => {
+    expect(CFG.slots.tuesday.fromName).toBe('Filip Dąbrowski')
+    expect(CFG.slots.thursday.fromName).toBe('Marek Szurawski')
+    expect(CFG.restingFromName).toBe('Marek Szurawski')
+  })
+
+  it('order: the name is set and confirmed by a read BEFORE the campaign is created and published', async () => {
+    const { wix, calls } = fakeWix()
+    const r = await createAndPublish({ wix, subject: 'T', html: '<p>x</p>', sendAt: '2026-12-01T06:00:00.000Z', audience: testAudience(), fromName: 'Filip Dąbrowski', test: true })
+    expect(calls.order).toEqual(['set-sender:Filip Dąbrowski', 'get-sender', 'create', 'publish'])
+    expect(r).toEqual({ campaignId: 'camp-1', sender: { expected: 'Filip Dąbrowski', ok: true } })
+  })
+
+  it('Tuesday production run sets Filip, Thursday run sets Marek; the log keeps the result', async () => {
+    const tue = setup({ auto: true }); await tue.ready
+    const r1 = await run(tue, CET_TUE_0600)
+    expect(r1).toMatchObject({ status: 'scheduled', sender: { expected: 'Filip Dąbrowski', ok: true } })
+    expect(tue.calls.order.slice(0, 2)).toEqual(['set-sender:Filip Dąbrowski', 'get-sender'])
+    expect(tue.calls.order.indexOf('set-sender:Filip Dąbrowski')).toBeLessThan(tue.calls.order.indexOf('publish'))
+    expect((await tue.store.getLog()).slice(-1)[0]?.sender).toEqual({ expected: 'Filip Dąbrowski', ok: true })
+
+    const thu = setup({ auto: true }); await thu.ready
+    const r2 = await run(thu, new Date('2026-12-03T05:00:00Z'))
+    expect(r2).toMatchObject({ status: 'scheduled', sender: { expected: 'Marek Szurawski', ok: true } })
+    expect(thu.calls.order.indexOf('set-sender:Marek Szurawski')).toBeLessThan(thu.calls.order.indexOf('create'))
+  })
+
+  it('"Wyślij test" goes the same path: the name of the chosen slot before the publish', async () => {
+    for (const [slot, name] of [['tuesday', 'Filip Dąbrowski'], ['thursday', 'Marek Szurawski']] as const) {
+      const s = setup(); await s.ready
+      const r = await adminAction({ action: 'send-test', body: { slot }, deps: s.deps, now: new Date('2026-11-20T10:00:00Z') })
+      expect(r).toMatchObject({ ok: true, sender: { expected: name, ok: true } })
+      expect(s.calls.order).toEqual([`set-sender:${name}`, 'get-sender', 'create', 'publish'])
+    }
+  })
+
+  it('a failed name change: the mail still goes out, the log says so, amber NADAWCA_NIE_USTAWIONY', async () => {
+    const s = setup({ auto: true, wix: { setSenderName: async () => { throw new Error('Wix PATCH /email-marketing/v1/sender-details → HTTP 403 x@y.pl') } } })
+    await s.ready
+    const r = await run(s, CET_TUE_0600)
+    expect(r.status).toBe('scheduled')
+    expect(s.calls.publish).toHaveBeenCalledTimes(1)
+    const entry = (await s.store.getLog()).slice(-1)[0]!
+    expect(entry.sender).toMatchObject({ expected: 'Filip Dąbrowski', ok: false })
+    expect(entry.sender?.error).toContain('HTTP 403')
+    expect(entry.sender?.error).not.toContain('@')
+    const alerts = buildAlerts({ state: await s.store.getState(), lastRun: r, runToday: r, queues: [], now: new Date('2026-12-01T06:30:00Z'), log: await s.store.getLog() })
+    expect(alerts).toContainEqual(expect.objectContaining({ severity: 'amber', rule: 'NADAWCA_NIE_USTAWIONY' }))
+  })
+
+  it('a read-back with another name counts as a failure (mail still goes out)', async () => {
+    const s = setup({ auto: true, wix: { getSenderName: async () => 'Ktoś Inny' } })
+    await s.ready
+    const r = await run(s, CET_TUE_0600)
+    expect(r).toMatchObject({ status: 'scheduled', sender: { ok: false } })
+    expect(r.sender?.error).toContain('Ktoś Inny')
+  })
+
+  it('the alert clears itself after the next send that sets the name; old entries without sender do not alert', async () => {
+    const base = { date: '2026-12-01', slot: 'tuesday', templateFile: '01-t.html', subject: 'x', status: 'scheduled', campaignId: 'c' }
+    const bad = { ...base, key: 'a', createdAt: '2026-12-01T05:00:00Z', sender: { expected: 'Filip Dąbrowski', ok: false, error: 'x' } } as LogEntry
+    const good = { ...base, key: 'b', date: '2026-12-03', slot: 'thursday', createdAt: '2026-12-03T05:00:00Z', sender: { expected: 'Marek Szurawski', ok: true } } as LogEntry
+    const old = { ...base, key: 'c', createdAt: '2026-11-17T05:00:00Z' } as LogEntry
+    const at = (log: LogEntry[]) => buildAlerts({ state: { auto: true, pause: false }, lastRun: null, runToday: null, queues: [], now: new Date('2026-12-04T10:00:00Z'), log }).map((a) => a.rule)
+    expect(at([old, bad])).toContain('NADAWCA_NIE_USTAWIONY')
+    expect(at([old, bad, good])).not.toContain('NADAWCA_NIE_USTAWIONY')
+    expect(at([old])).not.toContain('NADAWCA_NIE_USTAWIONY')
+  })
+
+  it('ensureSenderName never throws (missing config, client without the methods)', async () => {
+    const { wix } = fakeWix()
+    expect(await ensureSenderName(wix, '')).toMatchObject({ ok: false })
+    const bare = { ...wix, setSenderName: undefined, getSenderName: undefined } as WixLike
+    expect(await ensureSenderName(bare, 'Filip Dąbrowski')).toMatchObject({ ok: false, expected: 'Filip Dąbrowski' })
+  })
+
+  it('Wix client: PATCH sends only the new name plus the UNCHANGED address read just before; no PATCH when already right', async () => {
+    const sent: { method: string; url: string; body?: string }[] = []
+    let current = { fromName: 'Marek Szurawski', fromEmail: 'nadawca@example.org', dateVerified: '2023-12-05T14:37:25.633Z' }
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      sent.push({ method: String(init.method), url, body: init.body as string | undefined })
+      if (init.method === 'PATCH') { current = { ...current, ...JSON.parse(String(init.body)).senderDetails }; return new Response('{"verificationNeeded":false}') }
+      return new Response(JSON.stringify({ senderDetails: current }))
+    }) as unknown as typeof fetch
+    const wix = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl })
+    expect(await wix.setSenderName!('Filip Dąbrowski')).toEqual({ fromName: 'Filip Dąbrowski', changed: true })
+    const patch = sent.find((r) => r.method === 'PATCH')!
+    expect(patch.url).toBe('https://www.wixapis.com/email-marketing/v1/sender-details')
+    expect(JSON.parse(patch.body!)).toEqual({ senderDetails: { fromName: 'Filip Dąbrowski', fromEmail: 'nadawca@example.org' } })
+    expect(await wix.getSenderName!()).toBe('Filip Dąbrowski')
+    sent.length = 0
+    expect(await wix.setSenderName!('Filip Dąbrowski')).toEqual({ fromName: 'Filip Dąbrowski', changed: false })
+    expect(sent.some((r) => r.method === 'PATCH')).toBe(false)
+  })
+
+  it('Wix client refuses to PATCH without a valid current address, and fails on verificationNeeded', async () => {
+    const noAddr = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: (async () => new Response('{"senderDetails":{"fromName":"A"}}')) as unknown as typeof fetch })
+    await expect(noAddr.setSenderName!('B')).rejects.toThrow(/adresu nadawcy/)
+    const verify = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: (async (_u: string, init: RequestInit) => new Response(init.method === 'PATCH' ? '{"verificationNeeded":true}' : '{"senderDetails":{"fromName":"A","fromEmail":"a@b.pl"}}')) as unknown as typeof fetch })
+    await expect(verify.setSenderName!('B')).rejects.toThrow(/weryfikacji/)
+  })
+
+  it('health: nadawcy from the config, aktualnyNadawca from Wix (name only), null when unreadable', async () => {
+    const s = setup(); await s.ready
+    const h = await healthSummary({ deps: s.deps, build: 'x', now: new Date('2026-11-20T10:00:00Z') })
+    expect(h.nadawcy).toEqual({ wtorek: 'Filip Dąbrowski', czwartek: 'Marek Szurawski' })
+    expect(h.aktualnyNadawca).toBe('Marek Szurawski')
+    const broken = setup({ wix: { getSenderName: async () => { throw new Error('HTTP 500') } } }); await broken.ready
+    expect((await healthSummary({ deps: broken.deps, build: 'x', now: new Date('2026-11-20T10:00:00Z') })).aktualnyNadawca).toBeNull()
+    const noWix = await healthSummary({ deps: { store: s.deps.store, loadTemplates: s.deps.loadTemplates }, build: 'x', now: new Date('2026-11-20T10:00:00Z') })
+    expect(noWix.aktualnyNadawca).toBeNull()
   })
 })

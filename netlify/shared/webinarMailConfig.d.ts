@@ -5,6 +5,7 @@ export interface SlotConfig {
   readonly weekday: number
   readonly webinarTime: string
   readonly dir: string
+  readonly fromName: string
   readonly variants: Readonly<Record<string, string>>
   readonly markers: readonly string[]
 }
@@ -23,6 +24,7 @@ export interface WebinarMailConfig {
   readonly testLeadMinutes: number
   readonly cron: string
   readonly autoChangedAtFallback: string
+  readonly restingFromName: string
   readonly slots: Readonly<Record<SlotName, SlotConfig>>
 }
 
