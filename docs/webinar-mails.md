@@ -13,6 +13,12 @@ Wtorek: webinar językowy, czwartek: webinar pamięciowy, oba o 18:00. Zakładka
    dziś nie ma już kampanii tego webinaru (lista kampanii Wix + podgląd), PAUZA wyłączona, do 07:00 zostało ≥ 30 minut.
 5. Zajmuje klucz `<data>-<slot>` (idempotencja, zapis `onlyIfNew` w Blobs), tworzy kampanię (edytor HTML) i publikuje ją z `sendAt` 07:00 czasu warszawskiego
    do etykiety `contacts-all` (wszystkie kontakty Wix, `activeContactsOnly: false`: tak jak dotychczasowe kampanie webinarowe).
+6. **Nadawca zależny od slotu**: przed utworzeniem kampanii (`createAndPublish`, ta sama ścieżka dla produkcji i testu) ustawia nazwę nadawcy slotu
+   (`fromName` w `webinarMailConfig.js`: wtorek „Filip Dąbrowski”, czwartek „Marek Szurawski”) i potwierdza ją odczytem.
+   Zmienia się **tylko nazwa**: `PATCH /email-marketing/v1/sender-details` z `{ fromName, fromEmail }`, gdzie `fromEmail` to dokładnie adres,
+   który Wix zwrócił chwilę wcześniej (Wix odrzuca PATCH bez tego pola: HTTP 400). Adres nigdy nie jest zmieniany ani wypisywany.
+   **Bezpiecznik NADAWCA**: gdy zmiana albo odczyt się nie uda, mail i tak wychodzi (z nazwą, jaką Wix ma), wpis w logu dostaje
+   `sender: { expected, ok: false, error }`, a zakładka pokazuje bursztynowy `NADAWCA_NIE_USTAWIONY`.
 
 **AUTO** i **PAUZA** są w zakładce (stan w Netlify Blobs, sklep `webinar-mail`). Domyślnie AUTO jest wyłączone: nic nie wychodzi, dopóki ktoś go nie włączy.
 AUTO wyłączone, PAUZA i `skipDates` (2026-12-24, 2026-12-31) to stany celowe: bez alarmu, bez zużycia szablonu.
@@ -24,6 +30,8 @@ AUTO wyłączone, PAUZA i `skipDates` (2026-12-24, 2026-12-31) to stany celowe: 
   a brak śladu uruchomienia. Czas włączenia to `state.autoChangedAt` (zapisywany przy każdej zmianie AUTO); stan sprzed tej poprawki
   używa `autoChangedAtFallback` = wdrożenie T2 (2026-11-19T23:01Z). AUTO włączone po 06:00 nie daje alarmu za ten dzień.
 - `MAILE_KOLEJKA_PUSTA` (czerwony) i `MAILE_KOLEJKA_NISKA` (bursztynowy, ≤ 3 gotowych szablonów).
+- `NADAWCA_NIE_USTAWIONY` (bursztynowy): najnowsza wysyłka (produkcja albo test) nie ustawiła nazwy nadawcy swojego slotu. Znika przy następnej
+  wysyłce, która ją ustawi.
 
 ## Szablony
 
@@ -133,8 +141,10 @@ Tabela w zakładce: data, slot, wariant, status, temat, CTR z Wix (unikalne klik
    każdej publikacji bez poprawnego `sendAt` (test i produkcja) przed wywołaniem Wix (`BEZPIECZNIK WYSYŁKI`).
 8. **Test z T3 nie jest w logu produkcji.** Prawdziwy test T3 szedł z tej sesji (klucz Wix z `.env.local`, log w pamięci), bo nie ma tu hasła
    do `webinar-mail-admin` (blokada 1). Kampania jest w Wix; w `webinar-mail-health` → `ostatnieWpisy` są tylko testy kliknięte w aplikacji.
-9. **Nadawca zależny od slotu (wtorek „Filip Dąbrowski”, czwartek „Marek Szurawski”) NIEWDROŻONY: klucz API „STANLEY” nie ma uprawnienia
-   do Sender Details API.** 2026-11-19 ok. 23:17Z (20.11 00:17 Warszawa): `GET https://www.wixapis.com/sender-details/v1/sender-details` → **HTTP 403** (pusty `message`),
+9. **(Rozwiązane 2026-11-20 inną drogą, zob. „Stan na 2026-11-20 (2)”: nazwa nadawcy przez stary `PATCH /email-marketing/v1/sender-details`.
+   Nowe Sender Details API nadal daje 403 i nie jest używane.)** Pierwotny opis:
+   Nadawca zależny od slotu (wtorek „Filip Dąbrowski”, czwartek „Marek Szurawski”) NIEWDROŻONY: klucz API „STANLEY” nie ma uprawnienia
+   do Sender Details API. 2026-11-19 ok. 23:17Z (20.11 00:17 Warszawa): `GET https://www.wixapis.com/sender-details/v1/sender-details` → **HTTP 403** (pusty `message`),
    `GET …/sender-details/v1/sender-details/default` → **HTTP 403**. Wszystkie metody tego API (List, Get Default, Create, Mark as Default)
    wymagają według dokumentacji Wix uprawnienia:
 
@@ -222,3 +232,27 @@ AUTO włączone przez Filipa 19.11 ok. 22:38Z; ta runda nie zmieniała AUTO ani 
   (bez dostępu do API byłyby nieprawdziwe).
 - Kontakt testowy zmieniony na `fundacjawceen@gmail.com` (`df6fa121-…`, istniejący kontakt, adres główny). Twardy bezpiecznik jednego kontaktu
   (`assertTestAudience`) bez zmian; etykieta przycisku bierze adres z konfiguracji („Wyślij test na fundacjawceen@gmail.com”).
+
+## Stan na 2026-11-20 (2): nadawca zależny od slotu WDROŻONY (b96f764)
+
+- **KROK 0** (stary endpoint, klucz „STANLEY”): `GET /email-marketing/v1/sender-details` → 200 (nazwa „Marek Szurawski”).
+  `PATCH` z samym `fromName` → **HTTP 400** („fromEmail is not a valid email address”). `PATCH` z tą samą nazwą i niezmienionym adresem
+  z odczytu → **HTTP 200**, `verificationNeeded: false`, `dateVerified` bez zmian (2023-12-05). Klucz ma prawo zapisu.
+- Kod: `fromName` w slocie (`webinarMailConfig.js`), `setSenderName` / `getSenderName` w `webinarMailWix.js` (adres tylko odsyłany, nigdy
+  zwracany), `ensureSenderName` w `createAndPublish` przed create i publish (produkcja i test), wpis `sender` w logu, alarm `NADAWCA_NIE_USTAWIONY`,
+  health: `nadawcy: { wtorek, czwartek }`, `aktualnyNadawca`.
+- **Prawdziwy test** (z tej sesji przez `adminAction('send-test')`, log w pamięci, tylko kontakt testowy, `contactIds: 1`):
+
+  | test | kampania | publikacja | sendAt | nazwa przy publikacji | Wix |
+  |---|---|---|---|---|---|
+  | wtorek (szablon 01) | `6c3a871f…` | 01:07:51Z | 01:39Z | Filip Dąbrowski (odczyt) | IN_DETECTION → SCHEDULED → DISTRIBUTED, delivered 1 (01:39:20Z) |
+  | czwartek (szablon 01) | `ece71edd…` | 01:09:54Z | 01:41Z | Marek Szurawski (odczyt) | IN_DETECTION → SCHEDULED → DISTRIBUTED, delivered 1 (01:41:31Z) |
+
+  Skrzynka testowa: czwartkowy mail przyszedł 01:41:04Z od **„Marek Szurawski”**. Wtorkowego (temat „1000 słów. 17 godzin. zero wkuwania”)
+  do 01:5xZ nie było w wynikach wyszukiwania Gmaila (także kosz/spam), mimo `delivered: 1` w Wix. Dlatego **nie jest potwierdzone**, czy Wix
+  wiąże nazwę z kampanią przy publikacji, czy bierze nazwę z chwili wysyłki (o 01:39Z nazwa była już „Marek”). Obiekt kampanii w Wix nie ma pola
+  nadawcy. Dla produkcji to bez znaczenia: bieg 06:00 ustawia nazwę, mail wychodzi 07:00, a do następnego slotu nic jej nie zmienia.
+  Ryzyko jest tylko przy ręcznym teście innego slotu między publikacją a wysyłką (np. test czwartkowy we wtorek 06:00–07:00).
+- Po testach nazwa = „Marek Szurawski” (`restingFromName`); wtorkowy bieg 24.11 06:00 sam ustawi „Filip Dąbrowski”.
+- `npm run verify`: 28 plików, 668 testów, „all good”.
+
