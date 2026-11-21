@@ -13,6 +13,7 @@ export const MIGRATION_FILES = [
   '20261020_dedup_august_duplicates.sql',
   '20261020_order_channel.sql',
   '20261020_payment_provider.sql',
+  '20261121_meta_ads_daily_keep_attribution.sql',
   'add_funding_checks.sql',
   'add_meta_ads_daily_unique.sql',
   'add_meta_purchases_to_view.sql',

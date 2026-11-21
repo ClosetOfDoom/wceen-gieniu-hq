@@ -170,3 +170,60 @@ Dopóki to nie przechodzi:
 
 Gdy przejdzie — ustaw `META_PURCHASES_FIXED_ON` na pierwszy dzień, od którego
 Make zapisuje pole poprawnie, i dopiero wtedy włącz `META_WORLD_ACTIVE`.
+
+## Poprawka 2026-11-21 — zamknięta doba traci `meta_purchases` i `raw_payload`
+
+**Objaw.** Raport WCZORAJ za 19.11 (20.11 01:41) miał dla 19.11 zakupy Meta i `raw_payload`.
+Raport TYDZIEŃ 14–20.11 (21.11) ma zakupy Meta tylko 20.11 („6 z 7 dób z wydatkiem bez zakupów Meta”)
+i `raw_payload` w 1 z 7 dób. Obie liczby idą z tego samego `select *` na `meta_ads_daily`
+(`campaign-data` → `metaCoverage`), więc zmieniły się wiersze, nie sposób liczenia.
+
+**Źródło nadal ma wartości.** Meta Graph API zapytane 21.11 (`level=ad`, `time_increment=1`,
+`7d_click,1d_view`, `action_type = purchase`):
+
+| doba | wydatek | zakupy Meta |
+|---|---|---|
+| 14.11 | 526,21 | 12 |
+| 15.11 | 592,26 | 11 |
+| 16.11 | 588,21 | 11 |
+| 17.11 | 514,04 | 3 |
+| 18.11 | 552,65 | 10 |
+| 19.11 | 460,78 | 9 |
+| 20.11 | 480,17 | 10 |
+
+Baza ma zera tam, gdzie Meta ma 3–12. Wartość z 19.11 była w bazie 20.11 01:41 i zniknęła — czyli
+**późniejszy zapis wpisał 0 / NULL na wartość dodatnią**. W repo nic nie pisze do `meta_ads_daily`
+(`src/lib/meta/insights.ts` nie jest nigdzie wywoływany), więc pisze to Make.
+
+**Hipoteza (do potwierdzenia logiem).** Wypełniona jest tylko najnowsza doba, ta, którą ostatnio pisała
+ścieżka intraday. Każda starsza doba, którą przepisuje ścieżka zamkniętej doby / catch-up, ma
+jednocześnie 0 zakupów i pusty `raw_payload`. `raw_payload` nie ma w tabeli mapowania tego pliku, a
+w bazie jest (od 19.11), więc scenariusz różni się od tego pliku: pole dodano w jednej ścieżce. Druga
+ścieżka wysyła `meta_purchases` = 0/puste (brak akcji `purchase` w jej odpowiedzi albo brak `actions`
+w jej `fields`) i `raw_payload` = puste — a PostgREST aktualizuje każdą kolumnę obecną w payloadzie.
+Z tego miejsca (tylko klucz anon, RLS zwraca 0 wierszy; brak dostępu do GUI Make) nie da się odczytać
+ani wierszy, ani konfiguracji modułów. Rozstrzygnie to `meta_ads_daily_guard_log` po pierwszym
+przebiegu z triggerem: godzina odmów i daty wierszy pokażą, która ścieżka próbuje kasować.
+
+**Ochrona w bazie** — `supabase/migrations/20261121_meta_ads_daily_keep_attribution.sql` (do wklejenia
+ręcznie): trigger BEFORE UPDATE nie przepuszcza NULL ani mniejszej liczby w `meta_purchases` ani pustego
+`raw_payload` w miejsce niepustego; odmowy idą do `meta_ads_daily_guard_log`. Test w transakcji z
+rollbackiem: `supabase/tests/meta_ads_daily_keep_attribution.test.sql`. Skasowanych wartości trigger
+nie przywraca — wrócą, gdy Make wyśle dla tych dób prawdziwe liczby.
+
+### Kliknięcia w Make (dla Fifiego) i koszt operacji
+
+Licz operacje po stronie zapisu: Make liczy 1 operację na moduł na bundle.
+
+| # | zmiana | gdzie | operacje / przebieg |
+|---|---|---|---|
+| 1 | W **każdej** ścieżce (intraday i zamknięta doba / catch-up) moduł **Facebook Ads → Get Insights**: `Fields` zawiera `actions,action_values`, `Action Attribution Windows` = `7d_click, 1d_view` — tak samo jak w ścieżce, która dziś zapisuje zakupy | moduł Get Insights ścieżki zamkniętej doby | **0** (to samo jedno wywołanie, inne parametry) |
+| 2 | W module **Supabase → Upsert** ścieżki zamkniętej doby zmapuj `meta_purchases` i `raw_payload` **identycznie** jak w ścieżce intraday (skopiuj formuły 1:1: suma `actions[]` z `action_type = purchase`; `raw_payload` = ten sam element co w intraday) | moduł Upsert ścieżki zamkniętej doby | **0** (zmiana mapowania, ten sam moduł, ta sama liczba bundli) |
+| 3 | Zostaw w payloadzie `meta_purchases` także, gdy wynosi 0 (pkt 10 wyżej). Po triggerze zero nie skasuje już większej wartości, a pominięcie pola wymagałoby filtra/routera | — | **0** |
+| ✗ | NIE dodawaj routera/filtra „pomiń wiersz bez zakupów” ani modułu „Search rows” przed zapisem — to robi trigger | — | odpowiednio +1 na bundle (filtr na routerze) lub +1 operacja na wiersz (~21/dobę catch-up, ~3 × 96 = 288/dobę intraday ≈ 8 640/mies.) — nie warto |
+
+Razem: **0 dodatkowych operacji** na przebieg. Po zmianie: następny catch-up wpisze 14–20.11 z Meta
+(liczby większe od obecnych zer przechodzą przez trigger), a
+`SELECT * FROM meta_ads_daily_guard_log ORDER BY logged_at DESC` powinien przestać przybywać.
+Uwaga: ten plik mówi `on_conflict = date,ad_id`, a scenariusz używa `date,campaign_id,adset_id,ad_id`
+(stan podany 21.11) — trigger działa przy obu kluczach.
