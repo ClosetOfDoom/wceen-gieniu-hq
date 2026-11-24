@@ -14,6 +14,7 @@ import { businessDay, businessToday, businessDaysAgo, businessWeekStart } from '
 import { isFinanceQuestion } from '../shared/financeIntent.js'
 import { answerFinance } from '../shared/financeStanley.js'
 import { loadKnowledge, knowledgeContext } from '../shared/stanleyKnowledge.js'
+import { callOpenAI as sharedCallOpenAI, callAnthropic as sharedCallAnthropic } from '../shared/stanleyLlm.js'
 
 // Attendance and registration collection stopped here. Anything about who was
 // in the room is history, not a current figure.
@@ -1934,58 +1935,13 @@ SPEECH:
 
 // ── LLM call ──────────────────────────────────────────────────────────────────
 
-async function callOpenAI(userMessage, apiKey, { temperature = 0.3, max_tokens = 600 } = {}) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 8000)
-  try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userMessage },
-        ],
-        max_tokens,
-        temperature,
-      }),
-      signal: controller.signal,
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${data.error?.message ?? 'unknown'}`)
-    return data.choices?.[0]?.message?.content ?? ''
-  } finally {
-    clearTimeout(timer)
-  }
+// The calls themselves live in netlify/shared/stanleyLlm.js (shared with the daily brief); these keep the old signatures.
+async function callOpenAI(userMessage, apiKey, opts = {}) {
+  return sharedCallOpenAI(SYSTEM_PROMPT, userMessage, apiKey, opts)
 }
 
-async function callAnthropic(userMessage, apiKey, { temperature = 0.3, max_tokens = 600 } = {}) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 8000)
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
-        max_tokens,
-        temperature,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userMessage }],
-      }),
-      signal: controller.signal,
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(`Anthropic ${res.status}: ${data.error?.message ?? 'unknown'}`)
-    return data.content?.[0]?.text ?? ''
-  } finally {
-    clearTimeout(timer)
-  }
+async function callAnthropic(userMessage, apiKey, opts = {}) {
+  return sharedCallAnthropic(SYSTEM_PROMPT, userMessage, apiKey, opts)
 }
 
 // Hard privacy guarantee: never let a FULL e-mail address leave the function, even if

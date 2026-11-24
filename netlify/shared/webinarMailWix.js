@@ -168,12 +168,12 @@ export function createWixClient({ apiKey, siteId, fetchImpl = fetch } = {}) {
       return call('DELETE', `/email-marketing/v1/campaigns/${campaignId}`)
     },
 
-    /** { [campaignId]: { delivered, opened, clicked } } for up to 100 campaigns. */
+    /** { [campaignId]: { delivered, opened, clicked, bounced } } for up to 100 campaigns. */
     async campaignStats(ids) {
       if (!ids.length) return {}
       const q = ids.slice(0, 100).map((id) => `campaignIds=${encodeURIComponent(id)}`).join('&')
       const j = await call('GET', `/email-marketing/v1/campaigns/statistics?${q}`)
-      return Object.fromEntries((j.statistics ?? []).map((s) => [s.campaignId, { delivered: s.email?.delivered ?? 0, opened: s.email?.opened ?? 0, clicked: s.email?.clicked ?? 0 }]))
+      return Object.fromEntries((j.statistics ?? []).map((s) => [s.campaignId, { delivered: s.email?.delivered ?? 0, opened: s.email?.opened ?? 0, clicked: s.email?.clicked ?? 0, bounced: s.email?.bounced ?? 0 }]))
     },
   }
 }

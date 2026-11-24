@@ -469,3 +469,14 @@ const handlerImpl = async (event) => {
 
 // Every function of this site sits behind the shared password (netlify/shared/auth.js).
 export const handler = withStanleyAuth(handlerImpl)
+
+/**
+ * The same computation for another function (daily-brief): the JSON body of a GET for the Warsaw range [from, to].
+ * Not an HTTP entry point (the handler above is the only one, behind the password).
+ */
+export async function profitDataFor(from, to) {
+  const res = await handlerImpl({ httpMethod: 'GET', queryStringParameters: { from, to } })
+  const body = JSON.parse(res.body)
+  if (!body.ok) throw new Error(body.error ?? `HTTP ${res.statusCode}`)
+  return body
+}

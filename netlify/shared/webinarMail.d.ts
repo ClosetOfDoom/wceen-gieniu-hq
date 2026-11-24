@@ -94,7 +94,7 @@ export interface WixLike {
   publishCampaign(id: string, input: { subject: string; sendAt: string; audience: MailAudience }): Promise<unknown>
   getCampaign(id: string): Promise<{ campaignId: string; distributionStatus: string | null; visibilityStatus: string | null; datePublished: string | null; mailsSent: number | null; delivered: number | null }>
   deleteCampaign(id: string): Promise<unknown>
-  campaignStats(ids: string[]): Promise<Record<string, { delivered: number; opened: number; clicked: number }>>
+  campaignStats(ids: string[]): Promise<Record<string, { delivered: number; opened: number; clicked: number; bounced?: number }>>
   getSenderName?(): Promise<string | null>
   setSenderName?(fromName: string): Promise<{ fromName: string; changed: boolean }>
   /** IDs of every contact whose primary e-mail is SUBSCRIBED, and the total Wix reports for that filter. */
