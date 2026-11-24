@@ -1,6 +1,7 @@
 // Fetch helper for the gieniu-command Netlify function.
 import type { LlmMeta } from '../types'
 import { isFinanceQuestion } from '../../netlify/shared/financeIntent.js'
+import { mayBePublisherTurn } from '../../netlify/shared/publisherIntent.js'
 import type { FinanceBlock } from '../../netlify/shared/financeBlocks.js'
 import { stanleyFetch } from './stanleyAuth'
 import { isTaskCommand } from '../../netlify/shared/stanleyTasks.js'
@@ -103,6 +104,8 @@ export interface GieniuCommandContext {
     unknown:      { count: number }
   } | null
   currentRoute?: string
+  /** Reel Publisher: the signed preview Stanley asked Filip to confirm (sent back with his "yes"). */
+  pendingPublisher?: string | null
 }
 
 export interface GieniuCommandResult {
@@ -120,12 +123,15 @@ export interface GieniuCommandResult {
   // Legacy flat fields — kept for backward compat; prefer llm.used / llm.active
   llmUsed?: boolean
   llmProvider?: string
+  /** Reel Publisher: a change waiting for Filip's "yes" (signed, expires in 10 minutes); null / absent = nothing waiting. */
+  pendingPublisher?: string | null
 }
 
 const TIMEOUT_MS = 9000
 // Finance questions run a tool loop (up to 6 get_finance calls) plus an analytical answer on the server: the model
 // loop has a 40 s deadline there and Netlify stops synchronous functions at 60 s, so the client waits up to 52 s.
 const FINANCE_TIMEOUT_MS = 52000
+// Reel Publisher turns (tool loop + Publisher API on the server) get the same long wait.
 
 export async function fetchGieniuCommand(
   message: string,
@@ -134,7 +140,7 @@ export async function fetchGieniuCommand(
   // Task commands ("dodaj zadanie …", "zrobione …", "co dziś?") go to the tasks store (stanley-tasks, Blobs), not to the model.
   if (isTaskCommand(message)) return fetchTaskCommand(message)
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), isFinanceQuestion(message) ? FINANCE_TIMEOUT_MS : TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), isFinanceQuestion(message) || mayBePublisherTurn(message, Boolean(context.pendingPublisher)) ? FINANCE_TIMEOUT_MS : TIMEOUT_MS)
 
   try {
     const res = await stanleyFetch('/.netlify/functions/gieniu-command', {

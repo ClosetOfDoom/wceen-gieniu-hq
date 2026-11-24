@@ -15,6 +15,7 @@ import { isFinanceQuestion } from '../shared/financeIntent.js'
 import { answerFinance } from '../shared/financeStanley.js'
 import { loadKnowledge, knowledgeContext } from '../shared/stanleyKnowledge.js'
 import { callOpenAI as sharedCallOpenAI, callAnthropic as sharedCallAnthropic } from '../shared/stanleyLlm.js'
+import { answerPublisher, publisherTurn } from '../shared/publisherStanley.js'
 
 // Attendance and registration collection stopped here. Anything about who was
 // in the room is history, not a current figure.
@@ -2017,6 +2018,14 @@ const handlerImpl = async (event) => {
   }
 
   const ctx = context ?? {}
+
+  // Reel publication plan (questions, move / swap / pause / resume, and the "yes" / "no" that answers a preview):
+  // Claude with tools over the Publisher API (/api/zewn) — the Publisher is the single source of truth, Stanley keeps no copy.
+  const pendingPublisher = typeof ctx.pendingPublisher === 'string' ? ctx.pendingPublisher : null
+  const publisherKind = await publisherTurn(message, { pending: pendingPublisher })
+  if (publisherKind) {
+    return success(await answerPublisher({ turn: publisherKind, message, systemPrompt: SYSTEM_PROMPT, parse: parseLLMResponse, pendingToken: pendingPublisher }))
+  }
 
   // Finance questions (Stripe / P24 / PayPal / Meta aggregates from the accounting report) take
   // their own path with the get_finance tool — before any dashboard fetch below is started.

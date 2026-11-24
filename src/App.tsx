@@ -727,6 +727,8 @@ export default function App() {
   // Failures of the automatic webinar mails (the function writes them to Blobs; the app only shows them).
   const webinarMailAlerts = useWebinarMailAlerts()
   const webinarMailRed = webinarMailAlerts.filter(a => a.severity === 'red')
+  // Reel Publisher: the signed preview waiting for Filip's "yes" (null when nothing waits).
+  const pendingPublisherRef = useRef<string | null>(null)
   const [range, setRange] = useState<TimeRange>('today')   // panel-wide time range
   // Which KPI card is expanded into a time-series / breakdown chart below the grid.
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null)
@@ -1236,8 +1238,9 @@ export default function App() {
     let delivered = false
 
     try {
-      const ctx = buildCommandContext()
+      const ctx = { ...buildCommandContext(), pendingPublisher: pendingPublisherRef.current }
       const cmdResult = await fetchGieniuCommand(query, ctx)
+      pendingPublisherRef.current = cmdResult.pendingPublisher ?? null
       setLastIntent(cmdResult.intent)
       setLastIntentConfidence(cmdResult.confidence)
       if (cmdResult.llm !== undefined) {
@@ -1249,7 +1252,7 @@ export default function App() {
       }
       // The one and only utterance for this query — the final answer.
       delivered = true
-      speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText, trusted: cmdResult.intent === 'finance', blocks: cmdResult.blocks }, query)
+      speakAnswer({ displayText: cmdResult.answerText, spokenText: cmdResult.speechText, trusted: cmdResult.intent === 'finance' || cmdResult.intent === 'publisher', blocks: cmdResult.blocks }, query)
       // Then a subtle, silent visual mood accent (never audio, never blocking).
       if (isDayResultQuery(query) && perf?.real_roas != null) showResultMood(perf.real_roas)
     } catch (err) {
