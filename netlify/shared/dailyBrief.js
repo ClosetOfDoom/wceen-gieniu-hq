@@ -234,7 +234,7 @@ export function renderBrief(d) {
   // 6 — attention
   const s6 = []
   for (const a of alerts) s6.push(a)
-  for (const g of gaps) s6.push(g)
+  for (const g of new Set(gaps)) s6.push(g) // the same gap from two sections is listed once
   if (!alerts.length && !gaps.length) s6.push('Brak aktywnych alarmów i braków danych w briefie.')
   for (const q of d.questions) s6.push(`Pytanie do Filipa: ${q}`)
   sections.push({ id: 'uwaga', title: '6. DO UWAGI', lines: s6 })
