@@ -292,3 +292,10 @@ AUTO włączone (Filip), PAUZA wyłączona; ta runda ich nie zmieniała. Do bazy
 - Porządki lokalne: kopie konfliktu OneDrive `*-Fifi` (19.11, poza git) psuły `tsc` i `assert:webinar-mails`; przeniesione do
   `STANLEY/_konflikty-OneDrive-Fifi-2026-11-19/` (nic nie usunięto). Uwaga na narzędzia: pnpm z runtime'u nie zastępuje npm (przestawił node_modules;
   naprawione `npm ci` z `package-lock.json`).
+
+## Stan na 2026-11-24 (2): odbiorcy SUBSCRIBED + VALID (deaf639)
+
+- Wybór produkcji zawężony do `subscriptionStatus = SUBSCRIBED` i `deliverabilityStatus = VALID`: z 5854 SUBSCRIBED zostaje **2976**
+  (INACTIVE 2629, BOUNCED 210, NOT_SET 33, SPAM_COMPLAINT 5 wykluczone). Baza bezpiecznika ODBIORCY 2976, limit 3273.
+- Dry-run czwartek 26.11: 2976 odbiorców, wszystkie bezpieczniki OK. Health po wdrożeniu: `"odbiorcy":"Subskrybenci e-mail (SUBSCRIBED + VALID)"`, `"liczbaOdbiorcow":2978`
+  (liczone na żywo). Szczegóły rundy: `docs/strategia-runda-2026-11-24.md`.
