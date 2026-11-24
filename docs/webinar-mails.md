@@ -10,9 +10,12 @@ Wtorek: webinar językowy, czwartek: webinar pamięciowy, oba o 18:00. Zakładka
 2. Bierze **następny niewysłany, poprawny szablon** slotu z `webinar-mails/<slot>/` (kolejność po nazwie pliku, bez zawijania).
 3. Wybiera wariant linku zapisu: naprzemiennie `landing` i `clickmeeting` (osobno dla każdego slotu).
 4. Sprawdza bezpieczniki (każdy osobno, wszystkie wyniki w raporcie): konto Wix `ACTIVE`, temat obecny i poprawny, link zapisu zwraca HTTP 200,
-   dziś nie ma już kampanii tego webinaru (lista kampanii Wix + podgląd), PAUZA wyłączona, do 07:00 zostało ≥ 30 minut.
+   dziś nie ma już kampanii tego webinaru (lista kampanii Wix + podgląd), PAUZA wyłączona, do 07:00 zostało ≥ 30 minut,
+   **ODBIORCY**: liczba subskrybentów z Wix > 0 i ≤ 110% ostatnio zapisanej liczby (sklep `recipients`, na start 5854 z 24.11).
 5. Zajmuje klucz `<data>-<slot>` (idempotencja, zapis `onlyIfNew` w Blobs), tworzy kampanię (edytor HTML) i publikuje ją z `sendAt` 07:00 czasu warszawskiego
-   do etykiety `contacts-all` (wszystkie kontakty Wix, `activeContactsOnly: false`: tak jak dotychczasowe kampanie webinarowe).
+   **wyłącznie do subskrybentów e-mail** (od 2026-11-24): kontakty Wix z `primaryEmail.subscriptionStatus = SUBSCRIBED`, pobrane z Wix Contacts
+   w tym samym biegu i wysłane jako `contactIds` (jedyne miejsce konfiguracji: `audience` w `webinarMailConfig.js`). Bez podziału tematycznego.
+   Do 24.11 produkcja szła do etykiety `contacts-all` (ok. 6950 adresów, także `NOT_SET`); taki wybór odrzuca teraz `assertProductionAudience`.
 6. **Nadawca zależny od slotu**: przed utworzeniem kampanii (`createAndPublish`, ta sama ścieżka dla produkcji i testu) ustawia nazwę nadawcy slotu
    (`fromName` w `webinarMailConfig.js`: wtorek „Filip Dąbrowski”, czwartek „Marek Szurawski”) i potwierdza ją odczytem.
    Zmienia się **tylko nazwa**: `PATCH /email-marketing/v1/sender-details` z `{ fromName, fromEmail }`, gdzie `fromEmail` to dokładnie adres,
@@ -26,6 +29,8 @@ AUTO wyłączone, PAUZA i `skipDates` (2026-12-24, 2026-12-31) to stany celowe: 
 ## Alarmy (czerwone, widoczne w zakładce i w „Alarmy · pełne doby” na Command Center)
 
 - `MAILE_AWARIA`: ostatnie uruchomienie nie przeszło (bezpiecznik, błąd publikacji, wyjątek, pusta kolejka). Znika po kolejnym udanym biegu albo po „Przyjąłem do wiadomości”.
+- `MAILE_ODBIORCY`: razem z `MAILE_AWARIA`, gdy bieg zatrzymał bezpiecznik ODBIORCY (0 subskrybentów, więcej niż 110% ostatniej liczby,
+  lista niezgodna z liczbą z Wix albo błąd zapytania). Nic nie zostało wysłane.
 - `MAILE_NIE_ODPALILY`: dzień wysyłki, po 06:45, AUTO włączone **przed** planowym uruchomieniem tego dnia (06:00 Warszawa), PAUZA wyłączona,
   a brak śladu uruchomienia. Czas włączenia to `state.autoChangedAt` (zapisywany przy każdej zmianie AUTO); stan sprzed tej poprawki
   używa `autoChangedAtFallback` = wdrożenie T2 (2026-11-19T23:01Z). AUTO włączone po 06:00 nie daje alarmu za ten dzień.
@@ -63,7 +68,7 @@ wywołuje `send-test` w `webinar-mail-admin`, które idzie przez **tę samą fun
 
 | | odbiorcy | sendAt |
 |---|---|---|
-| produkcja (`webinar-mail-run`) | `labelIds: ['contacts-all']`, `activeContactsOnly: false` | 07:00 Warszawa |
+| produkcja (`webinar-mail-run`) | `contactIds` = subskrybenci e-mail (`SUBSCRIBED`) z zapytania Wix Contacts w tym biegu | 07:00 Warszawa |
 | test (`send-test`) | `contactIds: [testContactId]` i nic więcej | teraz + 31 min (minimum Wix to 30; bez `sendAt` Wix daje 403, blokada 7) |
 
 - Kontakt testowy (od 2026-11-20): `fundacjawceen@gmail.com`, `testContactId = df6fa121-fe39-426b-bc1b-fc8734bd0812` (istniejący kontakt Wix,
@@ -256,3 +261,34 @@ AUTO włączone przez Filipa 19.11 ok. 22:38Z; ta runda nie zmieniała AUTO ani 
 - Po testach nazwa = „Marek Szurawski” (`restingFromName`); wtorkowy bieg 24.11 06:00 sam ustawi „Filip Dąbrowski”.
 - `npm run verify`: 28 plików, 668 testów, „all good”.
 
+
+## Stan na 2026-11-24: produkcja tylko do subskrybentów e-mail (b44f839)
+
+AUTO włączone (Filip), PAUZA wyłączona; ta runda ich nie zmieniała. Do bazy nic nie publikowano ponownie.
+
+- **KROK 0, wtorek 24.11** (kampania `30137920…`, opublikowana przez bieg 05:01:11Z, `sendAt` 06:00Z, etykieta `contacts-all`):
+  Wix `status ACTIVE`, `PUBLISHED`, `DISTRIBUTED`, `sendingState SENT`. Odbiorców 6952: dostarczone 6606, odbite 346, nie wysłane 0,
+  otwarcia 870–871, kliknięcia 33, skargi 0. **Kampania nie była zablokowana ani odrzucona** (żaden `IN_DETECTION` / `REJECTED`), więc bez czerwonego alarmu.
+- **fundacjawceen@gmail.com**: lista odbiorców kampanii (`GET …/campaigns/{id}/statistics/recipients`) ma ten kontakt jako
+  **DELIVERED 06:00:33Z** i **OPENED** (ostatnio 08:29Z); `lastActivity` kontaktu: „Opened an email campaign” 08:10Z. Kontakt nie był wykluczony
+  (SUBSCRIBED, VALID). Według Wix mail doszedł i był otwierany. Najbardziej prawdopodobny powód, że „go nie ma”: ten sam temat
+  „1000 słów. 17 godzin. zero wkuwania” co kampania z 20.10 i test z 20.11 (który też „zniknął”), więc Gmail dokleja go do starego wątku
+  (albo karta Oferty). Konektor Gmail tej sesji nie ma dostępu do tej skrzynki, więc nie sprawdzono tego w samej skrzynce.
+- **Wybór subskrybentów** (KROK 1): Wix przez API nie ma systemowej etykiety subskrybentów (zapytanie o etykiety `SYSTEM` daje 0), a Segments API
+  daje 404. Policzono 13 segmentów z kontaktów: żaden nie zawiera wyłącznie `SUBSCRIBED` (największy `33dd07aa…` = 8883 kontaktów).
+  Kontakty wg `primaryEmail.subscriptionStatus`: **SUBSCRIBED 5854** (dokładnie liczba z panelu), NOT_SET 1454, UNSUBSCRIBED 1576, razem 8884.
+  `contacts-all` dawało ok. 6950 wysłanych, czyli subskrybentów plus część NOT_SET. Wybór: `contactIds` = wszyscy `SUBSCRIBED`, pobierani przy każdym biegu.
+  Limit `contactIds` sprawdzony publikacją testową `19de7f6c…`: kontakt testowy + 6439 losowych GUID (nienależących do nikogo), 245 KB → HTTP 200,
+  Wix zachował w audience 1 kontakt (testowy).
+- Kod: `audience` w `webinarMailConfig.js` (jedyne miejsce), `listEmailSubscriberIds` / `countEmailSubscribers` w kliencie Wix (każdy kontakt sprawdzony
+  ponownie, liczba ID musi równać się `total` z Wix), `resolveProductionAudience` + **`assertProductionAudience`** (produkcja przyjmuje tylko listę zbudowaną
+  z zapytania o subskrybentów; `contacts-all`, etykieta, segment, `activeContactsOnly`, ręczna lista i kontakt testowy odrzucone przed Wix; klient Wix
+  też odmawia etykiet i segmentów), **bezpiecznik ODBIORCY** (0 < n ≤ 110% ostatniej liczby, sklep `recipients`, na start 5854 → limit 6439),
+  czerwone `MAILE_AWARIA` + `MAILE_ODBIORCY`. Ścieżka testowa bez zmian.
+- **Dry-run czwartek 26.11** (lokalnie, prawdziwy Wix, tylko odczyty): szablon `01-2026-10-20-dzis-o-18-00-pamiec-cztery-razy-lepsza`, wariant `landing`,
+  `sendAt` 06:00Z, **odbiorcy „Subskrybenci e-mail (SUBSCRIBED)”, 5854**, limit 6439, wszystkie 8 bezpieczników OK, `wouldPublish: true`, 12 s.
+- Health po wdrożeniu: `"build":"b44f839"`, `"odbiorcy":"Subskrybenci e-mail (SUBSCRIBED)"`, `"liczbaOdbiorcow":5854`; admin bez tokenu 401.
+- `npm run verify`: 28 plików, 684 testy, „all good”.
+- Porządki lokalne: kopie konfliktu OneDrive `*-Fifi` (19.11, poza git) psuły `tsc` i `assert:webinar-mails`; przeniesione do
+  `STANLEY/_konflikty-OneDrive-Fifi-2026-11-19/` (nic nie usunięto). Uwaga na narzędzia: pnpm z runtime'u nie zastępuje npm (przestawił node_modules;
+  naprawione `npm ci` z `package-lock.json`).
