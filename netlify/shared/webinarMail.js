@@ -234,12 +234,12 @@ function selectionProblems(config) {
   const extra = Object.keys(a).filter((k) => !['selection', 'name', 'contactsFilter'].includes(k))
   if (extra.length) problems.push(`niedozwolone pola odbiorców w konfiguracji: ${extra.join(', ')}`)
   const f = a.contactsFilter ?? {}
-  if (Object.keys(f).length !== 1 || f['primaryEmail.subscriptionStatus'] !== 'SUBSCRIBED') problems.push('filtr odbiorców w konfiguracji musi być dokładnie primaryEmail.subscriptionStatus = SUBSCRIBED')
+  if (Object.keys(f).length !== 2 || f['primaryEmail.subscriptionStatus'] !== 'SUBSCRIBED' || f['primaryEmail.deliverabilityStatus'] !== 'VALID') problems.push('filtr odbiorców w konfiguracji musi być dokładnie subscriptionStatus = SUBSCRIBED i deliverabilityStatus = VALID')
   return problems
 }
 
 /**
- * The production audience: { contactIds } = every Wix contact whose primary e-mail is SUBSCRIBED, asked from Wix now.
+ * The production audience: { contactIds } = every Wix contact whose primary e-mail is SUBSCRIBED and VALID, asked from Wix now.
  * Returns { audience, count, total, name } — audience is frozen and registered as resolved (assertProductionAudience).
  */
 export async function resolveProductionAudience(wix, config = WEBINAR_MAIL_CONFIG) {

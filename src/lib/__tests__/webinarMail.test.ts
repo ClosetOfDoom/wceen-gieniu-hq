@@ -673,21 +673,26 @@ describe('Wix client payloads', () => {
 
   it('subscriber query: filter SUBSCRIBED, all pages, every contact re-checked, count must equal the Wix total', async () => {
     const pages = [
-      { contacts: [{ id: 'a', primaryEmail: { subscriptionStatus: 'SUBSCRIBED' } }, { id: 'b', primaryEmail: { subscriptionStatus: 'SUBSCRIBED' } }], pagingMetadata: { total: 3, hasNext: true } },
-      { contacts: [{ id: 'c', primaryEmail: { subscriptionStatus: 'SUBSCRIBED' } }], pagingMetadata: { total: 3, hasNext: false } },
+      { contacts: [{ id: 'a', primaryEmail: { subscriptionStatus: 'SUBSCRIBED', deliverabilityStatus: 'VALID' } }, { id: 'b', primaryEmail: { subscriptionStatus: 'SUBSCRIBED', deliverabilityStatus: 'VALID' } }], pagingMetadata: { total: 3, hasNext: true } },
+      { contacts: [{ id: 'c', primaryEmail: { subscriptionStatus: 'SUBSCRIBED', deliverabilityStatus: 'VALID' } }], pagingMetadata: { total: 3, hasNext: false } },
     ]
     const bodies: Record<string, any>[] = []
     const mk = (pg: typeof pages) => (async (_u: string, init: RequestInit) => { bodies.push(JSON.parse(String(init.body))); return new Response(JSON.stringify(pg[bodies.length - 1] ?? pg[pg.length - 1]), { status: 200 }) }) as unknown as typeof fetch
     const ok = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: mk(pages) })
     expect(await ok.listEmailSubscriberIds!()).toEqual({ ids: ['a', 'b', 'c'], total: 3 })
-    expect(bodies[0].query.filter).toEqual({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED' })
+    expect(bodies[0].query.filter).toEqual({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED', 'primaryEmail.deliverabilityStatus': 'VALID' })
     expect(bodies[1].query.paging.offset).toBe(2)
     expect(SUBSCRIBED_FILTER).toEqual(CFG.audience.contactsFilter)
     bodies.length = 0
-    const notSub = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: mk([{ contacts: [{ id: 'a', primaryEmail: { subscriptionStatus: 'NOT_SET' } }], pagingMetadata: { total: 1, hasNext: false } }] as never) })
+    const notSub = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: mk([{ contacts: [{ id: 'a', primaryEmail: { subscriptionStatus: 'NOT_SET', deliverabilityStatus: 'VALID' } }], pagingMetadata: { total: 1, hasNext: false } }] as never) })
     await expect(notSub.listEmailSubscriberIds!()).rejects.toThrow(/bez subskrypcji/)
+    for (const d of ['INACTIVE', 'BOUNCED', 'SPAM_COMPLAINT', 'NOT_SET']) {
+      bodies.length = 0
+      const undeliverable = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: mk([{ contacts: [{ id: 'a', primaryEmail: { subscriptionStatus: 'SUBSCRIBED', deliverabilityStatus: d } }], pagingMetadata: { total: 1, hasNext: false } }] as never) })
+      await expect(undeliverable.listEmailSubscriberIds!()).rejects.toThrow(/niedoręczalnym/)
+    }
     bodies.length = 0
-    const short = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: mk([{ contacts: [{ id: 'a', primaryEmail: { subscriptionStatus: 'SUBSCRIBED' } }], pagingMetadata: { total: 5854, hasNext: false } }] as never) })
+    const short = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: mk([{ contacts: [{ id: 'a', primaryEmail: { subscriptionStatus: 'SUBSCRIBED', deliverabilityStatus: 'VALID' } }], pagingMetadata: { total: 5854, hasNext: false } }] as never) })
     await expect(short.listEmailSubscriberIds!()).rejects.toThrow(/niepełna/)
   })
 
@@ -713,7 +718,7 @@ describe('healthSummary (public webinar-mail-health)', () => {
     const h = await healthSummary({ deps: s.deps, build: 'abc1234', now: new Date('2026-11-20T10:00:00Z') })
     expect(Object.keys(h).sort()).toEqual(['aktualnyNadawca', 'alarmy', 'auto', 'blobsRead', 'build', 'kolejka', 'liczbaOdbiorcow', 'nadawcy', 'nastepnaWysylka', 'odbiorcy', 'ostatnieWpisy', 'pauza'])
     expect(Object.keys(h.kolejka).sort()).toEqual(['czwartek', 'wtorek'])
-    expect(h).toEqual({ build: 'abc1234', blobsRead: 'ok', auto: false, pauza: true, kolejka: { wtorek: 2, czwartek: 2 }, nastepnaWysylka: '2026-11-24T06:00:00.000Z', alarmy: ['MAILE_KOLEJKA_NISKA'], ostatnieWpisy: [], nadawcy: { wtorek: 'Filip Dąbrowski', czwartek: 'Marek Szurawski' }, aktualnyNadawca: 'Marek Szurawski', odbiorcy: 'Subskrybenci e-mail (SUBSCRIBED)', liczbaOdbiorcow: 3 })
+    expect(h).toEqual({ build: 'abc1234', blobsRead: 'ok', auto: false, pauza: true, kolejka: { wtorek: 2, czwartek: 2 }, nastepnaWysylka: '2026-11-24T06:00:00.000Z', alarmy: ['MAILE_KOLEJKA_NISKA'], ostatnieWpisy: [], nadawcy: { wtorek: 'Filip Dąbrowski', czwartek: 'Marek Szurawski' }, aktualnyNadawca: 'Marek Szurawski', odbiorcy: 'Subskrybenci e-mail (SUBSCRIBED + VALID)', liczbaOdbiorcow: 3 })
   })
 
   it('no template content, file names, subjects, campaign IDs, e-mails or test contact in the body', async () => {
@@ -1010,7 +1015,7 @@ describe('sender name of the slot (BEZPIECZNIK NADAWCA)', () => {
 
 describe('production audience safeguard (only e-mail subscribers)', () => {
   it('the config has exactly one selection: the e-mail subscribers, no label, no segment', () => {
-    expect(CFG.audience).toEqual({ selection: PRODUCTION_SELECTION, name: 'Subskrybenci e-mail (SUBSCRIBED)', contactsFilter: { 'primaryEmail.subscriptionStatus': 'SUBSCRIBED' } })
+    expect(CFG.audience).toEqual({ selection: PRODUCTION_SELECTION, name: 'Subskrybenci e-mail (SUBSCRIBED + VALID)', contactsFilter: { 'primaryEmail.subscriptionStatus': 'SUBSCRIBED', 'primaryEmail.deliverabilityStatus': 'VALID' } })
     expect(JSON.stringify(CFG.audience)).not.toContain('contacts-all')
     expect(CFG.audience).not.toHaveProperty('labelIds')
     expect(CFG.audience).not.toHaveProperty('segmentIds')
@@ -1044,6 +1049,9 @@ describe('production audience safeguard (only e-mail subscribers)', () => {
     await expect(resolveProductionAudience(fakeWix().wix, contactsAll)).rejects.toThrow(/BEZPIECZNIK PRODUKCJI/)
     const otherFilter = { ...CFG, audience: { ...CFG.audience, contactsFilter: { 'primaryEmail.subscriptionStatus': 'NOT_SET' } } } as never
     expect(() => assertProductionAudience(r.audience, otherFilter)).toThrow(/BEZPIECZNIK PRODUKCJI/)
+    // P0: SUBSCRIBED without the VALID condition (INACTIVE / BOUNCED addresses included) is not allowed either
+    const subscribedOnly = { ...CFG, audience: { ...CFG.audience, contactsFilter: { 'primaryEmail.subscriptionStatus': 'SUBSCRIBED' } } } as never
+    expect(() => assertProductionAudience(r.audience, subscribedOnly)).toThrow(/BEZPIECZNIK PRODUKCJI/)
   })
 
   it('createAndPublish(production) with contacts-all, the test contact or a hand-made list never reaches Wix', async () => {
@@ -1085,9 +1093,9 @@ describe('BEZPIECZNIK ODBIORCY', () => {
     expect(evaluateRecipients(R(10), null).ok).toBe(false)
   })
 
-  it('baseline: the store value, else the config (5854 on 2026-11-24)', async () => {
-    expect(CFG.recipientsBaseline.count).toBe(5854)
-    expect(await recipientsBaseline(createMemoryStore())).toBe(5854)
+  it('baseline: the store value, else the config (2976 SUBSCRIBED + VALID on 2026-11-24)', async () => {
+    expect(CFG.recipientsBaseline.count).toBe(2976)
+    expect(await recipientsBaseline(createMemoryStore())).toBe(2976)
     expect(await recipientsBaseline(createMemoryStore({ recipients: { count: 6000, at: 'x' } }))).toBe(6000)
   })
 
@@ -1119,7 +1127,7 @@ describe('BEZPIECZNIK ODBIORCY', () => {
     const s = setup()
     const r = await run(s, CET_TUE_0600)
     expect(r.status).toBe('scheduled')
-    expect(r.plan).toMatchObject({ odbiorcy: 'Subskrybenci e-mail (SUBSCRIBED)', liczbaOdbiorcow: 3, limitOdbiorcow: 6439 })
+    expect(r.plan).toMatchObject({ odbiorcy: 'Subskrybenci e-mail (SUBSCRIBED + VALID)', liczbaOdbiorcow: 3, limitOdbiorcow: 3273 })
     expect((await s.store.getRecipients!())?.count).toBe(3)
     expect((await s.store.getLog()).find((e) => !e.test)?.recipients).toBe(3)
   })

@@ -104,7 +104,7 @@ else fail(`send-log statuses mapped by hand outside webinarMailStatus.js: ${hand
 // Production goes ONLY to the e-mail subscribers (2026-11-24): one selection in the config, guarded in createAndPublish.
 const aud = CFG.audience ?? {}
 if (aud.selection === 'subskrybenci-email' && !('labelIds' in aud) && !('segmentIds' in aud) && !JSON.stringify(aud).includes('contacts-all')
-  && JSON.stringify(aud.contactsFilter) === JSON.stringify({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED' })) ok(`production recipients: ${aud.name} (no label, no segment, no contacts-all)`)
+  && JSON.stringify(aud.contactsFilter) === JSON.stringify({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED', 'primaryEmail.deliverabilityStatus': 'VALID' })) ok(`production recipients: ${aud.name} (no label, no segment, no contacts-all)`)
 else fail('WEBINAR_MAIL_CONFIG.audience must be the e-mail subscribers selection only (no contacts-all, no label, no segment)')
 if (/else assertProductionAudience\(audience, config\)/.test(core) && /resolveProductionAudience\(wix, config\)/.test(core) && /evaluateRecipients\(/.test(core)) ok('production publish guarded: assertProductionAudience + BEZPIECZNIK ODBIORCY in the run')
 else fail('webinarMail.js: production publish must go through assertProductionAudience and the ODBIORCY check')

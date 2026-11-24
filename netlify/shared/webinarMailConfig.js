@@ -20,7 +20,9 @@ export const WEBINAR_MAIL_CONFIG = Object.freeze({
   placeholder: '{{WEBINAR_URL}}',
   /**
    * PRODUCTION RECIPIENTS — the ONE place. Only e-mail subscribers: the Wix contacts whose PRIMARY e-mail has
-   * subscriptionStatus SUBSCRIBED (what the Wix panel counts as e-mail subscribers: 5854 on 2026-11-24). No topic split.
+   * subscriptionStatus SUBSCRIBED (what the Wix panel counts as e-mail subscribers: 5854 on 2026-11-24) AND whose
+   * deliverabilityStatus is VALID (P0 2026-11-24: 346 of 6952 bounced on 24.11; of the 5854 SUBSCRIBED: VALID 2976, INACTIVE 2629,
+   * BOUNCED 210, NOT_SET 33, SPAM_COMPLAINT 5 → only the 2976 VALID ones). No topic split.
    * Wix has no system label and no segment with exactly these contacts (checked 2026-11-24: no SYSTEM labels via API, the
    * 13 segments in use all mix in NOT_SET / UNSUBSCRIBED), so before every publish the run asks Wix Contacts
    * (POST /contacts/v4/contacts/query, filter below) for the IDs and publishes with contactIds = exactly those IDs.
@@ -30,15 +32,15 @@ export const WEBINAR_MAIL_CONFIG = Object.freeze({
    */
   audience: Object.freeze({
     selection: 'subskrybenci-email',
-    name: 'Subskrybenci e-mail (SUBSCRIBED)',
-    contactsFilter: Object.freeze({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED' }),
+    name: 'Subskrybenci e-mail (SUBSCRIBED + VALID)',
+    contactsFilter: Object.freeze({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED', 'primaryEmail.deliverabilityStatus': 'VALID' }),
   }),
   /**
    * BEZPIECZNIK ODBIORCY: a production publish needs 0 < recipients ≤ recipientsMaxGrowth × the last recorded subscriber
    * count (store "recipients", written after every production publish; recipientsBaseline until the first one).
    */
   recipientsMaxGrowth: 1.1,
-  recipientsBaseline: Object.freeze({ count: 5854, at: '2026-11-24' }),
+  recipientsBaseline: Object.freeze({ count: 2976, at: '2026-11-24' }),
   /**
    * "Wyślij test" = the SAME Create + Publish as production, but to exactly ONE Wix contact.
    * testContactId is the existing Wix contact whose PRIMARY e-mail is testRecipient (checked 2026-11-20: SUBSCRIBED,

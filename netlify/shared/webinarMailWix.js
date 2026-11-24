@@ -5,7 +5,7 @@
 //   GET  /email-marketing/v1/campaigns            (list; statuses, distributionStatus, publishingData)
 //   POST /email-marketing/v1/campaigns            (create from HTML: campaignEditorType HTML)
 //   POST /email-marketing/v1/campaigns/{id}/publish   (emailDistributionOptions: contactIds ONLY, sendAt, emailSubject)
-//   POST /contacts/v4/contacts/query                  (filter primaryEmail.subscriptionStatus = SUBSCRIBED → the recipients)
+//   POST /contacts/v4/contacts/query                  (filter subscriptionStatus SUBSCRIBED + deliverabilityStatus VALID → the recipients)
 //   GET  /email-marketing/v1/campaigns/{id}           (status of one campaign)
 //   POST /email-marketing/v1/campaigns/{id}/preview   (rendered HTML + subject)
 //   GET  /email-marketing/v1/campaigns/statistics
@@ -21,7 +21,7 @@
 
 const BASE = 'https://www.wixapis.com'
 /** The e-mail subscribers (WEBINAR_MAIL_CONFIG.audience.contactsFilter; a test asserts both are the same). */
-const SUBSCRIBED_FILTER = Object.freeze({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED' })
+const SUBSCRIBED_FILTER = Object.freeze({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED', 'primaryEmail.deliverabilityStatus': 'VALID' })
 export { SUBSCRIBED_FILTER }
 
 export function createWixClient({ apiKey, siteId, fetchImpl = fetch } = {}) {
@@ -95,7 +95,7 @@ export function createWixClient({ apiKey, siteId, fetchImpl = fetch } = {}) {
       return call('POST', `/email-marketing/v1/campaigns/${campaignId}/publish`, { emailDistributionOptions: options })
     },
 
-    /** How many contacts have a PRIMARY e-mail with subscriptionStatus SUBSCRIBED (Wix Contacts total). */
+    /** How many contacts have a PRIMARY e-mail that is SUBSCRIBED and VALID (Wix Contacts total). */
     async countEmailSubscribers() {
       const j = await call('POST', '/contacts/v4/contacts/query', { query: { filter: SUBSCRIBED_FILTER, paging: { limit: 1 }, fieldsets: ['BASIC'] } })
       const total = j.pagingMetadata?.total
@@ -104,8 +104,8 @@ export function createWixClient({ apiKey, siteId, fetchImpl = fetch } = {}) {
     },
 
     /**
-     * IDs of every contact whose PRIMARY e-mail is SUBSCRIBED: { ids, total } (total = what Wix reports for the filter).
-     * Every returned contact is checked again (primaryEmail.subscriptionStatus === 'SUBSCRIBED'); one that is not, a
+     * IDs of every contact whose PRIMARY e-mail is SUBSCRIBED and VALID: { ids, total } (total = what Wix reports for the filter).
+     * Every returned contact is checked again (subscriptionStatus SUBSCRIBED, deliverabilityStatus VALID); one that is not, a
      * duplicate, or a count that differs from total throws, so the run fails closed. No e-mail address leaves this function.
      */
     async listEmailSubscriberIds() {
@@ -118,6 +118,7 @@ export function createWixClient({ apiKey, siteId, fetchImpl = fetch } = {}) {
         const contacts = j.contacts ?? []
         for (const c of contacts) {
           if (c.primaryEmail?.subscriptionStatus !== 'SUBSCRIBED') throw new Error('Wix zwrócił kontakt bez subskrypcji w zapytaniu o subskrybentów')
+          if (c.primaryEmail?.deliverabilityStatus !== 'VALID') throw new Error('Wix zwrócił kontakt z niedoręczalnym adresem w zapytaniu o subskrybentów')
           if (ids.has(c.id)) throw new Error('Wix zwrócił ten sam kontakt dwa razy w zapytaniu o subskrybentów')
           ids.add(c.id)
         }

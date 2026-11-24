@@ -154,7 +154,7 @@ describe('webinar-mail-health (publiczny, tylko GET, tylko odczyt)', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(Object.keys(body).sort()).toEqual(['aktualnyNadawca', 'alarmy', 'auto', 'blobsRead', 'build', 'kolejka', 'liczbaOdbiorcow', 'nadawcy', 'nastepnaWysylka', 'odbiorcy', 'ostatnieWpisy', 'pauza'])
-    expect(body.odbiorcy).toBe('Subskrybenci e-mail (SUBSCRIBED)')
+    expect(body.odbiorcy).toBe('Subskrybenci e-mail (SUBSCRIBED + VALID)')
     expect(['ok', 'error']).toContain(body.blobsRead)
     expect((await h(new Request('https://app.example/x', { method: 'POST', body: '{}' }))).status).toBe(405)
   })
