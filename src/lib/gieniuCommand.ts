@@ -3,6 +3,7 @@ import type { LlmMeta } from '../types'
 import { isFinanceQuestion } from '../../netlify/shared/financeIntent.js'
 import type { FinanceBlock } from '../../netlify/shared/financeBlocks.js'
 import { stanleyFetch } from './stanleyAuth'
+import { isTaskCommand } from '../../netlify/shared/stanleyTasks.js'
 
 export interface TrendRow {
   date: string
@@ -130,6 +131,8 @@ export async function fetchGieniuCommand(
   message: string,
   context: GieniuCommandContext,
 ): Promise<GieniuCommandResult> {
+  // Task commands ("dodaj zadanie …", "zrobione …", "co dziś?") go to the tasks store (stanley-tasks, Blobs), not to the model.
+  if (isTaskCommand(message)) return fetchTaskCommand(message)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), isFinanceQuestion(message) ? FINANCE_TIMEOUT_MS : TIMEOUT_MS)
 
@@ -143,6 +146,27 @@ export async function fetchGieniuCommand(
     if (!res.ok) {
       const body = await res.text().catch(() => res.status.toString())
       throw new Error(`gieniu-command ${res.status}: ${body.slice(0, 200)}`)
+    }
+    return res.json() as Promise<GieniuCommandResult>
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** A task command of the Q&A, answered by stanley-tasks with the same result shape as gieniu-command. */
+export async function fetchTaskCommand(message: string): Promise<GieniuCommandResult> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  try {
+    const res = await stanleyFetch('/.netlify/functions/stanley-tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'command', message }),
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => res.status.toString())
+      throw new Error(`stanley-tasks ${res.status}: ${body.slice(0, 200)}`)
     }
     return res.json() as Promise<GieniuCommandResult>
   } finally {

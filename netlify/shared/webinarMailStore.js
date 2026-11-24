@@ -91,3 +91,48 @@ export function createMemoryStore(seed = {}) {
     async list(prefix) { return [...map.keys()].filter((k) => k.startsWith(prefix)) },
   })
 }
+
+// ── Stanley's own data (tasks, day ticks, briefs, push) — the same single access path to Blobs ──────────────
+//
+// One Blobs store "stanley" (strong consistency, Functions API v2 only), keys by prefix:
+//   zadania/<id>     a task { id, tytul, filar, godzina, dzien, status, createdAt, doneAt }
+//   dzien/<date>     ticked rhythm items of a day { done: [rhythm ids] }
+//   brief/<date>     a daily brief (the 14 newest are kept)
+//   push/vapid       the VAPID key pair (generated on first use)
+//   push/sub/<hash>  a web-push subscription
+
+function rawBlobKv(blobStore) {
+  return {
+    async getJSON(key) { return (await blobStore.get(key, { type: 'json' })) ?? null },
+    async setJSON(key, value) { await blobStore.setJSON(key, value) },
+    async setJSONIfNew(key, value) { const r = await blobStore.setJSON(key, value, { onlyIfNew: true }); return r.modified !== false },
+    async delete(key) { await blobStore.delete(key) },
+    async list(prefix) {
+      const out = []
+      let cursor
+      do {
+        const page = await blobStore.list({ prefix, ...(cursor ? { cursor } : {}) })
+        out.push(...page.blobs.map((b) => b.key))
+        cursor = page.cursor
+      } while (cursor)
+      return out
+    },
+  }
+}
+
+/** Generic JSON key-value on the "stanley" Blobs store (or `name`). */
+export function createKvStore(name = 'stanley', blobStore = getStore({ name, consistency: 'strong' })) {
+  return rawBlobKv(blobStore)
+}
+
+/** Same interface, in memory (tests and local dry runs). */
+export function createMemoryKv(seed = {}) {
+  const map = new Map(Object.entries(seed))
+  return {
+    async getJSON(key) { return map.has(key) ? JSON.parse(JSON.stringify(map.get(key))) : null },
+    async setJSON(key, value) { map.set(key, JSON.parse(JSON.stringify(value))) },
+    async setJSONIfNew(key, value) { if (map.has(key)) return false; map.set(key, JSON.parse(JSON.stringify(value))); return true },
+    async delete(key) { map.delete(key) },
+    async list(prefix) { return [...map.keys()].filter((k) => k.startsWith(prefix)).sort() },
+  }
+}

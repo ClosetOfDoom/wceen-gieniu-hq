@@ -22,6 +22,7 @@ import { StanleyOwl } from './components/StanleyOwl'
 import { CampaignInspector } from './components/CampaignInspector'
 import { MetaWorldPanel } from './components/MetaWorldPanel'
 import { GoalBar } from './components/GoalBar'
+import { TodayPanel } from './components/TodayPanel'
 import {
   ppOrdersGoal, revenueGoal, cpaGoal, roasGoal, MONTHLY_REVENUE_TARGET,
   daysInMonthOf, PP_ORDERS_TARGET,
@@ -719,6 +720,8 @@ function RightPanel({
 export default function App() {
   const { theme, toggleTheme } = useTheme()
   const [section, setSection] = useState<NavSection>('command-center')
+  // Bumped after each answer so the "Dziś" list picks up tasks added or ticked in the Q&A.
+  const [dayRefresh, setDayRefresh] = useState(0)
   // Failures of the automatic webinar mails (the function writes them to Blobs; the app only shows them).
   const webinarMailAlerts = useWebinarMailAlerts()
   const webinarMailRed = webinarMailAlerts.filter(a => a.severity === 'red')
@@ -1242,6 +1245,7 @@ export default function App() {
       if (isDayResultQuery(query) && perf?.real_roas != null) showResultMood(perf.real_roas)
     } finally {
       setThinking(false)
+      setDayRefresh((n) => n + 1)
     }
   }
 
@@ -1701,6 +1705,9 @@ export default function App() {
           {/* ── COMMAND CENTER ─────────────────────────────────────── */}
           {section === 'command-center' && (
             <>
+              {/* Dziś: day rhythm + tasks (stanley-tasks); refreshed after every Q&A answer (task commands go there) */}
+              <TodayPanel refreshKey={dayRefresh} />
+
               {/* Time-range switcher — governs every KPI in this panel (Warsaw tz) */}
               <RangeSwitcher range={range} onChange={setRange} />
 
