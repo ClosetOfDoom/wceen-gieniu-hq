@@ -3,7 +3,7 @@
 //
 // A GOAL and an ALARM are different things and this module keeps them apart:
 //
-//   GOAL   how far through a target we are. 18 PP a day, 30 000 PLN a month.
+//   GOAL   how far through a target we are. 18 PP a day, 100 000 PLN a month (strategic goal since 2026-11-24).
 //          Always a progress bar, never red, never the word "alarm". A target
 //          you are 40% of the way through at 10 a.m. is not a fault.
 //
@@ -32,8 +32,11 @@ import { creativeAlarmRows, CREATIVE_ALARM_NOTE } from './adSpend.js'
 export const GOALS = {
   /** Pakiet Pamięciowy orders per FULL day. */
   PP_ORDERS_PER_DAY: 18,
-  /** PLN per calendar month, prorated to the range being shown. */
-  MONTHLY_REVENUE: 30000,
+  /**
+   * PLN per calendar month, prorated to the range being shown. The strategic goal (stanley-wiedza/strategia.md) since
+   * 2026-11-24, before that 30 000. A progress goal only: no alarm threshold depends on it.
+   */
+  MONTHLY_REVENUE: 100000,
 }
 
 // ── WHY THESE NUMBERS ARE STATIC ─────────────────────────────────────────────

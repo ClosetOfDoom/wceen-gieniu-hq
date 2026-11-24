@@ -25,7 +25,7 @@ function series(counts: number[], to = '2026-10-02'): DaySeriesEntry[] {
 describe('goals are not alarms', () => {
   it('keeps the two target numbers unchanged', () => {
     expect(GOALS.PP_ORDERS_PER_DAY).toBe(18)
-    expect(GOALS.MONTHLY_REVENUE).toBe(30000)
+    expect(GOALS.MONTHLY_REVENUE).toBe(100000)
   })
 
   it('counts an order only above the test-order floor', () => {

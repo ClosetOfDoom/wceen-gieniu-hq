@@ -8,8 +8,9 @@
 
 # The webinar mail templates are read from disk by webinar-mail-run / webinar-mail-admin / webinar-mail-health;
 # dist/version.json (written by vite build) gives the functions the build hash (netlify/shared/buildInfo.js).
+# stanley-wiedza/** is Stanley's knowledge (strategy, pillars, day rhythm), read by the Q&A, the daily brief and the tasks.
 [functions]
-  included_files = ["webinar-mails/**", "dist/version.json"]
+  included_files = ["webinar-mails/**", "dist/version.json", "stanley-wiedza/**"]
 
 [[redirects]]
   from = "/*"

@@ -13,6 +13,7 @@ import { fetchOrdersInRange } from '../shared/productCatalog.js'
 import { businessDay, businessToday, businessDaysAgo, businessWeekStart } from '../shared/businessDay.js'
 import { isFinanceQuestion } from '../shared/financeIntent.js'
 import { answerFinance } from '../shared/financeStanley.js'
+import { loadKnowledge, knowledgeContext } from '../shared/stanleyKnowledge.js'
 
 // Attendance and registration collection stopped here. Anything about who was
 // in the room is history, not a current figure.
@@ -2238,7 +2239,11 @@ const handlerImpl = async (event) => {
   // Build LLM user message with context. When we have a deterministic answer for
   // this intent, hand the LLM those EXACT numbers as a verified anchor and ask it
   // to rephrase them freshly — varied persona wording, identical figures.
-  const contextText = buildContextText(ctx, serverAds, creativeAnalyticsText)
+  // Stanley's knowledge (stanley-wiedza/): strategy, pillars, day rhythm. Missing files never break the answer.
+  const knowledgeText = await loadKnowledge().then(knowledgeContext).catch(() => '=== WIEDZA STANLEYA: BRAK DANYCH: stanley-wiedza/ ===')
+  const contextText = `${buildContextText(ctx, serverAds, creativeAnalyticsText)}
+
+${knowledgeText}`
   const grounding = det
     ? `\n\n=== VERIFIED ANSWER (these numbers are correct — rephrase FRESHLY in your persona; vary the wording every time, keep EVERY figure exactly, and introduce no number that is not here or in the context above) ===\n${det.text}`
     : ''

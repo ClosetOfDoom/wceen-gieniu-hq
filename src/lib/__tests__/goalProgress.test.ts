@@ -13,9 +13,9 @@ import {
 import { cpaAlert, roasAlert } from '../alerts'
 
 describe('the targets themselves are unchanged', () => {
-  it('18 PP per full day, 30 000 PLN per month', () => {
+  it('18 PP per full day, 100 000 PLN per month (strategic goal)', () => {
     expect(PP_ORDERS_TARGET).toBe(18)
-    expect(MONTHLY_REVENUE_TARGET).toBe(30000)
+    expect(MONTHLY_REVENUE_TARGET).toBe(100000)
   })
 })
 
@@ -59,7 +59,7 @@ describe('ppOrdersGoal — progress, never a fault', () => {
 
 describe('revenue goals — progress', () => {
   it('green at or past the prorated expectation, neutral before it', () => {
-    expect(revenueGoal(7000, 7, 30).status).toBe('green')
+    expect(revenueGoal(23334, 7, 30).status).toBe('green')
     expect(revenueGoal(1000, 7, 30).status).toBe('neutral')
   })
 
@@ -68,8 +68,8 @@ describe('revenue goals — progress', () => {
     expect(monthlyRevenueGoal(5000, 10, 30).note).not.toMatch(/behind pace/i)
   })
 
-  it('monthly bar reports the share of the 30k target and the day', () => {
-    const r = monthlyRevenueGoal(15000, 15, 30)
+  it('monthly bar reports the share of the 100k target and the day', () => {
+    const r = monthlyRevenueGoal(50000, 15, 30)
     expect(r.pct).toBe(50)
     expect(r.note).toContain('50% celu')
     expect(r.note).toContain('dzień 15/30')

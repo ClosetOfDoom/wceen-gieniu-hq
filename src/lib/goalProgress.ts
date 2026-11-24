@@ -3,7 +3,7 @@
 // GOALS live here; ALARMS live in netlify/shared/alertRules.js. The split is
 // the point: a goal bar reports how far through a target we are and is never
 // red, while an alarm reports that something is wrong and is the only thing
-// allowed to be. The thresholds themselves (18 PP/day, 30 000 PLN/month, the
+// allowed to be. The thresholds themselves (18 PP/day, 100 000 PLN/month since 2026-11-24, the
 // CPA and ROAS bands) are unchanged — they moved, they did not move the needle.
 //
 // CPA and ROAS bars take their colour from the 7-full-day alarm verdict rather
@@ -54,10 +54,10 @@ export function ppOrdersGoal(count: number | null, expected: number = PP_ORDERS_
   }
 }
 
-// ── Monthly revenue — target 30 000 PLN, paced by days elapsed ────────────────
-// % shown is % of the full 30k target; colour compares month-to-date against the
-// prorated "expected by now" (30k × daysElapsed/daysInMonth).
-export const MONTHLY_REVENUE_TARGET = 30000
+// ── Monthly revenue — target 100 000 PLN (strategic goal, stanley-wiedza/strategia.md), paced by days elapsed ──
+// % shown is % of the full target; colour compares month-to-date against the
+// prorated "expected by now" (target × daysElapsed/daysInMonth). Never red: a goal, not an alarm.
+export const MONTHLY_REVENUE_TARGET = GOALS.MONTHLY_REVENUE
 
 export function monthlyRevenueGoal(mtd: number, daysElapsed: number, daysInMonth: number): GoalResult {
   const pct = clamp((mtd / MONTHLY_REVENUE_TARGET) * 100)
@@ -70,7 +70,7 @@ export function monthlyRevenueGoal(mtd: number, daysElapsed: number, daysInMonth
   }
 }
 
-// Range-aware revenue goal — the selected range's revenue vs the 30 000 PLN monthly
+// Range-aware revenue goal — the selected range's revenue vs the 100 000 PLN monthly
 // target, prorated to the range's length in days (`paceDays`: TODAY = 1,
 // YESTERDAY = 1, WEEK = 7, MONTH = days elapsed). The in-progress day counts as
 // a whole day of target — the bar is simply not full yet, which is the truth.

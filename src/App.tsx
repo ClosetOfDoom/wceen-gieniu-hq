@@ -1821,7 +1821,7 @@ export default function App() {
                       />
                     </div>
                     <div style={{ marginTop: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: 'var(--muted2)' }}>
-                      Cały blok podąża za wybranym zakresem ({rangeWord}). To są CELE — postęp, nie alarmy; pasek niepełny nie znaczy, że coś jest nie tak. PP = Pakiet Pamięciowy, cel 18/pełną dobę. Revenue vs cel 30 000 PLN/mies., prorata do długości zakresu. CPA i ROAS kolorowane WYŁĄCZNIE z 7 ostatnich pełnych dób — krótszy zakres pokazuje liczbę bez oceny. Anomalie są w sekcji ALARMY niżej.
+                      Cały blok podąża za wybranym zakresem ({rangeWord}). To są CELE — postęp, nie alarmy; pasek niepełny nie znaczy, że coś jest nie tak. PP = Pakiet Pamięciowy, cel 18/pełną dobę. Revenue vs cel strategiczny 100 000 PLN/mies., prorata do długości zakresu. CPA i ROAS kolorowane WYŁĄCZNIE z 7 ostatnich pełnych dób — krótszy zakres pokazuje liczbę bez oceny. Anomalie są w sekcji ALARMY niżej.
                     </div>
                   </div>
 

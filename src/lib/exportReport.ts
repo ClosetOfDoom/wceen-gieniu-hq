@@ -133,7 +133,7 @@ const rules = (i: ReportInput): string => `## ZASADY DANYCH (czytaj przed analiz
 
 const TARGETS = `## PROGI I CELE
 - PP (Pakiet Pamięciowy): ≥18 zam./dzień zielony, 14–17 żółty, <14 czerwony
-- Cel przychodu: 30 000 zł/mies. (prorata do długości zakresu)
+- Cel przychodu: 100 000 zł/mies. (cel strategiczny, prorata do długości zakresu; cel, nie alarm)
 - CPA PP: <40 target, >50 alarm, >60 nie skalować
 - CPA językowe: 20–25 target
 - ROAS: ≥2,0x zdrowy
