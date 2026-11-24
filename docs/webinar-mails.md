@@ -279,7 +279,7 @@ AUTO włączone (Filip), PAUZA wyłączona; ta runda ich nie zmieniała. Do bazy
   Kontakty wg `primaryEmail.subscriptionStatus`: **SUBSCRIBED 5854** (dokładnie liczba z panelu), NOT_SET 1454, UNSUBSCRIBED 1576, razem 8884.
   `contacts-all` dawało ok. 6950 wysłanych, czyli subskrybentów plus część NOT_SET. Wybór: `contactIds` = wszyscy `SUBSCRIBED`, pobierani przy każdym biegu.
   Limit `contactIds` sprawdzony publikacją testową `19de7f6c…`: kontakt testowy + 6439 losowych GUID (nienależących do nikogo), 245 KB → HTTP 200,
-  Wix zachował w audience 1 kontakt (testowy).
+  Wix zachował w audience 1 kontakt (testowy); `DISTRIBUTED`, dostarczone 1 (kontakt testowy, 10:20:25Z), odbite 0, nikt inny.
 - Kod: `audience` w `webinarMailConfig.js` (jedyne miejsce), `listEmailSubscriberIds` / `countEmailSubscribers` w kliencie Wix (każdy kontakt sprawdzony
   ponownie, liczba ID musi równać się `total` z Wix), `resolveProductionAudience` + **`assertProductionAudience`** (produkcja przyjmuje tylko listę zbudowaną
   z zapytania o subskrybentów; `contacts-all`, etykieta, segment, `activeContactsOnly`, ręczna lista i kontakt testowy odrzucone przed Wix; klient Wix
