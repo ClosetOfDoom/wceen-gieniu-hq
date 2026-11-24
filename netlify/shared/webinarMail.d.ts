@@ -38,6 +38,8 @@ export interface LogEntry {
   registrations?: number | null
   /** Sender name of the slot: was it set and confirmed before the publish (no e-mail address). */
   sender?: { expected: string; ok: boolean; error?: string } | null
+  /** Number of e-mail subscribers the production publish went to. */
+  recipients?: number | null
 }
 export interface QueueEntryCheck extends TemplateCheck { used: boolean }
 export interface Queue {
@@ -71,6 +73,12 @@ export interface MailAudience {
   readonly segmentIds?: readonly string[]
   readonly activeContactsOnly?: boolean
 }
+export const PRODUCTION_SELECTION: 'subskrybenci-email'
+export interface ResolvedAudience { audience: MailAudience; count: number; total: number; name: string }
+export function resolveProductionAudience(wix: WixLike, config?: WebinarMailConfig): Promise<ResolvedAudience>
+export function assertProductionAudience(audience: unknown, config?: WebinarMailConfig): true
+export function evaluateRecipients(resolved: { count?: number; total?: number; name?: string; error?: string } | null, baseline: number | null, config?: WebinarMailConfig): SafeguardCheck
+export function recipientsBaseline(store: Partial<MailStoreLike> | null | undefined, config?: WebinarMailConfig): Promise<number>
 export function testAudience(config?: WebinarMailConfig): MailAudience
 export function assertTestAudience(audience: unknown, config?: WebinarMailConfig): true
 export function testSendAt(now: Date, config?: WebinarMailConfig): Date
@@ -89,6 +97,9 @@ export interface WixLike {
   campaignStats(ids: string[]): Promise<Record<string, { delivered: number; opened: number; clicked: number }>>
   getSenderName?(): Promise<string | null>
   setSenderName?(fromName: string): Promise<{ fromName: string; changed: boolean }>
+  /** IDs of every contact whose primary e-mail is SUBSCRIBED, and the total Wix reports for that filter. */
+  listEmailSubscriberIds?(): Promise<{ ids: string[]; total: number }>
+  countEmailSubscribers?(): Promise<number>
 }
 export function findSendsToday(args: { slot: SlotName; today: string; wix: WixLike; knownIds?: string[] }, config?: WebinarMailConfig): Promise<{ campaignId: string }[]>
 
@@ -102,7 +113,7 @@ export interface RunOutcome {
   at?: string
   dryRun?: boolean
   campaignId?: string
-  plan?: { template: string; subject: string; variant: string; url: string; sendAt: string; readyBefore: number }
+  plan?: { template: string; subject: string; variant: string; url: string; sendAt: string; readyBefore: number; odbiorcy?: string; liczbaOdbiorcow?: number | null; limitOdbiorcow?: number }
   checks?: SafeguardCheck[]
   gates?: { id: string; reason: string }[]
   wouldPublish?: boolean
@@ -124,6 +135,8 @@ export interface MailStoreLike {
   getLastDryRun(): Promise<RunOutcome | null>
   setLastDryRun(record: RunOutcome): Promise<void>
   setRegistrations(key: string, value: number | null): Promise<void>
+  getRecipients?(): Promise<{ count: number; at: string } | null>
+  setRecipients?(value: { count: number; at: string }): Promise<void>
 }
 
 export interface RunDeps {

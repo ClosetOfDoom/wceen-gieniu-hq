@@ -178,6 +178,8 @@ const SLOT_PL = { tuesday: 'wtorek', thursday: 'czwartek' }
  *   ostatnieWpisy the 5 newest send-log entries: { data, slot (wtorek|czwartek), status (sendStatusView code), test }
  *   nadawcy         sender NAME per slot from the config: { wtorek, czwartek }
  *   aktualnyNadawca the sender NAME Wix has right now (deps.wix.getSenderName), null when it cannot be read. Never an address.
+ *   odbiorcy        name of the production selection (config.audience.name)
+ *   liczbaOdbiorcow e-mail subscribers in Wix now (deps.wix.countEmailSubscribers), null when it cannot be read
  */
 export async function healthSummary({ deps, build, now = new Date(), config = WEBINAR_MAIL_CONFIG }) {
   let state = null
@@ -231,6 +233,14 @@ export async function healthSummary({ deps, build, now = new Date(), config = WE
     console.error('[webinar-mail-health] sender read failed:', String(e?.message ?? e).slice(0, 200))
   }
 
+  let liczbaOdbiorcow = null
+  try {
+    const n = deps.wix?.countEmailSubscribers ? await deps.wix.countEmailSubscribers() : null
+    liczbaOdbiorcow = Number.isInteger(n) ? n : null
+  } catch (e) {
+    console.error('[webinar-mail-health] recipients count failed:', String(e?.message ?? e).slice(0, 200))
+  }
+
   const next = nextPlannedSend(now, config)
   return {
     build: String(build ?? 'unknown'),
@@ -243,5 +253,7 @@ export async function healthSummary({ deps, build, now = new Date(), config = WE
     ostatnieWpisy,
     nadawcy: Object.fromEntries(SLOT_NAMES.map((s) => [SLOT_PL[s] ?? s, config.slots[s].fromName])),
     aktualnyNadawca,
+    odbiorcy: config.audience.name,
+    liczbaOdbiorcow,
   }
 }

@@ -6,11 +6,12 @@ import {
   runWebinarMail, validateSubject, validateTemplate, buildQueue, nextVariant, evaluateSafeguards,
   warsawParts, warsawLocalToUtc, buildAlerts, autoOnBeforeRun, ctrOf, renderCampaignHtml, SLOT_NAMES,
   assertTestAudience, createAndPublish, testAudience, testSendAt, unresolvedTags, ensureSenderName,
+  assertProductionAudience, resolveProductionAudience, evaluateRecipients, recipientsBaseline, PRODUCTION_SELECTION,
   type RunDeps, type WixLike, type TemplateFile, type LogEntry,
 } from '../../../netlify/shared/webinarMail.js'
 import { WEBINAR_MAIL_CONFIG as CFG } from '../../../netlify/shared/webinarMailConfig.js'
 import { createMemoryStore } from '../../../netlify/shared/webinarMailStore.js'
-import { createWixClient } from '../../../netlify/shared/webinarMailWix.js'
+import { createWixClient, SUBSCRIBED_FILTER } from '../../../netlify/shared/webinarMailWix.js'
 import { adminAction, adminStatus, healthSummary, nextPlannedSend } from '../../../netlify/shared/webinarMailAdmin.js'
 import {
   importTemplate, unwrapTrackingLink, stripWixInjection, replaceWebinarLinks, classifySlot, removeOwnUnsubscribeLinks,
@@ -28,6 +29,11 @@ const T = (n: number, subject = `Temat numer ${n === 1 ? 'jeden' : n === 2 ? 'dw
 const CET_TUE_0600 = new Date('2026-12-01T05:00:00Z')
 const CEST_TUE_0600 = new Date('2026-06-02T04:00:00Z')
 
+/** Three e-mail subscribers of the fake Wix (the production audience in these tests). */
+const SUBSCRIBERS = ['aaaaaaaa-0000-4000-8000-000000000001', 'aaaaaaaa-0000-4000-8000-000000000002', 'aaaaaaaa-0000-4000-8000-000000000003']
+/** A production audience built the only allowed way (resolveProductionAudience over the fake Wix). */
+const prodAudience = async () => (await resolveProductionAudience(fakeWix().wix)).audience
+
 function fakeWix(over: Partial<WixLike> = {}) {
   const calls = { create: vi.fn(), publish: vi.fn(), order: [] as string[], senderName: 'Marek Szurawski' }
   const wix: WixLike = {
@@ -41,6 +47,8 @@ function fakeWix(over: Partial<WixLike> = {}) {
     getCampaign: async (id) => ({ campaignId: id, distributionStatus: 'SCHEDULED', visibilityStatus: 'PUBLISHED', datePublished: null, mailsSent: null, delivered: null }),
     deleteCampaign: async () => undefined,
     campaignStats: async () => ({}),
+    listEmailSubscriberIds: async () => ({ ids: [...SUBSCRIBERS], total: SUBSCRIBERS.length }),
+    countEmailSubscribers: async () => SUBSCRIBERS.length,
     ...over,
   }
   return { wix, calls }
@@ -109,12 +117,13 @@ describe('06:00 Warsaw in winter (CET) and summer (CEST)', () => {
     expect(s.calls.publish.mock.calls[0][1].sendAt).toBe('2026-06-02T05:00:00.000Z')
   })
 
-  it('publishes to all contacts (label contacts-all), with the subject, once', async () => {
+  it('publishes to the e-mail subscribers only (contactIds from the SUBSCRIBED query), with the subject, once', async () => {
     const s = setup(); await run(s, CET_TUE_0600)
     expect(s.calls.publish).toHaveBeenCalledTimes(1)
     const [id, opts] = s.calls.publish.mock.calls[0]
     expect(id).toBe('camp-1')
-    expect(opts.audience).toEqual({ labelIds: ['contacts-all'], activeContactsOnly: false })
+    expect(opts.audience).toEqual({ contactIds: SUBSCRIBERS })
+    expect(opts.audience).not.toHaveProperty('labelIds')
     expect(opts.subject).toBe('Temat numer jeden')
   })
 })
@@ -545,10 +554,10 @@ describe('admin actions', () => {
     const q = buildQueue('tuesday', [T(1), T(2), T(3), T(4), T(5)], log)
     expect(q.next?.file).toBe('01-t.html'); expect(q.usedCount).toBe(0)
     expect(nextVariant('tuesday', log)).toBe('landing')
-    // and the real run afterwards still takes template 01 with the first variant, to contacts-all
+    // and the real run afterwards still takes template 01 with the first variant, to the e-mail subscribers
     const real = await run(s, CET_TUE_0600)
     expect(real).toMatchObject({ status: 'scheduled' }); expect(real.plan).toMatchObject({ template: '01-t.html', variant: 'landing' })
-    expect(s.calls.publish.mock.calls[2][1].audience).toEqual(CFG.audience)
+    expect(s.calls.publish.mock.calls[2][1].audience).toEqual({ contactIds: SUBSCRIBERS })
   })
 
   it('send-test rejects an audience chosen by the caller (contacts-all, other contact) before anything reaches Wix', async () => {
@@ -574,7 +583,7 @@ describe('test audience safeguard', () => {
 
   it('rejects contacts-all and every other list or label', () => {
     const bad: unknown[] = [
-      CFG.audience, // the production audience: contacts-all
+      CFG.audience, // the production selection (config), not a contact list
       { labelIds: ['contacts-all'] },
       { labelIds: ['contacts-all'], contactIds: [CFG.testContactId] },
       { contactIds: [CFG.testContactId], segmentIds: ['11111111-1111-1111-1111-111111111111'] },
@@ -586,9 +595,10 @@ describe('test audience safeguard', () => {
     for (const a of bad) expect(() => assertTestAudience(a)).toThrow(/BEZPIECZNIK TESTU/)
   })
 
-  it('createAndPublish(test) with contacts-all never calls Wix', async () => {
+  it('createAndPublish(test) with contacts-all or the production selection never calls Wix', async () => {
     const { wix, calls } = fakeWix()
-    await expect(createAndPublish({ wix, subject: 'Temat', html: '<p>x</p>', sendAt: '2026-12-01T06:00:00.000Z', audience: CFG.audience, test: true })).rejects.toThrow(/BEZPIECZNIK TESTU/)
+    await expect(createAndPublish({ wix, subject: 'Temat', html: '<p>x</p>', sendAt: '2026-12-01T06:00:00.000Z', audience: { labelIds: ['contacts-all'] }, test: true })).rejects.toThrow(/BEZPIECZNIK TESTU/)
+    await expect(createAndPublish({ wix, subject: 'Temat', html: '<p>x</p>', sendAt: '2026-12-01T06:00:00.000Z', audience: CFG.audience as never, test: true })).rejects.toThrow(/BEZPIECZNIK TESTU/)
     expect(calls.create).not.toHaveBeenCalled(); expect(calls.publish).not.toHaveBeenCalled()
   })
 
@@ -608,7 +618,7 @@ describe('test audience safeguard', () => {
     for (const test of [true, false]) {
       for (const sendAt of [undefined, null, '', 'teraz']) {
         const { wix, calls } = fakeWix()
-        const audience = test ? testAudience() : CFG.audience
+        const audience = test ? testAudience() : await prodAudience()
         await expect(createAndPublish({ wix, subject: 'T', html: '<p>x</p>', sendAt: sendAt as unknown as string, audience, test })).rejects.toThrow(/BEZPIECZNIK WYSYŁKI/)
         expect(calls.create).not.toHaveBeenCalled(); expect(calls.publish).not.toHaveBeenCalled()
       }
@@ -642,14 +652,43 @@ describe('Wix client payloads', () => {
     expect([b.emailSubject, b.emailPreheader]).toEqual(['Temat', 'Zajawka'])
   })
 
-  it('publish: sendAt, contacts-all label, subject — and the test audience sends only contactIds', async () => {
+  it('publish: sendAt, subscriber contactIds, subject — and the test audience sends only the test contact', async () => {
     seen.length = 0
     const wix = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl })
-    await wix.publishCampaign('cid', { subject: 'Temat', sendAt: '2026-12-01T06:00:00.000Z', audience: CFG.audience })
+    await wix.publishCampaign('cid', { subject: 'Temat', sendAt: '2026-12-01T06:00:00.000Z', audience: await prodAudience() })
     expect(seen[0].url).toMatch(/\/campaigns\/cid\/publish$/)
-    expect(seen[0].body).toEqual({ emailDistributionOptions: { emailSubject: 'Temat', labelIds: ['contacts-all'], activeContactsOnly: false, sendAt: '2026-12-01T06:00:00.000Z' } })
+    expect(seen[0].body).toEqual({ emailDistributionOptions: { emailSubject: 'Temat', contactIds: SUBSCRIBERS, sendAt: '2026-12-01T06:00:00.000Z' } })
     await wix.publishCampaign('cid', { subject: 'Temat', sendAt: '2026-11-19T15:32:00.000Z', audience: testAudience() })
     expect(seen[1].body).toEqual({ emailDistributionOptions: { emailSubject: 'Temat', contactIds: [CFG.testContactId], sendAt: '2026-11-19T15:32:00.000Z' } })
+  })
+
+  it('publish: the client itself refuses contacts-all, any label, segment or activeContactsOnly (no request sent)', async () => {
+    seen.length = 0
+    const wix = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl })
+    for (const audience of [{ labelIds: ['contacts-all'] }, { labelIds: ['contacts-all'], activeContactsOnly: false }, { segmentIds: ['33dd07aa-aa24-48ff-8e4e-6d368fbad439'] }, { contactIds: SUBSCRIBERS, labelIds: ['x'] }, { contactIds: [] }, {}]) {
+      await expect(wix.publishCampaign('cid', { subject: 'T', sendAt: '2026-12-01T06:00:00.000Z', audience })).rejects.toThrow(/BEZPIECZNIK ODBIORCÓW/)
+    }
+    expect(seen).toHaveLength(0)
+  })
+
+  it('subscriber query: filter SUBSCRIBED, all pages, every contact re-checked, count must equal the Wix total', async () => {
+    const pages = [
+      { contacts: [{ id: 'a', primaryEmail: { subscriptionStatus: 'SUBSCRIBED' } }, { id: 'b', primaryEmail: { subscriptionStatus: 'SUBSCRIBED' } }], pagingMetadata: { total: 3, hasNext: true } },
+      { contacts: [{ id: 'c', primaryEmail: { subscriptionStatus: 'SUBSCRIBED' } }], pagingMetadata: { total: 3, hasNext: false } },
+    ]
+    const bodies: Record<string, any>[] = []
+    const mk = (pg: typeof pages) => (async (_u: string, init: RequestInit) => { bodies.push(JSON.parse(String(init.body))); return new Response(JSON.stringify(pg[bodies.length - 1] ?? pg[pg.length - 1]), { status: 200 }) }) as unknown as typeof fetch
+    const ok = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: mk(pages) })
+    expect(await ok.listEmailSubscriberIds!()).toEqual({ ids: ['a', 'b', 'c'], total: 3 })
+    expect(bodies[0].query.filter).toEqual({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED' })
+    expect(bodies[1].query.paging.offset).toBe(2)
+    expect(SUBSCRIBED_FILTER).toEqual(CFG.audience.contactsFilter)
+    bodies.length = 0
+    const notSub = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: mk([{ contacts: [{ id: 'a', primaryEmail: { subscriptionStatus: 'NOT_SET' } }], pagingMetadata: { total: 1, hasNext: false } }] as never) })
+    await expect(notSub.listEmailSubscriberIds!()).rejects.toThrow(/bez subskrypcji/)
+    bodies.length = 0
+    const short = createWixClient({ apiKey: 'k', siteId: 's', fetchImpl: mk([{ contacts: [{ id: 'a', primaryEmail: { subscriptionStatus: 'SUBSCRIBED' } }], pagingMetadata: { total: 5854, hasNext: false } }] as never) })
+    await expect(short.listEmailSubscriberIds!()).rejects.toThrow(/niepełna/)
   })
 
   it('an API error never contains the key', async () => {
@@ -672,9 +711,9 @@ describe('healthSummary (public webinar-mail-health)', () => {
     const s = setup({ auto: false, pause: true, templates: [T(1), T(2), { file: '03-bad.html', html: tpl('Zły!') }] })
     await s.ready
     const h = await healthSummary({ deps: s.deps, build: 'abc1234', now: new Date('2026-11-20T10:00:00Z') })
-    expect(Object.keys(h).sort()).toEqual(['aktualnyNadawca', 'alarmy', 'auto', 'blobsRead', 'build', 'kolejka', 'nadawcy', 'nastepnaWysylka', 'ostatnieWpisy', 'pauza'])
+    expect(Object.keys(h).sort()).toEqual(['aktualnyNadawca', 'alarmy', 'auto', 'blobsRead', 'build', 'kolejka', 'liczbaOdbiorcow', 'nadawcy', 'nastepnaWysylka', 'odbiorcy', 'ostatnieWpisy', 'pauza'])
     expect(Object.keys(h.kolejka).sort()).toEqual(['czwartek', 'wtorek'])
-    expect(h).toEqual({ build: 'abc1234', blobsRead: 'ok', auto: false, pauza: true, kolejka: { wtorek: 2, czwartek: 2 }, nastepnaWysylka: '2026-11-24T06:00:00.000Z', alarmy: ['MAILE_KOLEJKA_NISKA'], ostatnieWpisy: [], nadawcy: { wtorek: 'Filip Dąbrowski', czwartek: 'Marek Szurawski' }, aktualnyNadawca: 'Marek Szurawski' })
+    expect(h).toEqual({ build: 'abc1234', blobsRead: 'ok', auto: false, pauza: true, kolejka: { wtorek: 2, czwartek: 2 }, nastepnaWysylka: '2026-11-24T06:00:00.000Z', alarmy: ['MAILE_KOLEJKA_NISKA'], ostatnieWpisy: [], nadawcy: { wtorek: 'Filip Dąbrowski', czwartek: 'Marek Szurawski' }, aktualnyNadawca: 'Marek Szurawski', odbiorcy: 'Subskrybenci e-mail (SUBSCRIBED)', liczbaOdbiorcow: 3 })
   })
 
   it('no template content, file names, subjects, campaign IDs, e-mails or test contact in the body', async () => {
@@ -780,7 +819,7 @@ describe('unresolved tags in the final HTML', () => {
     expect(checks.find((c) => c.id === 'ZNACZNIKI_ROZWIAZANE')).toMatchObject({ ok: false })
     const { wix, calls } = fakeWix()
     for (const test of [false, true]) {
-      await expect(createAndPublish({ wix, subject: 'T', html: '<a href="https://a.pl">x</a> {{unsubscribe}}', sendAt: '2026-12-01T06:00:00.000Z', audience: test ? testAudience() : CFG.audience, test })).rejects.toThrow(/BEZPIECZNIK TREŚCI/)
+      await expect(createAndPublish({ wix, subject: 'T', html: '<a href="https://a.pl">x</a> {{unsubscribe}}', sendAt: '2026-12-01T06:00:00.000Z', audience: test ? testAudience() : await prodAudience(), test })).rejects.toThrow(/BEZPIECZNIK TREŚCI/)
     }
     expect(calls.create).not.toHaveBeenCalled(); expect(calls.publish).not.toHaveBeenCalled()
   })
@@ -964,5 +1003,133 @@ describe('sender name of the slot (BEZPIECZNIK NADAWCA)', () => {
     expect((await healthSummary({ deps: broken.deps, build: 'x', now: new Date('2026-11-20T10:00:00Z') })).aktualnyNadawca).toBeNull()
     const noWix = await healthSummary({ deps: { store: s.deps.store, loadTemplates: s.deps.loadTemplates }, build: 'x', now: new Date('2026-11-20T10:00:00Z') })
     expect(noWix.aktualnyNadawca).toBeNull()
+  })
+})
+
+// ── Production goes ONLY to the e-mail subscribers (2026-11-24) ─────────────────
+
+describe('production audience safeguard (only e-mail subscribers)', () => {
+  it('the config has exactly one selection: the e-mail subscribers, no label, no segment', () => {
+    expect(CFG.audience).toEqual({ selection: PRODUCTION_SELECTION, name: 'Subskrybenci e-mail (SUBSCRIBED)', contactsFilter: { 'primaryEmail.subscriptionStatus': 'SUBSCRIBED' } })
+    expect(JSON.stringify(CFG.audience)).not.toContain('contacts-all')
+    expect(CFG.audience).not.toHaveProperty('labelIds')
+    expect(CFG.audience).not.toHaveProperty('segmentIds')
+  })
+
+  it('accepts only the audience resolved from the SUBSCRIBED query', async () => {
+    const r = await resolveProductionAudience(fakeWix().wix)
+    expect(r).toMatchObject({ count: 3, total: 3, name: CFG.audience.name })
+    expect(r.audience).toEqual({ contactIds: SUBSCRIBERS })
+    expect(assertProductionAudience(r.audience)).toBe(true)
+  })
+
+  it('rejects contacts-all, any label, segment, activeContactsOnly, the test contact and hand-made lists', () => {
+    const bad: unknown[] = [
+      { labelIds: ['contacts-all'], activeContactsOnly: false }, // the old production audience
+      { labelIds: ['contacts-all'] },
+      { labelIds: ['custom.klienci'] },
+      { segmentIds: ['33dd07aa-aa24-48ff-8e4e-6d368fbad439'] },
+      { contactIds: [...SUBSCRIBERS] }, // same IDs, but not produced by the subscriber query
+      testAudience(),
+      { contactIds: [...SUBSCRIBERS], activeContactsOnly: true },
+      CFG.audience, {}, null, undefined, 'contacts-all',
+    ]
+    for (const a of bad) expect(() => assertProductionAudience(a)).toThrow(/BEZPIECZNIK PRODUKCJI/)
+  })
+
+  it('a resolved audience is still rejected when the config selection is not the subscribers', async () => {
+    const r = await resolveProductionAudience(fakeWix().wix)
+    const contactsAll = { ...CFG, audience: { labelIds: ['contacts-all'], activeContactsOnly: false } } as never
+    expect(() => assertProductionAudience(r.audience, contactsAll)).toThrow(/BEZPIECZNIK PRODUKCJI/)
+    await expect(resolveProductionAudience(fakeWix().wix, contactsAll)).rejects.toThrow(/BEZPIECZNIK PRODUKCJI/)
+    const otherFilter = { ...CFG, audience: { ...CFG.audience, contactsFilter: { 'primaryEmail.subscriptionStatus': 'NOT_SET' } } } as never
+    expect(() => assertProductionAudience(r.audience, otherFilter)).toThrow(/BEZPIECZNIK PRODUKCJI/)
+  })
+
+  it('createAndPublish(production) with contacts-all, the test contact or a hand-made list never reaches Wix', async () => {
+    for (const audience of [{ labelIds: ['contacts-all'], activeContactsOnly: false }, testAudience(), { contactIds: [...SUBSCRIBERS] }]) {
+      const { wix, calls } = fakeWix()
+      await expect(createAndPublish({ wix, subject: 'Temat', html: '<p>x</p>', sendAt: '2026-12-01T06:00:00.000Z', audience })).rejects.toThrow(/BEZPIECZNIK PRODUKCJI/)
+      expect(calls.create).not.toHaveBeenCalled(); expect(calls.publish).not.toHaveBeenCalled()
+    }
+  })
+
+  it('the test path still goes to the one test contact only (production subscribers never enter it)', async () => {
+    const s = setup()
+    const r = await adminAction({ action: 'send-test', body: { slot: 'tuesday' }, deps: s.deps })
+    expect(r.ok).toBe(true)
+    expect(s.calls.publish.mock.calls[0][1].audience).toEqual({ contactIds: [CFG.testContactId] })
+    const prod = await prodAudience()
+    expect(() => assertTestAudience(prod)).toThrow(/BEZPIECZNIK TESTU/)
+    const bad = await adminAction({ action: 'send-test', body: { slot: 'tuesday', audience: { contactIds: SUBSCRIBERS } }, deps: s.deps })
+    expect(bad.ok).toBe(false); expect(String(bad.error)).toMatch(/BEZPIECZNIK TESTU/)
+  })
+})
+
+describe('BEZPIECZNIK ODBIORCY', () => {
+  const R = (count: number, total = count) => ({ count, total, name: CFG.audience.name })
+
+  it('passes for 0 < n ≤ 110% of the last recorded count', () => {
+    expect(evaluateRecipients(R(5854), 5854)).toMatchObject({ id: 'ODBIORCY', ok: true })
+    expect(evaluateRecipients(R(6439), 5854).ok).toBe(true) // floor(5854 × 1.1) = 6439
+    expect(evaluateRecipients(R(1), 5854).ok).toBe(true)
+  })
+
+  it('fails on 0, above 110%, a list that differs from the Wix total, a Wix error, no baseline', () => {
+    expect(evaluateRecipients(R(0), 5854).ok).toBe(false)
+    expect(evaluateRecipients(R(6440), 5854)).toMatchObject({ ok: false })
+    expect(evaluateRecipients(R(6952), 5854).detail).toMatch(/110%/) // contacts-all on 24.11 (6952) would have been stopped
+    expect(evaluateRecipients(R(5000, 5854), 5854).ok).toBe(false)
+    expect(evaluateRecipients({ error: 'HTTP 403' }, 5854).ok).toBe(false)
+    expect(evaluateRecipients(null, 5854).ok).toBe(false)
+    expect(evaluateRecipients(R(10), null).ok).toBe(false)
+  })
+
+  it('baseline: the store value, else the config (5854 on 2026-11-24)', async () => {
+    expect(CFG.recipientsBaseline.count).toBe(5854)
+    expect(await recipientsBaseline(createMemoryStore())).toBe(5854)
+    expect(await recipientsBaseline(createMemoryStore({ recipients: { count: 6000, at: 'x' } }))).toBe(6000)
+  })
+
+  it('a run whose recipients fail the check publishes nothing and raises red MAILE_AWARIA + MAILE_ODBIORCY', async () => {
+    const s = setup({ wix: { listEmailSubscriberIds: async () => ({ ids: [], total: 0 }) } })
+    const r = await run(s, CET_TUE_0600)
+    expect(r).toMatchObject({ status: 'failed', reason: 'safeguard' })
+    expect(r.detail).toMatch(/ODBIORCY/)
+    expect(s.calls.create).not.toHaveBeenCalled(); expect(s.calls.publish).not.toHaveBeenCalled()
+    const h = await healthSummary({ deps: s.deps, build: 'x', now: new Date('2026-12-01T07:00:00Z') })
+    expect(h.alarmy).toEqual(expect.arrayContaining(['MAILE_AWARIA', 'MAILE_ODBIORCY']))
+  })
+
+  it('too many recipients (over 110% of the stored count) → no publish', async () => {
+    const s = setup()
+    await s.store.setRecipients!({ count: 2, at: '2026-11-26T06:00:00Z' }) // 3 > floor(2 × 1.1) = 2
+    const r = await run(s, CET_TUE_0600)
+    expect(r.status).toBe('failed'); expect(s.calls.publish).not.toHaveBeenCalled()
+  })
+
+  it('a Wix error while listing subscribers → no publish (fails closed), no e-mail in the record', async () => {
+    const s = setup({ wix: { listEmailSubscriberIds: async () => { throw new Error('Wix POST /contacts/v4/contacts/query → HTTP 403 a@b.pl') } } })
+    const r = await run(s, CET_TUE_0600)
+    expect(r.status).toBe('failed'); expect(s.calls.publish).not.toHaveBeenCalled()
+    expect(JSON.stringify(r)).not.toContain('a@b.pl')
+  })
+
+  it('a successful send records the recipient count (new baseline) and the plan shows the selection', async () => {
+    const s = setup()
+    const r = await run(s, CET_TUE_0600)
+    expect(r.status).toBe('scheduled')
+    expect(r.plan).toMatchObject({ odbiorcy: 'Subskrybenci e-mail (SUBSCRIBED)', liczbaOdbiorcow: 3, limitOdbiorcow: 6439 })
+    expect((await s.store.getRecipients!())?.count).toBe(3)
+    expect((await s.store.getLog()).find((e) => !e.test)?.recipients).toBe(3)
+  })
+
+  it('a dry run shows the selection and the count, and records nothing', async () => {
+    const s = setup()
+    const r = await run(s, CET_TUE_0600, { dryRun: true })
+    expect(r.status).toBe('dry-run')
+    expect(r.checks?.find((c) => c.id === 'ODBIORCY')).toMatchObject({ ok: true })
+    expect(r.plan).toMatchObject({ odbiorcy: CFG.audience.name, liczbaOdbiorcow: 3 })
+    expect(await s.store.getRecipients!()).toBeNull()
   })
 })

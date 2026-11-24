@@ -218,10 +218,87 @@ export async function findSendsToday({ slot, today, wix, knownIds = [] }, config
   return hits
 }
 
+// ── Production recipients: the e-mail subscribers ───────────────────────────────
+
+/** The only production selection there is (config.audience.selection must be exactly this). */
+export const PRODUCTION_SELECTION = 'subskrybenci-email'
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+/** Audiences built by resolveProductionAudience in this process: the only ones a production publish accepts. */
+const RESOLVED = new WeakSet()
+
+/** Problems of the production selection in the config (empty = it is the e-mail subscribers and nothing else). */
+function selectionProblems(config) {
+  const a = config?.audience ?? {}
+  const problems = []
+  if (a.selection !== PRODUCTION_SELECTION) problems.push(`wybór odbiorców w konfiguracji to „${a.selection ?? '—'}”, dozwolony tylko „${PRODUCTION_SELECTION}”`)
+  const extra = Object.keys(a).filter((k) => !['selection', 'name', 'contactsFilter'].includes(k))
+  if (extra.length) problems.push(`niedozwolone pola odbiorców w konfiguracji: ${extra.join(', ')}`)
+  const f = a.contactsFilter ?? {}
+  if (Object.keys(f).length !== 1 || f['primaryEmail.subscriptionStatus'] !== 'SUBSCRIBED') problems.push('filtr odbiorców w konfiguracji musi być dokładnie primaryEmail.subscriptionStatus = SUBSCRIBED')
+  return problems
+}
+
+/**
+ * The production audience: { contactIds } = every Wix contact whose primary e-mail is SUBSCRIBED, asked from Wix now.
+ * Returns { audience, count, total, name } — audience is frozen and registered as resolved (assertProductionAudience).
+ */
+export async function resolveProductionAudience(wix, config = WEBINAR_MAIL_CONFIG) {
+  const problems = selectionProblems(config)
+  if (problems.length) throw new Error(`BEZPIECZNIK PRODUKCJI: ${problems.join('; ')}`)
+  if (typeof wix?.listEmailSubscriberIds !== 'function') throw new Error('klient Wix nie umie pobrać subskrybentów')
+  const { ids, total } = await wix.listEmailSubscriberIds()
+  const audience = Object.freeze({ contactIds: Object.freeze([...ids]) })
+  RESOLVED.add(audience)
+  return { audience, count: ids.length, total, name: config.audience.name }
+}
+
+/**
+ * Hard safeguard of production. Throws unless the audience was built by resolveProductionAudience (the e-mail
+ * subscribers) under a config whose selection is the subscribers: contacts-all, any label, segment, activeContactsOnly,
+ * a hand-made contact list (the test contact included) are all rejected before anything reaches Wix.
+ */
+export function assertProductionAudience(audience, config = WEBINAR_MAIL_CONFIG) {
+  const problems = selectionProblems(config)
+  const a = audience && typeof audience === 'object' ? audience : {}
+  const extra = Object.keys(a).filter((k) => k !== 'contactIds')
+  if (extra.length) problems.push(`niedozwolone pola odbiorców: ${extra.join(', ')}`)
+  const ids = Array.isArray(a.contactIds) ? a.contactIds : []
+  if (!ids.length) problems.push('brak odbiorców')
+  else if (!ids.every((id) => GUID.test(String(id))) || new Set(ids).size !== ids.length) problems.push('contactIds muszą być unikalnymi GUID')
+  if (!RESOLVED.has(audience)) problems.push('odbiorcy nie pochodzą z zapytania o subskrybentów e-mail')
+  if (problems.length) throw new Error(`BEZPIECZNIK PRODUKCJI: odrzucono odbiorców (${problems.join('; ')})`)
+  return true
+}
+
+/**
+ * BEZPIECZNIK ODBIORCY: 0 < recipients ≤ recipientsMaxGrowth × baseline (the last recorded subscriber count).
+ *   resolved: { count, total, name } | { error } | null     baseline: number | null
+ */
+export function evaluateRecipients(resolved, baseline, config = WEBINAR_MAIL_CONFIG) {
+  if (!resolved || resolved.error) return { id: 'ODBIORCY', ok: false, detail: `nie udało się pobrać subskrybentów z Wix${resolved?.error ? `: ${resolved.error}` : ''}` }
+  const { count, total } = resolved
+  const base = Number(baseline)
+  const max = Number.isFinite(base) && base > 0 ? Math.floor(base * config.recipientsMaxGrowth) : null
+  if (!Number.isInteger(count) || count <= 0) return { id: 'ODBIORCY', ok: false, detail: `liczba odbiorców z Wix: ${count ?? '—'} (musi być > 0)` }
+  if (count !== total) return { id: 'ODBIORCY', ok: false, detail: `pobrano ${count} ID, a Wix podaje ${total} subskrybentów` }
+  if (max === null) return { id: 'ODBIORCY', ok: false, detail: 'brak zapisanej liczby subskrybentów do porównania' }
+  if (count > max) return { id: 'ODBIORCY', ok: false, detail: `${count} odbiorców to więcej niż ${Math.round(config.recipientsMaxGrowth * 100)}% ostatnio zapisanych ${base} (max ${max})` }
+  return { id: 'ODBIORCY', ok: true, detail: `${count} odbiorców (${resolved.name ?? config.audience.name}), limit ${max} = ${Math.round(config.recipientsMaxGrowth * 100)}% z ${base}` }
+}
+
+/** The last recorded subscriber count: the store's, else the config baseline. */
+export async function recipientsBaseline(store, config = WEBINAR_MAIL_CONFIG) {
+  try {
+    const r = typeof store?.getRecipients === 'function' ? await store.getRecipients() : null
+    if (r && Number.isInteger(r.count) && r.count > 0) return r.count
+  } catch { /* fall back to the config */ }
+  return config.recipientsBaseline.count
+}
+
 // ── The ONE publication path (production and "Wyślij test") ──────────────────────
 //
-// Production and the test differ ONLY in the audience: production = config.audience (contacts-all),
-// test = exactly one contact (config.testContactId). Wix "Send Test Email" is not used anywhere.
+// Production and the test differ ONLY in the audience: production = the e-mail subscribers (resolveProductionAudience,
+// guarded by assertProductionAudience), test = exactly one contact (config.testContactId). Wix "Send Test Email" is not used.
 
 /** The only audience a test may have: exactly the one test contact, nothing else. */
 export function testAudience(config = WEBINAR_MAIL_CONFIG) {
@@ -281,6 +358,7 @@ export async function ensureSenderName(wix, fromName) {
  */
 export async function createAndPublish({ wix, subject, preheader, html, sendAt, audience, fromName, test = false }, config = WEBINAR_MAIL_CONFIG) {
   if (test) assertTestAudience(audience, config)
+  else assertProductionAudience(audience, config)
   // Production always carries its 07:00 sendAt (SENDAT_W_PRZYSZLOSCI in the run); without one nothing reaches Wix.
   if (!sendAt || !Number.isFinite(Date.parse(sendAt))) throw new Error('BEZPIECZNIK WYSYŁKI: brak poprawnego sendAt (Wix odrzuca publikację bez sendAt, HTTP 403)')
   // Same check as the render: nothing with a raw {{...}} / ${...} ever reaches Wix, test or production.
@@ -357,19 +435,25 @@ export async function runWebinarMail({ now, deps, dryRun = false, force = false,
     const { subject, preheader } = queue.next
     const sendAt = warsawLocalToUtc(parts.date, config.sendAtLocal)
 
-    const [account, link, sendsToday] = await Promise.all([
+    const [account, link, sendsToday, recipients, baseline] = await Promise.all([
       wix.accountDetails().catch((e) => ({ status: `BŁĄD: ${scrub(e.message)}` })),
       deps.checkUrl(url).catch((e) => ({ status: 0, error: scrub(e.message) })),
       findSendsToday({ slot, today: parts.date, wix, knownIds: log.map((e) => e.campaignId).filter(Boolean) }, config).catch(() => null),
+      resolveProductionAudience(wix, config).catch((e) => ({ error: hideEmails(scrub(e.message)).slice(0, 300) })),
+      recipientsBaseline(store, config),
     ])
     const checks = evaluateSafeguards({ account, subject, link, sendsToday: sendsToday ?? [], state, sendAt, now, unresolved }, config)
     if (sendsToday === null) {
       const i = checks.findIndex((c) => c.id === 'BRAK_WYSYLKI_DZIS')
       checks[i] = { id: 'BRAK_WYSYLKI_DZIS', ok: false, detail: 'nie udało się sprawdzić, czy dziś jest już kampania (lista kampanii Wix niedostępna)' }
     }
+    checks.push(evaluateRecipients(recipients, baseline, config))
     // In a DRY_RUN PAUZA is reported through `gates`, not as a failure of the plan.
     const failed = checks.filter((c) => !c.ok && !(dryRun && c.id === 'PAUZA_WYLACZONA'))
-    const plan = { template: queue.next.file, subject, variant, url, sendAt: sendAt.toISOString(), readyBefore: queue.readyCount }
+    const plan = {
+      template: queue.next.file, subject, variant, url, sendAt: sendAt.toISOString(), readyBefore: queue.readyCount,
+      odbiorcy: config.audience.name, liczbaOdbiorcow: recipients.error ? null : recipients.count, limitOdbiorcow: Math.floor(baseline * config.recipientsMaxGrowth),
+    }
 
     if (failed.length) {
       return finish({ status: 'failed', reason: 'safeguard', detail: failed.map((c) => `${c.id}: ${c.detail}`).join(' | '), checks, plan, gates })
@@ -381,13 +465,15 @@ export async function runWebinarMail({ now, deps, dryRun = false, force = false,
     let campaignId = null
     let sender = null
     try {
-      ;({ campaignId, sender } = await createAndPublish({ wix, subject, preheader, html, sendAt: sendAt.toISOString(), audience: config.audience, fromName: config.slots[slot].fromName }, config))
+      ;({ campaignId, sender } = await createAndPublish({ wix, subject, preheader, html, sendAt: sendAt.toISOString(), audience: recipients.audience, fromName: config.slots[slot].fromName }, config))
     } catch (e) {
       campaignId = e.campaignId ?? null
-      await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: LOG_STATUS.FAILED, error: scrub(e.message), sender: e.sender ?? null, createdAt: now.toISOString(), dryRun: false })
+      await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: LOG_STATUS.FAILED, error: scrub(e.message), sender: e.sender ?? null, recipients: recipients.count, createdAt: now.toISOString(), dryRun: false })
       return finish({ status: 'failed', reason: 'publish-failed', detail: scrub(e.message), campaignId, plan, checks, sender: e.sender ?? null })
     }
-    await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: LOG_STATUS.SCHEDULED, sender, createdAt: now.toISOString(), dryRun: false })
+    await store.addLog({ key, date: parts.date, slot, variant, url, campaignId, templateFile: template.file, subject, sendAt: sendAt.toISOString(), status: LOG_STATUS.SCHEDULED, sender, recipients: recipients.count, createdAt: now.toISOString(), dryRun: false })
+    // The new "last recorded subscriber count" for the next BEZPIECZNIK ODBIORCY.
+    if (typeof store.setRecipients === 'function') await store.setRecipients({ count: recipients.count, at: now.toISOString() }).catch(() => {})
     return finish({ status: 'scheduled', reason: 'published', campaignId, plan, checks, sender, readyAfter: queue.readyCount - 1 })
   } catch (e) {
     return finish({ status: 'failed', reason: 'exception', detail: scrub(e.message) })
@@ -426,6 +512,9 @@ export function buildAlerts({ state, lastRun, runToday, queues, now, log = [] },
   const alerts = []
   if (lastRun && lastRun.status === 'failed' && !lastRun.dryRun && state.ackedRunAt !== lastRun.at) {
     alerts.push({ severity: 'red', rule: 'MAILE_AWARIA', message: `${config.slots[lastRun.slot]?.label ?? lastRun.slot}, ${lastRun.date}: ${lastRun.reason}${lastRun.detail ? ` — ${lastRun.detail}` : ''}`, runAt: lastRun.at })
+    // BEZPIECZNIK ODBIORCY stopped the send: its own red code, so the cause is visible in the health JSON.
+    const rec = (lastRun.checks ?? []).find((c) => c.id === 'ODBIORCY' && !c.ok)
+    if (rec) alerts.push({ severity: 'red', rule: 'MAILE_ODBIORCY', message: `${config.slots[lastRun.slot]?.label ?? lastRun.slot}, ${lastRun.date}: brak wysyłki — ${rec.detail}`, runAt: lastRun.at })
   }
   const p = warsawParts(now)
   const slotToday = slotForWeekday(p.weekday, config)

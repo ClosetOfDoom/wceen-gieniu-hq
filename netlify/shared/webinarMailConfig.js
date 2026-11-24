@@ -18,8 +18,27 @@ export const WEBINAR_MAIL_CONFIG = Object.freeze({
   skipDates: Object.freeze(['2026-12-24', '2026-12-31']),
   /** Placeholder for the registration link inside the templates. */
   placeholder: '{{WEBINAR_URL}}',
-  /** Everything goes to ALL Wix contacts: the same audience the dashboard campaigns used ("contacts-all"). */
-  audience: Object.freeze({ labelIds: Object.freeze(['contacts-all']), activeContactsOnly: false }),
+  /**
+   * PRODUCTION RECIPIENTS — the ONE place. Only e-mail subscribers: the Wix contacts whose PRIMARY e-mail has
+   * subscriptionStatus SUBSCRIBED (what the Wix panel counts as e-mail subscribers: 5854 on 2026-11-24). No topic split.
+   * Wix has no system label and no segment with exactly these contacts (checked 2026-11-24: no SYSTEM labels via API, the
+   * 13 segments in use all mix in NOT_SET / UNSUBSCRIBED), so before every publish the run asks Wix Contacts
+   * (POST /contacts/v4/contacts/query, filter below) for the IDs and publishes with contactIds = exactly those IDs.
+   * Wix accepted a 6440-ID contactIds publish on 2026-11-24 (test campaign 19de7f6c, only the test contact real).
+   * Until 2026-11-24 production went to the label "contacts-all" (~6950 recipients incl. NOT_SET): now rejected by
+   * assertProductionAudience, as is any label, segment or contact list that the subscriber query did not produce.
+   */
+  audience: Object.freeze({
+    selection: 'subskrybenci-email',
+    name: 'Subskrybenci e-mail (SUBSCRIBED)',
+    contactsFilter: Object.freeze({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED' }),
+  }),
+  /**
+   * BEZPIECZNIK ODBIORCY: a production publish needs 0 < recipients ≤ recipientsMaxGrowth × the last recorded subscriber
+   * count (store "recipients", written after every production publish; recipientsBaseline until the first one).
+   */
+  recipientsMaxGrowth: 1.1,
+  recipientsBaseline: Object.freeze({ count: 5854, at: '2026-11-24' }),
   /**
    * "Wyślij test" = the SAME Create + Publish as production, but to exactly ONE Wix contact.
    * testContactId is the existing Wix contact whose PRIMARY e-mail is testRecipient (checked 2026-11-20: SUBSCRIBED,

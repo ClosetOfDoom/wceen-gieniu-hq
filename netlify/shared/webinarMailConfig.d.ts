@@ -18,7 +18,9 @@ export interface WebinarMailConfig {
   readonly lowQueueThreshold: number
   readonly skipDates: readonly string[]
   readonly placeholder: string
-  readonly audience: { readonly labelIds: readonly string[]; readonly activeContactsOnly: boolean }
+  readonly audience: { readonly selection: string; readonly name: string; readonly contactsFilter: Readonly<Record<string, string>> }
+  readonly recipientsMaxGrowth: number
+  readonly recipientsBaseline: { readonly count: number; readonly at: string }
   readonly testRecipient: string
   readonly testContactId: string
   readonly testLeadMinutes: number

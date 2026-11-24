@@ -6,6 +6,7 @@
 //   claim/<key>            idempotency claim, written with onlyIfNew BEFORE the campaign is created
 //   run/<key>              the last run record of that date-slot (also skips and failures)
 //   last-run, last-dry-run the most recent real run / dry run
+//   recipients             { count, at } e-mail subscribers of the last production publish (BEZPIECZNIK ODBIORCY baseline)
 //
 // The in-memory twin has the same interface and is what the tests use.
 
@@ -53,6 +54,9 @@ function wrap(kv) {
     async setRun(key, record) { await kv.setJSON(`run/${key}`, record) },
     async getLastRun() { return kv.getJSON('last-run') },
     async setLastRun(record) { await kv.setJSON('last-run', record) },
+    /** The last recorded number of e-mail subscribers a production send went to: { count, at } (BEZPIECZNIK ODBIORCY). */
+    async getRecipients() { return kv.getJSON('recipients') },
+    async setRecipients(value) { await kv.setJSON('recipients', value) },
     async getLastDryRun() { return kv.getJSON('last-dry-run') },
     async setLastDryRun(record) { await kv.setJSON('last-dry-run', record) },
   }

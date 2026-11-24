@@ -4,7 +4,8 @@
 //   GET  /email-marketing/v1/account-details
 //   GET  /email-marketing/v1/campaigns            (list; statuses, distributionStatus, publishingData)
 //   POST /email-marketing/v1/campaigns            (create from HTML: campaignEditorType HTML)
-//   POST /email-marketing/v1/campaigns/{id}/publish   (emailDistributionOptions: labelIds | contactIds, sendAt ...)
+//   POST /email-marketing/v1/campaigns/{id}/publish   (emailDistributionOptions: contactIds ONLY, sendAt, emailSubject)
+//   POST /contacts/v4/contacts/query                  (filter primaryEmail.subscriptionStatus = SUBSCRIBED → the recipients)
 //   GET  /email-marketing/v1/campaigns/{id}           (status of one campaign)
 //   POST /email-marketing/v1/campaigns/{id}/preview   (rendered HTML + subject)
 //   GET  /email-marketing/v1/campaigns/statistics
@@ -19,6 +20,9 @@
 // The API key is never logged or returned; error text is scrubbed of it.
 
 const BASE = 'https://www.wixapis.com'
+/** The e-mail subscribers (WEBINAR_MAIL_CONFIG.audience.contactsFilter; a test asserts both are the same). */
+const SUBSCRIBED_FILTER = Object.freeze({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED' })
+export { SUBSCRIBED_FILTER }
 
 export function createWixClient({ apiKey, siteId, fetchImpl = fetch } = {}) {
   if (!apiKey || !siteId) throw new Error('Brak WIX_API_KEY lub WIX_SITE_ID')
@@ -77,13 +81,52 @@ export function createWixClient({ apiKey, siteId, fetchImpl = fetch } = {}) {
       return id
     },
 
-    /** audience: { labelIds, activeContactsOnly } (production) or { contactIds } (test). Only given fields are sent. */
+    /**
+     * audience: { contactIds } only — production (the e-mail subscribers resolved by listEmailSubscriberIds) and the test
+     * (the one test contact). A label (contacts-all included), a segment, activeContactsOnly or any other field is refused
+     * here as well, before anything reaches Wix (the core guards in webinarMail.js run first).
+     */
     async publishCampaign(campaignId, { subject, sendAt, audience }) {
-      const options = { emailSubject: subject, sendAt }
-      if (audience.labelIds) options.labelIds = [...audience.labelIds]
-      if (audience.contactIds) options.contactIds = [...audience.contactIds]
-      if ('activeContactsOnly' in audience) options.activeContactsOnly = Boolean(audience.activeContactsOnly)
+      const keys = Object.keys(audience ?? {})
+      if (keys.some((k) => k !== 'contactIds') || !Array.isArray(audience?.contactIds) || audience.contactIds.length === 0) {
+        throw new Error(`BEZPIECZNIK ODBIORCÓW: publikacja tylko z contactIds (odrzucono: ${keys.join(', ') || 'brak odbiorców'})`)
+      }
+      const options = { emailSubject: subject, sendAt, contactIds: [...audience.contactIds] }
       return call('POST', `/email-marketing/v1/campaigns/${campaignId}/publish`, { emailDistributionOptions: options })
+    },
+
+    /** How many contacts have a PRIMARY e-mail with subscriptionStatus SUBSCRIBED (Wix Contacts total). */
+    async countEmailSubscribers() {
+      const j = await call('POST', '/contacts/v4/contacts/query', { query: { filter: SUBSCRIBED_FILTER, paging: { limit: 1 }, fieldsets: ['BASIC'] } })
+      const total = j.pagingMetadata?.total
+      if (!Number.isInteger(total) || j.pagingMetadata?.tooManyToCount) throw new Error('Wix nie podał liczby subskrybentów')
+      return total
+    },
+
+    /**
+     * IDs of every contact whose PRIMARY e-mail is SUBSCRIBED: { ids, total } (total = what Wix reports for the filter).
+     * Every returned contact is checked again (primaryEmail.subscriptionStatus === 'SUBSCRIBED'); one that is not, a
+     * duplicate, or a count that differs from total throws, so the run fails closed. No e-mail address leaves this function.
+     */
+    async listEmailSubscriberIds() {
+      const ids = new Set()
+      let total = null
+      for (let offset = 0, page = 0; page < 50; page++) {
+        const j = await call('POST', '/contacts/v4/contacts/query', { query: { filter: SUBSCRIBED_FILTER, sort: [{ fieldName: 'createdDate', order: 'ASC' }], paging: { limit: 1000, offset }, fieldsets: ['BASIC'] } })
+        const meta = j.pagingMetadata ?? {}
+        if (total === null) total = meta.total
+        const contacts = j.contacts ?? []
+        for (const c of contacts) {
+          if (c.primaryEmail?.subscriptionStatus !== 'SUBSCRIBED') throw new Error('Wix zwrócił kontakt bez subskrypcji w zapytaniu o subskrybentów')
+          if (ids.has(c.id)) throw new Error('Wix zwrócił ten sam kontakt dwa razy w zapytaniu o subskrybentów')
+          ids.add(c.id)
+        }
+        offset += contacts.length
+        if (!meta.hasNext || contacts.length === 0) break
+      }
+      if (!Number.isInteger(total)) throw new Error('Wix nie podał liczby subskrybentów')
+      if (ids.size !== total) throw new Error(`lista subskrybentów niepełna: ${ids.size} ID, Wix podaje ${total}`)
+      return { ids: [...ids], total }
     },
 
     async getCampaign(campaignId) {

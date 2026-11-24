@@ -26,5 +26,9 @@ export interface HealthSummary {
   nadawcy: { wtorek: string; czwartek: string }
   /** Sender NAME in Wix now; null when it cannot be read. Never an address. */
   aktualnyNadawca: string | null
+  /** Name of the production recipient selection (config). */
+  odbiorcy: string
+  /** E-mail subscribers in Wix now; null when it cannot be read. */
+  liczbaOdbiorcow: number | null
 }
-export function healthSummary(args: { deps: Pick<RunDeps, 'store' | 'loadTemplates'> & { wix?: Pick<WixLike, 'getSenderName'> | null }; build: string; now?: Date; config?: WebinarMailConfig }): Promise<HealthSummary>
+export function healthSummary(args: { deps: Pick<RunDeps, 'store' | 'loadTemplates'> & { wix?: Pick<WixLike, 'getSenderName' | 'countEmailSubscribers'> | null }; build: string; now?: Date; config?: WebinarMailConfig }): Promise<HealthSummary>

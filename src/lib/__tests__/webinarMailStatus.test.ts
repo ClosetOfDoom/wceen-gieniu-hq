@@ -75,6 +75,7 @@ describe('tests never count', () => {
       accountDetails: async () => ({ status: 'ACTIVE' }), listRecentCampaigns: async () => [], previewCampaign: async () => ({ html: '' }),
       createCampaign: async () => 'prod-1', publishCampaign: async () => ({}), getCampaign: async () => { throw new Error('x') },
       deleteCampaign: async () => ({}), campaignStats: async () => ({}),
+      listEmailSubscriberIds: async () => ({ ids: ['aaaaaaaa-0000-4000-8000-000000000001'], total: 1 }),
     }
     const r = await runWebinarMail({ now: new Date('2026-12-01T05:00:00Z'), deps: { store, wix, loadTemplates: async () => TEMPLATES, checkUrl: async () => ({ status: 200 }) } })
     expect(r).toMatchObject({ status: 'scheduled', plan: { template: '01-t.html', variant: 'landing' } })

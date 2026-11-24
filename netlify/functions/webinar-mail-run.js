@@ -5,7 +5,8 @@
 // (CET) = 05:00 UTC. The run at the wrong hour exits at once (reason "not-wake-hour").
 //
 // With AUTO ON and PAUZA OFF it builds a Wix campaign from the next unsent template of the slot
-// and publishes it with sendAt 07:00 to all contacts. Every decision is in
+// and publishes it with sendAt 07:00 to the e-mail subscribers only (contactIds of the SUBSCRIBED contacts,
+// asked from Wix in the same run; BEZPIECZNIK ODBIORCY first). Every decision is in
 // netlify/shared/webinarMail.js (runWebinarMail); this file only wires the real Wix, Blobs and clock.
 //
 // WEBINAR_MAIL_DRY_RUN=1 turns the whole run into a dry run (no claim, no campaign, no publish).
@@ -19,7 +20,7 @@ import { WEBINAR_MAIL_CONFIG } from '../shared/webinarMailConfig.js'
 /** A Wix client whose every call fails with the same clear message (missing env), so the run records it. */
 function unavailableWix(message) {
   const fail = async () => { throw new Error(message) }
-  return { accountDetails: fail, listRecentCampaigns: fail, previewCampaign: fail, createCampaign: fail, publishCampaign: fail, getCampaign: fail, deleteCampaign: fail, campaignStats: fail }
+  return { accountDetails: fail, listRecentCampaigns: fail, previewCampaign: fail, createCampaign: fail, publishCampaign: fail, getCampaign: fail, deleteCampaign: fail, campaignStats: fail, listEmailSubscriberIds: fail, countEmailSubscribers: fail }
 }
 
 export default async function handler() {

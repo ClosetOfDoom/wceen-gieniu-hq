@@ -101,6 +101,16 @@ const handMapped = [['src/components/WebinarMailPanel.tsx', panel], ['netlify/sh
 if (/from '\.\.\/\.\.\/netlify\/shared\/webinarMailStatus\.js'/.test(panel) && /sendStatusView\(/.test(panel) && !handMapped.length) ok('send-log statuses come from netlify/shared/webinarMailStatus.js only (panel uses sendStatusView)')
 else fail(`send-log statuses mapped by hand outside webinarMailStatus.js: ${handMapped.join(', ') || 'panel does not use sendStatusView'}`)
 
+// Production goes ONLY to the e-mail subscribers (2026-11-24): one selection in the config, guarded in createAndPublish.
+const aud = CFG.audience ?? {}
+if (aud.selection === 'subskrybenci-email' && !('labelIds' in aud) && !('segmentIds' in aud) && !JSON.stringify(aud).includes('contacts-all')
+  && JSON.stringify(aud.contactsFilter) === JSON.stringify({ 'primaryEmail.subscriptionStatus': 'SUBSCRIBED' })) ok(`production recipients: ${aud.name} (no label, no segment, no contacts-all)`)
+else fail('WEBINAR_MAIL_CONFIG.audience must be the e-mail subscribers selection only (no contacts-all, no label, no segment)')
+if (/else assertProductionAudience\(audience, config\)/.test(core) && /resolveProductionAudience\(wix, config\)/.test(core) && /evaluateRecipients\(/.test(core)) ok('production publish guarded: assertProductionAudience + BEZPIECZNIK ODBIORCY in the run')
+else fail('webinarMail.js: production publish must go through assertProductionAudience and the ODBIORCY check')
+if (Number.isInteger(CFG.recipientsBaseline?.count) && CFG.recipientsBaseline.count > 0 && CFG.recipientsMaxGrowth > 1 && CFG.recipientsMaxGrowth <= 1.1) ok(`BEZPIECZNIK ODBIORCY: ≤ ${Math.round(CFG.recipientsMaxGrowth * 100)}% of the last count (baseline ${CFG.recipientsBaseline.count} from ${CFG.recipientsBaseline.at})`)
+else fail('WEBINAR_MAIL_CONFIG.recipientsBaseline / recipientsMaxGrowth missing or out of range')
+
 if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(CFG.testContactId)) ok(`test contact configured (${CFG.testRecipient})`)
 else fail('WEBINAR_MAIL_CONFIG.testContactId is missing or not a GUID')
 
