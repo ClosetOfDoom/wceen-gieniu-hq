@@ -24,6 +24,7 @@ import { MetaWorldPanel } from './components/MetaWorldPanel'
 import { GoalBar } from './components/GoalBar'
 import { TodayPanel } from './components/TodayPanel'
 import { BriefCard } from './components/BriefCard'
+import { PushButton } from './components/PushButton'
 import {
   ppOrdersGoal, revenueGoal, cpaGoal, roasGoal, MONTHLY_REVENUE_TARGET,
   daysInMonthOf, PP_ORDERS_TARGET,
@@ -1725,7 +1726,7 @@ export default function App() {
           {section === 'command-center' && (
             <>
               {/* Dziś: day rhythm + tasks (stanley-tasks); refreshed after every Q&A answer (task commands go there) */}
-              <BriefCard onSpeak={handleSpeakText} speaking={speaking} />
+              <BriefCard onSpeak={handleSpeakText} speaking={speaking} extra={<PushButton />} />
               <TodayPanel refreshKey={dayRefresh} />
 
               {/* Time-range switcher — governs every KPI in this panel (Warsaw tz) */}

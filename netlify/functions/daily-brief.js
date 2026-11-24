@@ -7,11 +7,13 @@
 
 import { runDailyBrief } from '../shared/dailyBrief.js'
 import { realBriefDeps } from '../shared/briefDeps.js'
+import { notifyBriefReady } from '../shared/stanleyPush.js'
 
 export default async function handler() {
   const now = new Date()
   const { deps, llm } = await realBriefDeps()
-  const outcome = await runDailyBrief({ now, deps, llm })
+  // After the brief is saved: web push "Brief gotowy" to every subscribed phone (P5). A failed push never loses the brief.
+  const outcome = await runDailyBrief({ now, deps, llm, notify: (brief) => notifyBriefReady(deps.kv, brief) })
   console.log('[daily-brief]', JSON.stringify({ status: outcome.status, reason: outcome.reason, date: outcome.brief?.date, gaps: outcome.brief?.gaps?.length, llm: outcome.brief?.llm, notified: outcome.notified }))
   return new Response(JSON.stringify({ status: outcome.status, reason: outcome.reason ?? null }), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }

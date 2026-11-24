@@ -54,6 +54,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,svg,woff2}', '**/icons/*.png'],
         skipWaiting: true,
         clientsClaim: true,
+        // Web push "Brief gotowy" (09:00): push + notificationclick handlers, see public/push-sw.js.
+        importScripts: ['push-sw.js'],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/phwhsteaqwrijoivqnif\.supabase\.co/,
