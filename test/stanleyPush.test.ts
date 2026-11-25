@@ -62,9 +62,9 @@ describe('subscriptions and sending', () => {
     expect(await notifyBriefReady(createMemoryKv(), null)).toEqual({ subscriptions: 0, sent: 0, removed: 0, failed: 0 })
   })
 
-  it('the service worker shows "Brief gotowy" and opens HOME; Workbox imports it; daily-brief notifies after saving', () => {
+  it('the service worker shows "Daily brief ready" (English) and opens HOME; Workbox imports it; daily-brief notifies after saving', () => {
     const sw = readFileSync('public/push-sw.js', 'utf8')
-    expect(sw).toContain("showNotification('Brief gotowy'")
+    expect(sw).toContain("showNotification('Daily brief ready'")
     expect(sw).toContain("data: { url: '/' }")
     expect(readFileSync('vite.config.ts', 'utf8')).toContain("importScripts: ['push-sw.js']")
     expect(readFileSync('netlify/functions/daily-brief.js', 'utf8')).toContain('notify: (brief) => notifyBriefReady(deps.kv, brief)')

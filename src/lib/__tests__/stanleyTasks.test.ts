@@ -80,30 +80,69 @@ describe('"Dziś" list', () => {
     ])
     expect(plan.items[0].done).toBe(true)
     expect(plan.items.find((i) => i.title === 'Zaległe')?.overdue).toBe(true)
-    expect(dayPlanText(plan)).toContain('filar dnia: Języki')
+    expect(dayPlanText(plan)).toContain('pillar of the day: Języki')
   })
 
   it('Q&A commands end to end: add → co dziś? → zrobione', async () => {
     const kv = createMemoryKv()
     const now = at('2026-11-24T08:00:00Z')
     const add = await runTaskCommand({ kv, command: parseTaskCommand('dodaj zadanie zadzwonić do drukarni dziś o 11', TUE)!, now, rhythm: RHYTHM })
-    expect(add.answerText).toContain('Dodane zadanie: „zadzwonić do drukarni” (na dziś, o 11:00)')
+    expect(add.answerText).toContain('Task added: "zadzwonić do drukarni" (for today, at 11:00)')
     const today = await runTaskCommand({ kv, command: { action: 'today' }, now, rhythm: RHYTHM })
-    expect(today.answerText).toContain('11:00 zadzwonić do drukarni [zadanie]')
+    expect(today.answerText).toContain('11:00 zadzwonić do drukarni [task]')
     const done = await runTaskCommand({ kv, command: parseTaskCommand('zrobione drukarni', TUE)!, now, rhythm: RHYTHM })
-    expect(done.answerText).toBe('Zrobione: „zadzwonić do drukarni”.')
+    expect(done.answerText).toBe('Done: "zadzwonić do drukarni".')
     expect((await listTasks(kv))[0].status).toBe(TASK_STATUS.DONE)
     const rhythmDone = await runTaskCommand({ kv, command: parseTaskCommand('zrobione brief dnia', TUE)!, now, rhythm: RHYTHM })
-    expect(rhythmDone.answerText).toContain('Odhaczone na dziś: 09:00 Brief dnia')
+    expect(rhythmDone.answerText).toContain('Ticked off for today: 09:00 Brief dnia')
     const none = await runTaskCommand({ kv, command: parseTaskCommand('zrobione nieistniejące', TUE)!, now, rhythm: RHYTHM })
-    expect(none.answerText).toContain('Nie znalazłem')
+    expect(none.answerText).toContain('I found no open task')
   })
 
   it('ambiguous "zrobione" asks which one', async () => {
     const kv = createMemoryKv()
     await addTask(kv, { tytul: 'mail do drukarni' }); await addTask(kv, { tytul: 'mail do autora' })
     const r = await runTaskCommand({ kv, command: { action: 'done', query: 'mail' }, now: at('2026-11-24T08:00:00Z'), rhythm: RHYTHM })
-    expect(r.answerText).toMatch(/Pasuje kilka zadań/)
+    expect(r.answerText).toMatch(/Several tasks match/)
     expect((await listTasks(kv)).every((t) => t.status === TASK_STATUS.OPEN)).toBe(true)
+  })
+})
+
+describe('English: his voice is English, so the commands and the answers are too', () => {
+  const TODAY = '2026-11-25'   // Wednesday
+  it('"what is on today" and friends read the day plan', () => {
+    for (const m of ["what's on today", 'What do I have today?', "today's plan", 'plan for today', 'my plan', 'agenda for today', 'Stanley, what is on today'])
+      expect(parseTaskCommand(m, TODAY), m).toEqual({ action: 'today' })
+  })
+  it('"add task …" with English day and time words', () => {
+    expect(parseTaskCommand('add task call the printer tomorrow at 10', TODAY)).toMatchObject({ action: 'add', tytul: 'call the printer', dzien: '2026-11-26', godzina: '10:00' })
+    expect(parseTaskCommand('new task send the invoice on Friday at 3:30 pm', TODAY)).toMatchObject({ action: 'add', tytul: 'send the invoice', dzien: '2026-11-27', godzina: '15:30' })
+    expect(parseTaskCommand('add a task pay the printer today', TODAY)).toMatchObject({ action: 'add', tytul: 'pay the printer', dzien: TODAY })
+    expect(parseTaskCommand('add task renew the domain day after tomorrow', TODAY)).toMatchObject({ dzien: '2026-11-27' })
+  })
+  it('"done …" ticks a task off', () => {
+    for (const m of ['done call the printer', 'finished call the printer', 'mark as done call the printer', 'tick off call the printer'])
+      expect(parseTaskCommand(m, TODAY), m).toEqual({ action: 'done', query: 'call the printer' })
+  })
+  it('the Polish forms still work', () => {
+    expect(parseTaskCommand('co dziś?', TODAY)).toEqual({ action: 'today' })
+    expect(parseTaskCommand('dodaj zadanie zadzwonić do drukarni jutro o 10', TODAY)).toMatchObject({ action: 'add', dzien: '2026-11-26', godzina: '10:00' })
+    expect(parseTaskCommand('zrobione drukarnia', TODAY)).toEqual({ action: 'done', query: 'drukarnia' })
+  })
+  it('every answer is English: language en, no Polish template words', async () => {
+    const kv = createMemoryKv()
+    const run = (command: Parameters<typeof runTaskCommand>[0]['command']) => runTaskCommand({ kv, command, now: new Date('2026-11-25T08:00:00Z'), rhythm: [] })
+    const answers = [
+      await run({ action: 'add', tytul: '', godzina: null, dzien: null, filar: null }),
+      await run({ action: 'add', tytul: 'call the printer', godzina: '11:00', dzien: TODAY, filar: null }),
+      await run({ action: 'today' }),
+      await run({ action: 'done', query: 'call the printer' }),
+      await run({ action: 'done', query: 'nothing like it' }),
+    ]
+    const polish = /(Dodane|Zrobione|Odhaczone|Nie znalazłem|Pasuje|Na dziś|Plan na|nic w planie|bez godziny|zaległe|Jakie zadanie|Nie rozumiem)/
+    for (const a of answers) {
+      expect(a.language).toBe('en')
+      expect([a.answerText, a.speechText].join(' | ')).not.toMatch(polish)
+    }
   })
 })

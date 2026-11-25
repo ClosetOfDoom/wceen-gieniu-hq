@@ -15,19 +15,19 @@ export function BriefCard({ onSpeak, speaking, extra }: { onSpeak: (text: string
   return (
     <div className="panel-illuminate card">
       <div className="section-title section-title-gold" style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <span>Brief dnia{brief ? ` · ${brief.date}` : ''}</span>
+        <span>Daily brief{brief ? ` · ${brief.date}` : ''}</span>
         <span style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {brief && (
             <button type="button" className="btn-sm" onClick={() => onSpeak(brief.speech)} aria-pressed={speaking}>
-              {speaking ? '■ Stop' : '🔊 Odsłuchaj'}
+              {speaking ? '■ Stop' : '🔊 Listen'}
             </button>
           )}
           {extra}
         </span>
       </div>
-      {error && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--amber)' }}>BRAK DANYCH: stanley-brief ({error})</div>}
-      {brief === undefined && !error && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--muted)' }}>Ładuję brief…</div>}
-      {brief === null && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--muted)' }}>Jeszcze nie ma briefu. Pierwszy powstanie o 09:00.</div>}
+      {error && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--amber)' }}>NO DATA: stanley-brief ({error})</div>}
+      {brief === undefined && !error && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--muted)' }}>Loading the brief…</div>}
+      {brief === null && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--muted)' }}>No brief yet. The first one is written at 09:00.</div>}
       {brief && (
         <>
           {brief.intro && <p style={{ margin: '0 0 10px', fontSize: '0.9rem', lineHeight: 1.45 }}>{brief.intro}</p>}
@@ -40,10 +40,10 @@ export function BriefCard({ onSpeak, speaking, extra }: { onSpeak: (text: string
             </div>
           ))}
           <button type="button" className="btn-sm" onClick={() => setOpen(!open)} style={{ marginTop: '4px' }}>
-            {open ? 'Zwiń' : 'Pokaż cały brief'}
+            {open ? 'Collapse' : 'Show the whole brief'}
           </button>
           <div style={{ marginTop: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: 'var(--muted2)' }}>
-            Liczby policzył kod{brief.llm.used ? `; wstęp napisał model (${brief.llm.provider}), zdania z liczbą spoza briefu usunięte: ${brief.llm.removed}` : '; bez wstępu modelu'}.
+            Numbers computed by code{brief.llm.used ? `; the spoken briefing was written by the model (${brief.llm.provider}), sentences with a number outside the brief removed: ${brief.llm.removed}` : '; no model briefing'}.
           </div>
         </>
       )}

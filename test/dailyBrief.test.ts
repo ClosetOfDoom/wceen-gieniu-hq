@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import {
   BRIEF_CONFIG, isBriefHour, gatherBriefData, renderBrief, describeBrief, runDailyBrief, latestBrief, listBriefDates, zl, briefInstant,
+  TRANSLATE_SYSTEM,
 } from '../netlify/shared/dailyBrief.js'
 import { createMemoryKv, createMemoryStore } from '../netlify/shared/webinarMailStore.js'
 import { parseRhythm } from '../netlify/shared/stanleyPillars.js'
@@ -168,5 +169,24 @@ describe('run and store', () => {
     const d = deps() as { kv: ReturnType<typeof createMemoryKv> }
     const out = await runDailyBrief({ now: WED_0900_CET, deps: d as never, notify: async () => { throw new Error('push 410') } })
     expect(out.status).toBe('saved'); expect((await latestBrief(d.kv))?.date).toBe('2026-11-25')
+  })
+})
+
+describe('the saved brief is English, including Filip\'s own Polish lines', () => {
+  it('runDailyBrief translates the plan titles and questions BEFORE the brief is built and before the briefing is written', async () => {
+    const briefingPrompts: string[] = []
+    const llm = async (system: string, user: string) => {
+      if (system === TRANSLATE_SYSTEM) return { text: JSON.stringify((JSON.parse(user) as string[]).map((l) => `EN:${l}`)) }
+      briefingPrompts.push(user)
+      return { text: 'Yesterday sales were 4 321,00 zł, sir.' }
+    }
+    const out = await runDailyBrief({ now: WED_0900_CET, deps: deps(), llm })
+    const brief = out.brief!
+    expect(brief.lang).toBe('en')
+    expect(brief.llm.translated).toBeGreaterThan(0)
+    expect(brief.sections.find((s) => s.id === 'plan')!.lines.join('\n')).toContain('EN:Brief dnia')
+    expect(brief.sections.find((s) => s.id === 'uwaga')!.lines.join('\n')).toMatch(/Question for Filip: EN:/)
+    expect(briefingPrompts[0]).toContain('EN:Brief dnia')          // the model that writes the spoken briefing sees English lines
+    expect(brief.speech).toBe('Yesterday sales were 4 321,00 zł, sir.')
   })
 })

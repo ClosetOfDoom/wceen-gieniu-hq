@@ -29,16 +29,17 @@ export function parseTaskDetails(text, today) {
   let rest = String(text ?? '')
   let godzina = null
   let dzien = null
-  const time = rest.match(/\b(?:o|na|godz\.?)\s+(\d{1,2})(?:[:.](\d{2}))?(?!\s*[.]\d)(?=\b|$)/i)
+  const time = rest.match(/\b(?:o|na|godz\.?|at|@)\s+(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?(?!\s*[.]\d)(?=\b|$)/i)
   if (time && Number(time[1]) <= 23 && (!time[2] || Number(time[2]) <= 59)) {
-    godzina = `${time[1].padStart(2, '0')}:${time[2] ?? '00'}`
+    const h = time[3] ? (Number(time[1]) % 12) + (time[3].toLowerCase() === 'pm' ? 12 : 0) : Number(time[1])
+    godzina = `${String(h).padStart(2, '0')}:${time[2] ?? '00'}`
     rest = rest.replace(time[0], ' ')
   }
   const norm = () => normalizePl(rest)
-  const rel = norm().match(/\b(dzis|dzisiaj|pojutrze|jutro)\b/)
+  const rel = norm().match(/\b(dzis|dzisiaj|pojutrze|jutro|today|tomorrow|day after tomorrow)\b/)
   if (rel) {
-    dzien = rel[1] === 'jutro' ? addDays(today, 1) : rel[1] === 'pojutrze' ? addDays(today, 2) : today
-    rest = rest.replace(/(?<!\p{L})(?:na\s+)?(?:dziś|dzis|dzisiaj|jutro|pojutrze)(?!\p{L})/iu, ' ')
+    dzien = rel[1] === 'jutro' || rel[1] === 'tomorrow' ? addDays(today, 1) : rel[1] === 'pojutrze' || rel[1] === 'day after tomorrow' ? addDays(today, 2) : today
+    rest = rest.replace(/(?<!\p{L})(?:na\s+)?(?:dziś|dzis|dzisiaj|jutro|pojutrze|day after tomorrow|tomorrow|today)(?!\p{L})/iu, ' ')
   } else {
     const wd = norm().match(/\b(?:w|we|na)\s+(poniedzialek|wtorek|srode|sroda|czwartek|piatek|sobote|sobota|niedziele|niedziela)\b/)
     if (wd) {
@@ -53,6 +54,16 @@ export function parseTaskDetails(text, today) {
         dzien = `${year}-${d[2].padStart(2, '0')}-${d[1].padStart(2, '0')}`
         rest = rest.replace(d[0], ' ')
       }
+    }
+  }
+  if (!dzien) {
+    const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    const en = normalizePl(rest).match(/\b(?:on\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/)
+    if (en) {
+      const target = names.indexOf(en[1])
+      const nowDay = warsawParts(warsawLocalToUtc(today, '12:00')).weekday
+      dzien = addDays(today, (target - nowDay + 7) % 7)
+      rest = rest.replace(new RegExp('(?<!\\p{L})(?:on\\s+)?' + en[1] + '(?!\\p{L})', 'iu'), ' ')
     }
   }
   let filar = null
@@ -74,12 +85,13 @@ export function parseTaskCommand(message, today = warsawParts(new Date()).date) 
   const raw = String(message ?? '').trim().replace(/^stanley[,\s]+/i, '')
   const n = normalizePl(raw).replace(/[?!.]+$/, '').trim()
   if (/^(co (mam )?(na )?(dzis|dzisiaj)( do zrobienia)?|co dzisiaj|plan (dnia|na dzis|na dzisiaj)|lista na dzis)$/.test(n)) return { action: 'today' }
-  const add = raw.match(/^(?:dodaj|nowe|zapisz)\s+zadanie\b[\s:–—-]*(.*)$/i)
+  if (/^(what['’ ]?s?( is)?( on| up)?( for)? today|what do i have( to do)? today|today['’]?s (plan|list|agenda)|plan for today|my plan( for today)?|agenda( for today)?|today)$/.test(n)) return { action: 'today' }
+  const add = raw.match(/^(?:(?:dodaj|nowe|zapisz)\s+zadanie|(?:add|new|save)\s+(?:a\s+)?task)\b[\s:–—-]*(.*)$/i)
   if (add) {
     const d = parseTaskDetails(add[1], today)
     return d.tytul ? { action: 'add', ...d } : { action: 'add', tytul: '', godzina: null, dzien: null, filar: null }
   }
-  const done = raw.match(/^(?:zrobione|zrobiłem|zrobiłam|zrobiony|zrobiona|gotowe|odhacz|wykonane)\b[\s:–—-]*(.+)$/i)
+  const done = raw.match(/^(?:zrobione|zrobiłem|zrobiłam|zrobiony|zrobiona|gotowe|odhacz|wykonane|done|finished|completed|mark(?:ed)?(?:\s+as)?\s+done|tick\s+off|check\s+off)\b[\s:–—-]*(.+)$/i)
   if (done) return { action: 'done', query: strip(done[1]) }
   return null
 }
@@ -163,27 +175,27 @@ export function dayPlan({ date, rhythm, tasks, ticks = [] }) {
   }
 }
 
-/** The "co dziś?" answer as text: one line per item. */
+/** The "what's on today?" answer as text: one line per item. */
 export function dayPlanText(plan) {
-  if (!plan.items.length) return `${plan.date}: nic w planie.`
-  const lines = plan.items.map((i) => `${i.done ? '✓' : '•'} ${i.time ? `${i.time}${i.end ? `–${i.end}` : ''} ` : '(bez godziny) '}${i.title}${i.kind === 'zadanie' ? ' [zadanie]' : ''}${i.overdue ? ' (zaległe)' : ''}`)
-  return `Plan na ${plan.date}${plan.filarDnia ? ` · filar dnia: ${plan.filarDnia}` : ''}\n${lines.join('\n')}`
+  if (!plan.items.length) return `${plan.date}: nothing on the plan.`
+  const lines = plan.items.map((i) => `${i.done ? '✓' : '•'} ${i.time ? `${i.time}${i.end ? `–${i.end}` : ''} ` : '(no time) '}${i.title}${i.kind === 'zadanie' ? ' [task]' : ''}${i.overdue ? ' (overdue)' : ''}`)
+  return `Plan for ${plan.date}${plan.filarDnia ? ` · pillar of the day: ${plan.filarDnia}` : ''}\n${lines.join('\n')}`
 }
 
 /** Runs a parsed command against the store and returns the Q&A answer { answerText, speechText, ... }. */
 export async function runTaskCommand({ kv, command, now = new Date(), rhythm }) {
   const today = warsawParts(now).date
-  const reply = (answerText, speechText = answerText, extra = {}) => ({ answerText, speechText, intent: 'tasks', confidence: 1, language: 'pl', dataSourcesUsed: ['stanley-tasks'], warnings: [], llmUsed: false, ...extra })
+  const reply = (answerText, speechText = answerText, extra = {}) => ({ answerText, speechText, intent: 'tasks', confidence: 1, language: 'en', dataSourcesUsed: ['stanley-tasks'], warnings: [], llmUsed: false, ...extra })
   if (command.action === 'today') {
     const plan = dayPlan({ date: today, rhythm, tasks: await listTasks(kv), ticks: await getDayTicks(kv, today) })
     const open = plan.items.filter((i) => !i.done)
-    return reply(dayPlanText(plan), open.length ? `Na dziś: ${open.slice(0, 4).map((i) => `${i.time ? `${i.time} ` : ''}${i.title}`).join(', ')}${open.length > 4 ? ` i jeszcze ${open.length - 4}` : ''}.` : 'Na dziś wszystko odhaczone.', { plan })
+    return reply(dayPlanText(plan), open.length ? `Today: ${open.slice(0, 4).map((i) => `${i.time ? `${i.time} ` : ''}${i.title}`).join(', ')}${open.length > 4 ? ` and ${open.length - 4} more` : ''}.` : 'Everything for today is ticked off.', { plan })
   }
   if (command.action === 'add') {
-    if (!command.tytul) return reply('Jakie zadanie dodać? Na przykład: „dodaj zadanie zadzwonić do drukarni jutro o 10”.')
+    if (!command.tytul) return reply('Which task shall I add, sir? For example: "add task call the printer tomorrow at 10".')
     const t = await addTask(kv, command, now)
-    const when = [t.dzien === today ? 'na dziś' : t.dzien ? `na ${t.dzien}` : 'bez dnia', t.godzina ? `o ${t.godzina}` : null, t.filar ? `filar: ${PILLARS.find((p) => p.slug === t.filar)?.name}` : null].filter(Boolean).join(', ')
-    return reply(`Dodane zadanie: „${t.tytul}” (${when}).`, `Dodane: ${t.tytul}.`, { task: t })
+    const when = [t.dzien === today ? 'for today' : t.dzien ? `for ${t.dzien}` : 'no day', t.godzina ? `at ${t.godzina}` : null, t.filar ? `pillar: ${PILLARS.find((p) => p.slug === t.filar)?.name}` : null].filter(Boolean).join(', ')
+    return reply(`Task added: "${t.tytul}" (${when}).`, `Added: ${t.tytul}.`, { task: t })
   }
   if (command.action === 'done') {
     const tasks = await listTasks(kv)
@@ -196,15 +208,15 @@ export async function runTaskCommand({ kv, command, now = new Date(), rhythm }) 
       if (r) {
         const ticks = await getDayTicks(kv, today)
         if (!ticks.includes(r.id)) await toggleRhythmTick(kv, today, r.id)
-        return reply(`Odhaczone na dziś: ${r.start} ${r.title}.`, `Odhaczone: ${r.title}.`)
+        return reply(`Ticked off for today: ${r.start} ${r.title}.`, `Ticked off: ${r.title}.`)
       }
-      return reply(`Nie znalazłem otwartego zadania „${command.query}”.`)
+      return reply(`I found no open task matching "${command.query}".`)
     }
     if (hits.length > 1 && !hits.every((h) => normalizePl(h.tytul) === normalizePl(hits[0].tytul))) {
-      return reply(`Pasuje kilka zadań: ${hits.slice(0, 5).map((h) => `„${h.tytul}”`).join(', ')}. Napisz dokładniej, które.`)
+      return reply(`Several tasks match: ${hits.slice(0, 5).map((h) => `"${h.tytul}"`).join(', ')}. Say which one.`)
     }
     const t = await setTaskStatus(kv, hits[0].id, TASK_STATUS.DONE, now)
-    return reply(`Zrobione: „${t.tytul}”.`, `Zrobione: ${t.tytul}.`, { task: t })
+    return reply(`Done: "${t.tytul}".`, `Done: ${t.tytul}.`, { task: t })
   }
-  return reply('Nie rozumiem polecenia zadania.')
+  return reply('I did not understand that task command.')
 }

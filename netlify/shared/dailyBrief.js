@@ -270,6 +270,51 @@ export async function describeBrief(text, llm) {
   }
 }
 
+// ── English data: Filip's own lines (the day's plan, the questions) are Polish; Stanley's output is English ──────
+
+export const TRANSLATE_SYSTEM = `Translate each line into natural English for a business assistant (the lines are Polish; a line that is already English stays as it is).
+Keep times, numbers, dates and the names of products, people, tools and files unchanged (WCEEN, Językozak, Wix, Meta, Cogni, WSZTP, ClickMeeting, Netlify...).
+Return ONLY a JSON array of strings with exactly as many items as lines, in the same order. No comments.`
+
+/** [{ lines, translated }] — the lines in English; unchanged when the model is off, fails or returns a wrong shape. */
+export async function toEnglish(lines, llm) {
+  const list = lines.map((l) => String(l ?? ''))
+  if (!llm || !list.some((l) => l.trim())) return { lines: list, translated: 0 }
+  try {
+    const raw = await llm(TRANSLATE_SYSTEM, JSON.stringify(list), { temperature: 0, max_tokens: 800, timeoutMs: 14000 })
+    const text = String(raw?.text ?? raw ?? '')
+    const json = text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)
+    const out = JSON.parse(json)
+    if (!Array.isArray(out) || out.length !== list.length || out.some((x) => typeof x !== 'string')) return { lines: list, translated: 0 }
+    const cleaned = out.map((x, i) => x.replace(/\s+/g, ' ').trim() || list[i])
+    return { lines: cleaned, translated: cleaned.filter((x, i) => x !== list[i]).length }
+  } catch {
+    return { lines: list, translated: 0 }
+  }
+}
+
+/** The gathered data with the plan items, the day's pillar and the questions in English (one model call). */
+export async function englishData(data, llm) {
+  const items = data.plan?.items ?? []
+  const questions = data.questions ?? []
+  const pillar = data.plan?.filarDnia ? [data.plan.filarDnia] : []
+  const lines = [...items.map((i) => i.title), ...pillar, ...questions]
+  if (!lines.length) return { data, translated: 0 }
+  const t = await toEnglish(lines, llm)
+  if (!t.translated) return { data, translated: 0 }
+  const titles = t.lines.slice(0, items.length)
+  const filar = pillar.length ? t.lines[items.length] : null
+  const qs = t.lines.slice(items.length + pillar.length)
+  return {
+    translated: t.translated,
+    data: {
+      ...data,
+      plan: data.plan ? { ...data.plan, filarDnia: filar ?? data.plan.filarDnia, items: items.map((i, k) => ({ ...i, title: titles[k] })) } : data.plan,
+      questions: qs,
+    },
+  }
+}
+
 // ── store ──────────────────────────────────────────────────────────────────────
 
 export async function saveBrief(kv, brief, keep = BRIEF_CONFIG.keep) {
@@ -295,15 +340,20 @@ export async function listBriefDates(kv) {
  *   dryRun: computes and returns the brief, saves nothing, notifies nobody.
  * notify(brief) is called after a save (web push, P5); its failure never loses the brief.
  */
-export async function runDailyBrief({ now = new Date(), deps, llm = null, dryRun = false, force = false, notify = null }) {
-  if (!force && !isBriefHour(now)) return { status: 'skipped', reason: 'not-brief-hour' }
+export async function runDailyBrief({ now = new Date(), deps, llm = null, dryRun = false, force = false, notify = null, overwrite = false }) {
+  if (!force && !overwrite && !isBriefHour(now)) return { status: 'skipped', reason: 'not-brief-hour' }
   const today = warsawParts(now).date
-  if (!dryRun && !(await deps.kv.setJSONIfNew(`brief-claim/${today}`, { at: now.toISOString() }))) return { status: 'skipped', reason: 'already-done' }
-  const data = await gatherBriefData({ now, deps })
+  // `overwrite` (the app asks for it when today's saved brief predates the English one): no claim, saved over today's
+  // brief, nobody is notified a second time.
+  if (!dryRun && !overwrite && !(await deps.kv.setJSONIfNew(`brief-claim/${today}`, { at: now.toISOString() }))) return { status: 'skipped', reason: 'already-done' }
+  const gathered = await gatherBriefData({ now, deps })
+  const tr = await englishData(gathered, llm)
+  const data = tr.data
   const r = renderBrief(data)
   const d = await describeBrief(r.text, llm)
   const brief = {
     date: today,
+    lang: 'en',
     createdAt: now.toISOString(),
     title: `Daily brief ${today}`,
     intro: d.intro,
@@ -312,13 +362,13 @@ export async function runDailyBrief({ now = new Date(), deps, llm = null, dryRun
     speech: d.intro ?? r.speech,
     alerts: r.alerts,
     gaps: r.gaps,
-    llm: { used: Boolean(d.intro), provider: d.provider ?? null, model: d.model ?? null, checked: d.checked, removed: d.removed, error: d.error ?? null },
+    llm: { used: Boolean(d.intro), provider: d.provider ?? null, model: d.model ?? null, checked: d.checked, removed: d.removed, error: d.error ?? null, translated: tr.translated },
     dryRun,
   }
   if (dryRun) return { status: 'dry-run', brief }
   await saveBrief(deps.kv, brief)
   let notified = null
-  if (notify) {
+  if (notify && !overwrite) {
     try { notified = await notify(brief) } catch (e) { notified = { error: String(e?.message ?? e).slice(0, 160) } }
   }
   return { status: 'saved', brief, notified }

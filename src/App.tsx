@@ -1073,7 +1073,8 @@ export default function App() {
       if (cancelled || spokenFor() === today()) return
       try {
         const b = await fetchLatestBrief()
-        if (!cancelled && b && b.date === today() && b.speech?.trim() && spokenFor() !== b.date && briefDismissedRef.current !== b.date) setBriefReady(b)
+        // Never on its own in Polish: the voice is English; an old Polish brief is rewritten first (fetchLatestBrief)
+        if (!cancelled && b && b.lang === 'en' && b.date === today() && b.speech?.trim() && spokenFor() !== b.date && briefDismissedRef.current !== b.date) setBriefReady(b)
       } catch { /* the brief card on HOME shows load errors */ }
     }
     check()

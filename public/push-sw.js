@@ -1,8 +1,8 @@
 // push-sw.js — imported into the Workbox service worker (vite.config.ts → workbox.importScripts).
 // The 09:00 push carries no payload: the text is fixed here. A click opens (or focuses) HOME.
 self.addEventListener('push', (event) => {
-  event.waitUntil(self.registration.showNotification('Brief gotowy', {
-    body: 'Stanley przygotował brief dnia. Otwórz HOME.',
+  event.waitUntil(self.registration.showNotification('Daily brief ready', {
+    body: 'Stanley has prepared the daily brief. Open HOME.',
     icon: '/icons/icon-192.png?v=4',
     badge: '/icons/icon-192.png?v=4',
     tag: 'stanley-brief',
