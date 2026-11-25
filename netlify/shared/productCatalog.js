@@ -295,9 +295,9 @@ export const NON_SALE = {
 
 /** Human labels, in one place, so the card, COPY and Q&A say the same thing. */
 export const NON_SALE_LABELS = {
-  empty_cart:   'Koszyki 0 zł',
-  lead_magnet:  'Lead magnety',
-  admin_access: 'Dostęp administracyjny',
+  empty_cart:   'Empty carts (0 zł)',
+  lead_magnet:  'Lead magnets',
+  admin_access: 'Admin access',
 }
 
 /**

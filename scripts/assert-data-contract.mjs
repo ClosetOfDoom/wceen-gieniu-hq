@@ -98,12 +98,12 @@ if (!existsSync(responsesPath)) {
     fail('responses.ts buildMemoryBundleAnswer still hardcodes product names — a new product would not appear')
   }
   // A breakdown must reconcile with its own total before it is shown.
-  if (mb.includes('niespójne z sumą')) {
+  if (mb.includes('does not match the total')) {
     pass('responses.ts buildMemoryBundleAnswer refuses a breakdown that does not add up')
   } else {
     fail('responses.ts buildMemoryBundleAnswer must reject a breakdown inconsistent with its total')
   }
-  if (mb.includes('!orders || !orders.ok') && mb.includes('nie mam rozbicia na produkty')) {
+  if (mb.includes('!orders || !orders.ok') && mb.includes('no product breakdown')) {
     pass('responses.ts buildMemoryBundleAnswer still refuses to guess when the orders source is down')
   } else {
     fail('responses.ts buildMemoryBundleAnswer must keep an honest gap message for when orders-data is unavailable')

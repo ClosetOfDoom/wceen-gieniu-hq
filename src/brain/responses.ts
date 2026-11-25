@@ -338,13 +338,13 @@ export function buildMemoryBundleAnswer(
   // table in netlify/shared/productCatalog.js. The honest gap message below
   // is kept for the case where the orders endpoint itself is down.
   if (!orders || !orders.ok) {
-    const lines: string[] = ['Rozbicie na produkty — brak źródła', '']
+    const lines: string[] = ['Product breakdown — no source', '']
     if (perf) {
-      lines.push(`Dziś: ${perf.wix_orders ?? 0} zamówień, ${fmtPln(perf.wix_revenue ?? 0)} przychodu (widok dzienny).`, '')
+      lines.push(`Today: ${perf.wix_orders ?? 0} orders, ${fmtPln(perf.wix_revenue ?? 0)} revenue (daily view).`, '')
     }
     lines.push(
-      '⚠  Endpoint orders-data nie odpowiedział, więc nie mam rozbicia na produkty.',
-      '   Same liczby zbiorcze nie wystarczą — nie zgaduję, ile z nich to Pakiet Pamięciowy.',
+      '⚠  The orders-data endpoint did not respond, so I have no product breakdown.',
+      '   The totals alone are not enough — I do not guess how many of them are the Memory Pack.',
       '',
       `Technical: ${PRODUCT_CLASSIFICATION_REASON}`,
     )
@@ -357,19 +357,19 @@ export function buildMemoryBundleAnswer(
   const perProduct = orders.todayHourly?.products ?? {}
   const catalog = orders.productCatalog ?? {}
   const slices = Object.entries(perProduct)
-    .map(([k, v]) => ({ label: k === 'unmapped' ? 'NIEZMAPOWANE' : (catalog[k]?.displayName ?? k), ...v }))
+    .map(([k, v]) => ({ label: k === 'unmapped' ? 'UNMAPPED' : (catalog[k]?.displayName ?? k), ...v }))
     .sort((a, b) => b.revenue - a.revenue)
 
   const total = orders.todayHourly?.orders ?? orders.totals.today_orders
   const totalRevenue = orders.todayHourly?.revenue ?? orders.totals.today_revenue
   const lines = [
-    `Rozbicie na produkty — ${orders.today_warsaw}`,
+    `Product breakdown — ${orders.today_warsaw}`,
     '',
     ...(slices.length > 0
-      ? slices.map(s2 => `${s2.label}: ${s2.orders} zam. · ${fmtPln(s2.revenue)}`)
-      : ['(brak zamówień dziś)']),
+      ? slices.map(s2 => `${s2.label}: ${s2.orders} orders · ${fmtPln(s2.revenue)}`)
+      : ['(no orders today)']),
     '─'.repeat(42),
-    `Razem dziś:         ${total} zam. · ${fmtPln(totalRevenue)}`,
+    `Total today:        ${total} orders · ${fmtPln(totalRevenue)}`,
   ]
 
   // Same guard as the range answer: a breakdown that does not add up to its own
@@ -378,14 +378,14 @@ export function buildMemoryBundleAnswer(
   const sumR = slices.reduce((t2, s2) => t2 + s2.revenue, 0)
   if (slices.length > 0 && (sumO !== total || Math.abs(sumR - totalRevenue) > 0.01)) {
     return [
-      `Rozbicie na produkty — ${orders.today_warsaw} — ODRZUCONE`,
+      `Product breakdown — ${orders.today_warsaw} — REJECTED`,
       '',
-      `rozbicie niespójne z sumą: ${sumO} szt. / ${fmtPln(sumR)} vs ${total} zam. / ${fmtPln(totalRevenue)}`,
+      `breakdown does not match the total: ${sumO} pcs / ${fmtPln(sumR)} vs ${total} orders / ${fmtPln(totalRevenue)}`,
       '',
-      'Nie pokażę rozbicia, które nie zgadza się z własną sumą.',
+      'I will not show a breakdown that does not match its own total.',
     ].join('\n')
   }
-  const unmapped = slices.find(s2 => s2.label === 'NIEZMAPOWANE')
+  const unmapped = slices.find(s2 => s2.label === 'UNMAPPED')
   if (unmapped) {
     lines.push('', `⚠  ${unmapped.orders} ${unmapped.orders === 1 ? 'order' : 'orders'} unmapped, margin excluded, sir.`)
     for (const u of (orders.todayHourly?.unmappedNames ?? []).slice(0, 6)) {
@@ -395,7 +395,7 @@ export function buildMemoryBundleAnswer(
   for (const line of nonSaleLines(orders.todayHourly?.nonSale)) lines.push('', line)
   const floor = orders.todayHourly?.belowFloor
   if (floor && floor.orders > 0) {
-    lines.push('', `Odcięte progiem: ${floor.orders} szt. · ${fmtPln(floor.revenue)} (zamówienia testowe).`)
+    lines.push('', `Cut by the threshold: ${floor.orders} pcs · ${fmtPln(floor.revenue)} (test orders).`)
   }
   return lines.join('\n')
 }
@@ -406,21 +406,21 @@ export function buildMemoryBundleSpoken(
 ): string {
   if (!orders || !orders.ok) {
     const ordersClause = perf
-      ? `Widzę ${perf.wix_orders ?? 0} zamówień dziś na ${(perf.wix_revenue ?? 0).toFixed(0)} złotych, ale`
+      ? `I see ${perf.wix_orders ?? 0} orders today for ${(perf.wix_revenue ?? 0).toFixed(0)} zloty, but`
       : 'Lifidi,'
-    return `${ordersClause} endpoint zamówień nie odpowiedział, więc nie mam rozbicia na produkty. Nie zgaduję, ile z nich to Pakiet Pamięciowy.`
+    return `${ordersClause} the orders endpoint did not respond, so I have no product breakdown. I do not guess how many of them are the Memory Pack.`
   }
   const perProduct = orders.todayHourly?.products ?? {}
   const catalog = orders.productCatalog ?? {}
   const slices = Object.entries(perProduct)
-    .map(([k, v]) => ({ label: k === 'unmapped' ? 'niezmapowanych' : (catalog[k]?.displayName ?? k), ...v }))
+    .map(([k, v]) => ({ label: k === 'unmapped' ? 'unmapped' : (catalog[k]?.displayName ?? k), ...v }))
     .sort((a, b) => b.revenue - a.revenue)
   const total = orders.todayHourly?.orders ?? orders.totals.today_orders
   const totalRevenue = orders.todayHourly?.revenue ?? orders.totals.today_revenue
   const parts = slices.length > 0
-    ? [`Dziś ${slices.map(s2 => `${s2.orders} ${s2.label}`).join(', ')}.`]
-    : ['Dziś nie ma jeszcze zamówień.']
-  parts.push(`Razem ${total} zamówień na ${totalRevenue.toFixed(0)} złotych.`)
+    ? [`Today: ${slices.map(s2 => `${s2.orders} ${s2.label}`).join(', ')}.`]
+    : ['There are no orders yet today.']
+  parts.push(`${total} orders in total for ${totalRevenue.toFixed(0)} zloty.`)
   return parts.join(' ')
 }
 
@@ -1762,7 +1762,7 @@ export function buildJsuWeekReport(r: OpsWeekReport | null): string {
     // lay it next to the weekly CPA and the two must not look like they differ.
     for (const c of r.meta.this_week_spend_excluded_campaigns ?? []) {
       lines.push(`  WYKLUCZONE z blended: ${c.campaign} — ${formatZl(c.spend)} `
-        + `(${EXCLUDED_REASON[c.scope as AdScope] ?? 'poza zasięgiem Stanleya'})`)
+        + `(${EXCLUDED_REASON[c.scope as AdScope] ?? 'outside Stanley\'s reach'})`)
     }
   }
 
@@ -2145,10 +2145,10 @@ function noMarginNote(d: ProfitData): string {
   return [
     '',
     `⚠  ${count} ${count === 1 ? 'order' : 'orders'} unmapped, margin excluded, sir.`,
-    `   Przychód bez marży: ${fmtPln(d.noMarginRevenue ?? d.unknownRevenue)}.`,
+    `   Revenue without margin: ${fmtPln(d.noMarginRevenue ?? d.unknownRevenue)}.`,
     fields.length > 0
-      ? `   Nie dopasowano po: ${fields.join(' | ')}`
-      : '   Pole dopasowania nieraportowane przez backend.',
+      ? `   Not matched on: ${fields.join(' | ')}`
+      : '   The backend did not report the matching field.',
   ].join('\n')
 }
 
@@ -2162,60 +2162,60 @@ function noMarginNote(d: ProfitData): string {
  */
 function nonSaleLines(nonSale: Record<string, number> | undefined): string[] {
   const why: Record<string, string> = {
-    empty_cart:   'pozycja odznaczona w formularzu Wix — nic nie wysłano, zero kosztu',
-    lead_magnet:  'darmowe pobranie',
-    admin_access: 'ręczne nadania dostępu dla osób, które zapłaciły poza sklepem',
+    empty_cart:   'item unticked in the Wix form — nothing was shipped, zero cost',
+    lead_magnet:  'free download',
+    admin_access: 'manual access grants for people who paid outside the shop',
   }
   return Object.entries(nonSale ?? {})
     .filter(([, n]) => n > 0)
     .sort((a, b) => b[1] - a[1])
-    .map(([cat, n]) => `${NON_SALE_LABELS[cat as keyof typeof NON_SALE_LABELS] ?? cat}: ${n} szt. `
-      + `(${why[cat] ?? 'nie sprzedaż'} — poza przychodem i marżą).`)
+    .map(([cat, n]) => `${NON_SALE_LABELS[cat as keyof typeof NON_SALE_LABELS] ?? cat}: ${n} pcs `
+      + `(${why[cat] ?? 'not a sale'} — outside revenue and margin).`)
 }
 
 function profitVerdict(profit: number, ordersCount: number): string {
-  if (ordersCount === 0) return 'Brak zamówień dziś.'
-  if (profit >= 500)     return 'Dobry dzień — wyraźnie do przodu.'
-  if (profit >= 100)     return 'To żyje, ale nie jest jeszcze powód, żeby stawiać Mecie pomnik z paragonów.'
-  if (profit >= 0)       return 'Wychodzi na zero. Marża pokrywa reklamę na styk.'
-  return 'Dziś dokładamy do interesu. Sprawdź kampanie i wróć tu za godzinę.'
+  if (ordersCount === 0) return 'No orders today.'
+  if (profit >= 500)     return 'A good day — clearly ahead.'
+  if (profit >= 100)     return 'It is alive, but no reason yet to build Meta a monument out of receipts.'
+  if (profit >= 0)       return 'Break-even. The margin only just covers the ads.'
+  return 'We are subsidising the business today. Check the campaigns and come back in an hour.'
 }
 
 export function buildProfitAnswer(d: ProfitData | null): GieniuResponse {
   if (!d || !d.ok) {
-    const err = (d as ProfitData | null)?.error ?? 'brak danych'
+    const err = (d as ProfitData | null)?.error ?? 'no data'
     return wrapResponse(
-      `Szacowany zysk — błąd danych\n\nNie można wyliczyć zysku: ${err}`,
-      'Nie mam danych o zysku na dziś.',
+      `Estimated profit — data error\n\nCannot calculate the profit: ${err}`,
+      "I don't have the profit data for today.",
     )
   }
 
   const breakdownLines = d.productBreakdown.map(p => {
     const margin = p.contributionMargin != null
-      ? `${p.orders} × ${p.contributionMargin} PLN = ${fmtPln(p.marginTotal)} marży`
-      : `${p.orders} zamówień — marża niezdefiniowana`
+      ? `${p.orders} × ${p.contributionMargin} PLN = ${fmtPln(p.marginTotal)} margin`
+      : `${p.orders} orders — margin undefined`
     return `  • ${p.displayName}: ${margin}`
   }).join('\n')
 
   const unmappedNote = noMarginNote(d)
 
   const display = [
-    `Szacowany zysk — ${d.dateWarsaw}`,
+    `Estimated profit — ${d.dateWarsaw}`,
     '',
-    `Zamówienia:         ${d.ordersCount}`,
-    `Przychód:           ${fmtPln(d.revenue)}`,
-    `Marża przed reklamą: ${fmtPln(d.marginBeforeAds)}`,
+    `Orders:             ${d.ordersCount}`,
+    `Revenue:            ${fmtPln(d.revenue)}`,
+    `Margin before ads: ${fmtPln(d.marginBeforeAds)}`,
     `Ad Spend (blended): ${fmtPln(d.adSpend)} (${d.adSpendSource})`,
     ...(d.adSpendExcludedLines ?? []).map(l => `                    ${l}`),
     ...(d.adSpendSplitAvailable === false
-      ? ['                    podział blended / wyłączone NIEDOSTĘPNY — wydatek może zawierać Cogni']
+      ? ['                    blended / excluded split UNAVAILABLE — the spend may include Cogni']
       : []),
     '─'.repeat(42),
-    `Szacowany zysk${d.estimatedProfitBasis ? ` (${d.estimatedProfitBasis})` : ''}: ${fmtPln(d.estimatedProfitAfterAds)}`,
-    `Zysk / zamówienie:  ${fmtPln(d.estimatedProfitPerOrder)}`,
+    `Estimated profit${d.estimatedProfitBasis ? ` (${d.estimatedProfitBasis})` : ''}: ${fmtPln(d.estimatedProfitAfterAds)}`,
+    `Profit / order:     ${fmtPln(d.estimatedProfitPerOrder)}`,
     '',
-    'Produkty:',
-    breakdownLines || '  (brak zamówień)',
+    'Products:',
+    breakdownLines || '  (no orders)',
     unmappedNote,
     '',
     profitVerdict(d.estimatedProfitAfterAds, d.ordersCount),
@@ -2229,19 +2229,19 @@ export function buildProfitAnswer(d: ProfitData | null): GieniuResponse {
 export function buildProfitSpoken(d: ProfitData | null): string {
   if (!d || !d.ok || d.ordersCount === 0) {
     return d?.ordersCount === 0
-      ? 'Brak zamówień dziś — nie ma z czego liczyć zysku.'
-      : 'Nie mam danych o zysku na dziś.'
+      ? 'No orders today — there is nothing to calculate a profit from.'
+      : "I don't have the profit data for today."
   }
 
   const parts: string[] = [
-    `Dziś mamy ${d.ordersCount} zamówień i ${fmtPln(d.revenue)} przychodu.`,
-    `Zmapowana marża to ${fmtPln(d.marginBeforeAds)}.`,
-    `Meta wydała ${fmtPln(d.adSpend)}${(d.adSpendExcluded ?? 0) > 0 ? ' bez Cogni' : ''}, więc szacowany zysk po reklamie to ${fmtPln(d.estimatedProfitAfterAds)}.`,
+    `Today we have ${d.ordersCount} orders and ${fmtPln(d.revenue)} revenue.`,
+    `The mapped margin is ${fmtPln(d.marginBeforeAds)}.`,
+    `Meta spent ${fmtPln(d.adSpend)}${(d.adSpendExcluded ?? 0) > 0 ? ' without Cogni' : ''}, so the estimated profit after ads is ${fmtPln(d.estimatedProfitAfterAds)}.`,
   ]
   if ((d.adSpendExcluded ?? 0) > 0) {
     parts.push(
-      `Wydatek Cogni, ${fmtPln(d.adSpendExcluded)}, jest wyłączony z zysku i CPA: przychód Cogni jest w Stripe, `
-      + 'poza moim zasięgiem. Luka: brak przychodu Stripe w bazie.',
+      `The Cogni spend, ${fmtPln(d.adSpendExcluded)}, is excluded from profit and CPA: Cogni revenue is in Stripe, `
+      + 'outside my reach. Gap: no Stripe revenue in the database.',
     )
   }
 
@@ -2249,8 +2249,8 @@ export function buildProfitSpoken(d: ProfitData | null): string {
   if (noMargin > 0) {
     parts.push(
       `${noMargin} ${noMargin === 1 ? 'order' : 'orders'} unmapped, margin excluded, sir.`,
-      `Nie dopasowałem po: ${(d.noMarginFields ?? ['brak informacji o polu']).join(', ')}.`,
-      `To ${fmtPln(d.noMarginRevenue ?? d.unknownRevenue)} przychodu bez marży — zysk jest policzony tylko z zamówień zmapowanych.`,
+      `I could not match on: ${(d.noMarginFields ?? ['no field information']).join(', ')}.`,
+      `That is ${fmtPln(d.noMarginRevenue ?? d.unknownRevenue)} of revenue without margin — the profit is calculated from mapped orders only.`,
     )
   }
 
@@ -2277,10 +2277,10 @@ import { checkBreakdownConsistency } from '../lib/orderWindow'
 export function buildOrdersInRangeAnswer(w: OrderWindow | null, label: string): string {
   if (!w) {
     return [
-      `Zamówienia ${label} — brak źródła`,
+      `Orders ${label} — no source`,
       '',
-      'BRAK DANYCH: orders-data.dailySeries — nie mam serii dobowej, więc nie policzę',
-      'zamówień w tym zakresie. Nie zgaduję.',
+      'NO DATA: orders-data.dailySeries — I have no daily series, so I cannot count',
+      'the orders in this range. I do not guess.',
     ].join('\n')
   }
 
@@ -2294,56 +2294,56 @@ export function buildOrdersInRangeAnswer(w: OrderWindow | null, label: string): 
   const consistency = checkBreakdownConsistency(w)
   if (!consistency.ok) {
     // eslint-disable-next-line no-console
-    console.error('[orders_in_range] rozbicie odrzucone:', consistency.reason, w)
+    console.error('[orders_in_range] breakdown rejected:', consistency.reason, w)
     return [
-      `Zamówienia ${w.from} – ${w.to} — ROZBICIE ODRZUCONE`,
+      `Orders ${w.from} – ${w.to} — BREAKDOWN REJECTED`,
       '',
-      consistency.reason ?? 'rozbicie niespójne z sumą',
+      consistency.reason ?? 'breakdown does not match the total',
       '',
-      'Nie pokażę rozbicia, które nie zgadza się z własną sumą. Surowe liczby:',
-      `  zamówień: ${w.orders}`,
-      `  przychód: ${w.revenue.toFixed(2)} PLN`,
+      'I will not show a breakdown that does not match its own total. Raw figures:',
+      `  orders: ${w.orders}`,
+      `  revenue: ${w.revenue.toFixed(2)} PLN`,
       '',
-      'Pozycje rozbicia, które się nie zsumowały:',
-      ...w.products.map(p => `  ${p.displayName}: ${p.orders} szt. · ${p.revenue.toFixed(2)} PLN`),
+      'Breakdown items that did not add up:',
+      ...w.products.map(p => `  ${p.displayName}: ${p.orders} pcs · ${p.revenue.toFixed(2)} PLN`),
     ].join('\n')
   }
 
   const lines = [
-    `Zamówienia ${w.from} – ${w.to} (${w.days.length} ${w.days.length === 1 ? 'doba' : 'doby'}, oba końce włącznie)`,
+    `Orders ${w.from} – ${w.to} (${w.days.length} ${w.days.length === 1 ? 'day' : 'days'}, both ends included)`,
     '',
-    `Razem: ${w.orders} zamówień · ${w.revenue.toFixed(2)} PLN`,
+    `Total: ${w.orders} orders · ${w.revenue.toFixed(2)} PLN`,
   ]
 
   // The breakdown iterates whatever the window carries — no product list is
   // written down here, so a product added to productCatalog.js appears without
   // anyone editing this template, and one that matches nothing shows up as
-  // NIEZMAPOWANE with its raw Wix name instead of disappearing.
+  // UNMAPPED with its raw Wix name instead of disappearing.
   if (w.products.length > 0) {
-    lines.push('', 'Rozbicie per produkt:')
+    lines.push('', 'Breakdown per product:')
     for (const p of w.products) {
-      lines.push(`  ${p.displayName}: ${p.orders} szt. · ${p.revenue.toFixed(2)} PLN`)
+      lines.push(`  ${p.displayName}: ${p.orders} pcs · ${p.revenue.toFixed(2)} PLN`)
     }
-    lines.push(`  ——— razem: ${w.products.reduce((t, p) => t + p.orders, 0)} szt. · `
+    lines.push(`  ——— total: ${w.products.reduce((t, p) => t + p.orders, 0)} pcs · `
       + `${w.products.reduce((t, p) => t + p.revenue, 0).toFixed(2)} PLN`)
   }
 
   if (w.unmappedNames.length > 0) {
-    lines.push('', 'NIEZMAPOWANE — surowe nazwy z Wix (nic nie jest podstawiane pod inny produkt):')
+    lines.push('', 'UNMAPPED — raw names from Wix (nothing is substituted for another product):')
     for (const u of w.unmappedNames.slice(0, 12)) {
       lines.push(`  ${u.amount.toFixed(2)} PLN — "${String(u.name).replace(/\n/g, ' / ').slice(0, 70)}"`)
     }
-    if (w.unmappedNames.length > 12) lines.push(`  …+${w.unmappedNames.length - 12} więcej`)
+    if (w.unmappedNames.length > 12) lines.push(`  …+${w.unmappedNames.length - 12} more`)
   }
 
   // Manual grants and test orders are two different things and get two
-  // different lines. Both used to come out as "odcięte progiem", which told
+  // different lines. Both used to come out as "cut by the threshold", which told
   // somebody that a sale had nearly happened when a door had been opened.
   for (const line of nonSaleLines(w.nonSale)) lines.push('', line)
 
   if (w.belowFloor.orders > 0) {
-    lines.push('', `Odcięte progiem: ${w.belowFloor.orders} szt. · ${w.belowFloor.revenue.toFixed(2)} PLN `
-      + '(zamówienia testowe poniżej progu — nie wchodzą do sum wyżej).')
+    lines.push('', `Cut by the threshold: ${w.belowFloor.orders} pcs · ${w.belowFloor.revenue.toFixed(2)} PLN `
+      + '(test orders below the threshold — not included in the totals above).')
   }
 
   // The in-progress day is never passed off as a full one, and never silently
@@ -2351,60 +2351,60 @@ export function buildOrdersInRangeAnswer(w: OrderWindow | null, label: string): 
   if (w.partialDay) {
     lines.push(
       '',
-      `UWAGA: ${w.partialDay.date} to doba W TOKU — stan na ${String(w.partialDay.hour).padStart(2, '0')}:00,`,
-      `${w.partialDay.orders} ${w.partialDay.orders === 1 ? 'zamówienie' : 'zamówień'}. Ta doba jeszcze się nie skończyła,`,
-      'więc suma wyżej nie jest sumą pełnych dób.',
-      `Pełne doby w zakresie: ${w.days.length - 1} · ${w.orders - w.partialDay.orders} zamówień.`,
+      `NOTE: ${w.partialDay.date} is a day IN PROGRESS — as of ${String(w.partialDay.hour).padStart(2, '0')}:00,`,
+      `${w.partialDay.orders} ${w.partialDay.orders === 1 ? 'order' : 'orders'}. That day has not ended yet,`,
+      'so the total above is not a sum of full days.',
+      `Full days in the range: ${w.days.length - 1} · ${w.orders - w.partialDay.orders} orders.`,
     )
   }
 
   if (w.missingDays.length > 0) {
     lines.push(
       '',
-      `BRAK DANYCH: orders — ${w.missingDays.length} ${w.missingDays.length === 1 ? 'doba' : 'doby'} bez ani jednego wiersza:`,
+      `NO DATA: orders — ${w.missingDays.length} ${w.missingDays.length === 1 ? 'day' : 'days'} without a single row:`,
       `  ${w.missingDays.join(', ')}`,
-      'Sprawdź w Wix, czy to zero sprzedaży, czy zacięty sync Make. Te doby liczą się jako 0,',
-      'co może zaniżać sumę.',
+      'Check in Wix whether this is zero sales or a stuck Make sync. These days count as 0,',
+      'which may understate the total.',
     )
   }
 
   if (w.outOfRangeDays.length > 0) {
     lines.push(
       '',
-      `BRAK DANYCH: orders-data.dailySeries nie sięga tak daleko wstecz — ${w.outOfRangeDays.length} dób`,
-      `poza oknem serii (${w.outOfRangeDays[0]} … ${w.outOfRangeDays[w.outOfRangeDays.length - 1]}).`,
-      'Nie są wliczone, więc suma jest NIEPEŁNA.',
+      `NO DATA: orders-data.dailySeries does not reach back that far — ${w.outOfRangeDays.length} days`,
+      `outside the series window (${w.outOfRangeDays[0]} … ${w.outOfRangeDays[w.outOfRangeDays.length - 1]}).`,
+      'They are not included, so the total is INCOMPLETE.',
     )
   }
 
   lines.push(
     '',
-    `Liczone po dobie Europe/Warsaw, oba końce włącznie. Zamówienia opłacone powyżej progu`,
-    `zamówienia testowego. To liczba surowa — nic nie jest odejmowane za niezmapowane`,
-    'produkty ani za WSZTP; te pozycje widać osobno na karcie EST. PROFIT.',
+    `Counted per Europe/Warsaw day, both ends included. Orders paid above the test-order`,
+    `threshold. This is a raw figure — nothing is subtracted for unmapped`,
+    'products or for WSZTP; those items are shown separately on the EST. PROFIT card.',
   )
 
   return lines.join('\n')
 }
 
 export function buildOrdersInRangeSpoken(w: OrderWindow | null): string {
-  if (!w) return 'Nie mam serii dobowej, więc nie policzę zamówień w tym zakresie, sir.'
+  if (!w) return 'I have no daily series, so I cannot count the orders in this range, sir.'
   if (!checkBreakdownConsistency(w).ok) {
-    return `Rozbicie nie zgadza się z własną sumą, sir, więc go nie podam. Surowo: `
-      + `${w.orders} zamówień na ${w.revenue.toFixed(0)} złotych.`
+    return `The breakdown does not match its own total, sir, so I will not give it. Raw: `
+      + `${w.orders} orders for ${w.revenue.toFixed(0)} zloty.`
   }
   const parts = [
-    `Między ${w.from} a ${w.to} włącznie mamy ${w.orders} zamówień na ${w.revenue.toFixed(0)} złotych.`,
+    `Between ${w.from} and ${w.to} inclusive we have ${w.orders} orders for ${w.revenue.toFixed(0)} zloty.`,
   ]
   if (w.products.length > 0) {
     parts.push(w.products.map(p => `${p.displayName}: ${p.orders}`).join(', ') + '.')
   }
   if (w.partialDay) {
-    parts.push(`Uwaga: ${w.partialDay.date} jeszcze trwa — to stan na godzinę ${w.partialDay.hour},`
-      + ` ${w.partialDay.orders} zamówień. Pełnych dób jest ${w.days.length - 1}.`)
+    parts.push(`Note: ${w.partialDay.date} is still in progress — this is the state at hour ${w.partialDay.hour},`
+      + ` ${w.partialDay.orders} orders. There are ${w.days.length - 1} full days.`)
   }
   if (w.missingDays.length > 0) {
-    parts.push(`${w.missingDays.length} dób nie ma w ogóle wierszy w bazie — suma może być zaniżona.`)
+    parts.push(`${w.missingDays.length} days have no rows at all in the database — the total may be understated.`)
   }
   return parts.join(' ')
 }

@@ -72,10 +72,10 @@ export function checkBreakdownConsistency(w: OrderWindow): { ok: boolean; reason
   const orders = w.products.reduce((s, p) => s + p.orders, 0)
   const revenue = w.products.reduce((s, p) => s + p.revenue, 0)
   if (orders !== w.orders) {
-    return { ok: false, reason: `rozbicie niespójne z sumą: ${orders} szt. w rozbiciu vs ${w.orders} zamówień` }
+    return { ok: false, reason: `breakdown does not match the total: ${orders} pcs in the breakdown vs ${w.orders} orders` }
   }
   if (Math.abs(revenue - w.revenue) > 0.01) {
-    return { ok: false, reason: `rozbicie niespójne z sumą: ${revenue.toFixed(2)} PLN w rozbiciu vs ${w.revenue.toFixed(2)} PLN przychodu` }
+    return { ok: false, reason: `breakdown does not match the total: ${revenue.toFixed(2)} PLN in the breakdown vs ${w.revenue.toFixed(2)} PLN revenue` }
   }
   return { ok: true, reason: null }
 }
@@ -147,7 +147,7 @@ export function countOrdersInWindow(data: OrdersData | null, from: string, to: s
   const products: ProductSlice[] = [...byProduct.entries()]
     .map(([key, v]) => ({
       key,
-      displayName: key === 'unmapped' ? 'NIEZMAPOWANE' : (catalog[key]?.displayName ?? key),
+      displayName: key === 'unmapped' ? 'UNMAPPED' : (catalog[key]?.displayName ?? key),
       orders: v.orders,
       revenue: v.revenue,
     }))
@@ -444,11 +444,11 @@ export function assessSyncHealth(createdAt: string[]): SyncHealth {
     worst: backlogWindows[0] ?? null,
     ordersPerHourCeiling: SYNC_ORDERS_PER_HOUR,
     note: backlogWindows.length === 0
-      ? `Brak okien z zaległością. Sufit synchronizacji to ${SYNC_ORDERS_PER_HOUR} zamówienia/h.`
-      : `${backlogWindows.length} okien 15-min, w których zamówienia wpływały szybciej, niż sync `
-        + `je zapisuje (sufit: ${SYNC_ROWS_PER_RUN} wiersz na przebieg co ${SYNC_RUN_INTERVAL_MIN} min `
-        + `= ${SYNC_ORDERS_PER_HOUR} zam./h). Ile wierszy przepadło, NIE DA SIĘ policzyć z samej bazy: `
-        + 'niezapisany wiersz nie zostawia śladu, a orders nie ma numeru zamówienia, w którym '
-        + 'można by szukać luki. Porównaj te okna z eksportem Wix.',
+      ? `No backlog windows. The sync ceiling is ${SYNC_ORDERS_PER_HOUR} orders/h.`
+      : `${backlogWindows.length} 15-min windows in which orders arrived faster than the sync `
+        + `writes them (ceiling: ${SYNC_ROWS_PER_RUN} row per run every ${SYNC_RUN_INTERVAL_MIN} min `
+        + `= ${SYNC_ORDERS_PER_HOUR} orders/h). How many rows were lost CANNOT be counted from the database alone: `
+        + 'an unsaved row leaves no trace, and orders has no order number in which '
+        + 'a gap could be found. Compare these windows with the Wix export.',
   }
 }

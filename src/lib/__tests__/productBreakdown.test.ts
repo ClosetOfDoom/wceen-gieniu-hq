@@ -85,15 +85,15 @@ describe('TEST 1: 2026-10-17 against the Wix truth table', () => {
 
   it('reports the orders the test floor removed instead of losing them', () => {
     expect(w.belowFloor.orders).toBe(2)
-    expect(buildOrdersInRangeAnswer(w, '17.10')).toContain('Odcięte progiem: 2 szt.')
+    expect(buildOrdersInRangeAnswer(w, '17.10')).toContain('Cut by the threshold: 2 pcs')
   })
 
   it('prints every product in the answer, with the total restated', () => {
     const text = buildOrdersInRangeAnswer(w, '17.10')
-    expect(text).toContain('Pakiet Pamięciowy: 13 szt. · 1547.00 PLN')
-    expect(text).toContain('Kurs Jak się uczyć: 4 szt. · 2196.00 PLN')
-    expect(text).toContain('Pakiet Językowy 3T: 1 szt. · 114.00 PLN')
-    expect(text).toContain('razem: 18 szt. · 3857.00 PLN')
+    expect(text).toContain('Pakiet Pamięciowy: 13 pcs · 1547.00 PLN')
+    expect(text).toContain('Kurs Jak się uczyć: 4 pcs · 2196.00 PLN')
+    expect(text).toContain('Pakiet Językowy 3T: 1 pcs · 114.00 PLN')
+    expect(text).toContain('total: 18 pcs · 3857.00 PLN')
   })
 })
 
@@ -107,17 +107,17 @@ describe('TEST 3: the consistency guard rejects a breakdown that does not add up
     // 18 pieces matches, but 2 142 against 3 857 does not.
     const v = checkBreakdownConsistency(broken)
     expect(v.ok).toBe(false)
-    expect(v.reason).toContain('rozbicie niespójne z sumą')
+    expect(v.reason).toContain('breakdown does not match the total')
     expect(v.reason).toContain('2142.00')
     expect(v.reason).toContain('3857.00')
   })
 
   it('refuses to show the answer and shows the raw figures instead', () => {
     const text = buildOrdersInRangeAnswer(broken, '17.10')
-    expect(text).toContain('ROZBICIE ODRZUCONE')
-    expect(text).toContain('rozbicie niespójne z sumą')
-    expect(text).toContain('zamówień: 18')
-    expect(text).toContain('przychód: 3857.00 PLN')
+    expect(text).toContain('BREAKDOWN REJECTED')
+    expect(text).toContain('breakdown does not match the total')
+    expect(text).toContain('orders: 18')
+    expect(text).toContain('revenue: 3857.00 PLN')
   })
 
   it('catches a piece-count mismatch too', () => {
@@ -126,7 +126,7 @@ describe('TEST 3: the consistency guard rejects a breakdown that does not add up
     }), '2026-10-17', '2026-10-17')!
     const v = checkBreakdownConsistency(w)
     expect(v.ok).toBe(false)
-    expect(v.reason).toContain('12 szt. w rozbiciu vs 18')
+    expect(v.reason).toContain('12 pcs in the breakdown vs 18')
   })
 })
 
@@ -143,7 +143,7 @@ describe('an unmatched product never disappears and is never substituted', () =>
 
   it('lands in NIEZMAPOWANE, carrying its raw Wix name', () => {
     const u = w.products.find(p => p.key === 'unmapped')!
-    expect(u.displayName).toBe('NIEZMAPOWANE')
+    expect(u.displayName).toBe('UNMAPPED')
     expect(u.orders).toBe(1)
     expect(u.revenue).toBe(45)
     expect(w.unmappedNames[0].name).toBe('Opowieść o skaczącej myszy')
@@ -152,7 +152,7 @@ describe('an unmatched product never disappears and is never substituted', () =>
   it('still reconciles, because it is counted rather than dropped', () => {
     expect(checkBreakdownConsistency(w).ok).toBe(true)
     const text = buildOrdersInRangeAnswer(w, '17.10')
-    expect(text).toContain('NIEZMAPOWANE')
+    expect(text).toContain('UNMAPPED')
     expect(text).toContain('Opowieść o skaczącej myszy')
   })
 })
@@ -168,7 +168,7 @@ describe('the breakdown iterates the catalog', () => {
       }],
     }), '2026-10-17', '2026-10-17')!
     expect(w.products.find(p => p.key === 'cogni_promo')?.displayName).toBe('Cogni rocznie (promo)')
-    expect(buildOrdersInRangeAnswer(w, '17.10')).toContain('Cogni rocznie (promo): 1 szt.')
+    expect(buildOrdersInRangeAnswer(w, '17.10')).toContain('Cogni rocznie (promo): 1 pcs')
   })
 })
 
@@ -212,10 +212,10 @@ describe('sync health — orders arriving faster than the sync drains them', () 
   it('says plainly that the shortfall cannot be computed from Supabase alone', async () => {
     const { assessSyncHealth } = await import('../orderWindow')
     const h = assessSyncHealth(['2026-10-17T18:19:01Z', '2026-10-17T18:19:42Z'])
-    expect(h.note).toContain('NIE DA SIĘ policzyć')
-    expect(h.note).toContain('nie ma numeru zamówienia')
+    expect(h.note).toContain('CANNOT be counted')
+    expect(h.note).toContain('has no order number')
     // It must never state a number of lost rows it cannot know.
-    expect(h.note).not.toMatch(/przepadło \d+/)
+    expect(h.note).not.toMatch(/(lost|dropped) \d+/)
   })
 
   it('a quiet day raises nothing', async () => {
@@ -225,7 +225,7 @@ describe('sync health — orders arriving faster than the sync drains them', () 
     ])
     expect(h.backlogWindows).toHaveLength(0)
     expect(h.worst).toBeNull()
-    expect(h.note).toContain('Brak okien z zaległością')
+    expect(h.note).toContain('No backlog windows')
   })
 
   it('ignores rubbish timestamps instead of bucketing them', async () => {

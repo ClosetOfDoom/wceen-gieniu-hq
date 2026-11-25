@@ -145,9 +145,9 @@ describe('THE INVARIANT — nothing is both unexplained and costing money', () =
 
 describe('one count, carried to the card, the report and Q&A', () => {
   it('the labels live in the catalog, not in three components', () => {
-    expect(NON_SALE_LABELS.empty_cart).toBe('Koszyki 0 zł')
-    expect(NON_SALE_LABELS.lead_magnet).toBe('Lead magnety')
-    expect(NON_SALE_LABELS.admin_access).toBe('Dostęp administracyjny')
+    expect(NON_SALE_LABELS.empty_cart).toBe('Empty carts (0 zł)')
+    expect(NON_SALE_LABELS.lead_magnet).toBe('Lead magnets')
+    expect(NON_SALE_LABELS.admin_access).toBe('Admin access')
   })
 
   it('countOrdersInWindow sums the per-day categories', async () => {
