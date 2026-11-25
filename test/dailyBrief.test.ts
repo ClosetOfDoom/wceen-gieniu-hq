@@ -114,12 +114,26 @@ describe('sections from data only', () => {
     expect(r.speech).toMatch(/Today: .*11:00 Telefon do drukarni/)
   })
 
-  it('mail, poczta (stage 2), plan of the day with tasks, at most 2 questions', async () => {
+  it('connected inbox: the brief says how many access requests wait, in English, with numbers only; a failing inbox is a gap, not a crash', async () => {
+    const ok = renderBrief(await gatherBriefData({ now: WED_0900_CET, deps: deps({ inbox: async () => ({ connected: true, access: 2, unverified: 1, human: 1, sensitive: 0, automated: 9, protected: 3, oldest: '2026-11-23T10:00:00.000Z' }) }) }))
+    const lines = ok.sections.find((s) => s.id === 'poczta')!.lines.join('\n')
+    expect(lines).toContain('2 customer messages about access to a product wait for your approval')
+    expect(lines).toContain('1 without a matching paid order')
+    expect(ok.alerts).toContain('Inbox: 2 access requests waiting for approval')
+    expect(ok.speech).not.toMatch(/@/)
+    const bad = renderBrief(await gatherBriefData({ now: WED_0900_CET, deps: deps({ inbox: async () => { throw new Error('Gmail API HTTP 403 for a.b@c.pl') } }) }))
+    const gap = bad.sections.find((s) => s.id === 'poczta')!.lines.join('\n')
+    expect(gap).toContain('NO DATA: Gmail inbox')
+    expect(gap).not.toContain('a.b@c.pl')
+    expect(bad.gaps.some((g: string) => g.startsWith('NO DATA: Gmail inbox'))).toBe(true)
+  })
+
+  it('mail, inbox (not connected yet), plan of the day with tasks, at most 2 questions', async () => {
     const d = deps()
     await addTask((d as unknown as { kv: Parameters<typeof addTask>[0] }).kv, { tytul: 'Telefon do drukarni', godzina: '11:00', dzien: '2026-11-25' })
     const r = renderBrief(await gatherBriefData({ now: WED_0900_CET, deps: d }))
     expect(r.sections.find((s) => s.id === 'maile')!.lines.join('\n')).toContain('Last send: no production sends in the log.')
-    expect(r.sections.find((s) => s.id === 'poczta')!.lines[0]).toContain('Needs the Google connection (stage 2')
+    expect(r.sections.find((s) => s.id === 'poczta')!.lines[0]).toContain('Google is not connected yet')
     expect(r.sections.find((s) => s.id === 'plan')!.lines).toEqual(['Pillar of the day: Książki (101 drinków i Szanty).', '09:00 Brief dnia', '10:00–12:00 Filar dnia: Książki (101 drinków i Szanty)', '11:00 Telefon do drukarni [task]'])
     expect(r.sections.find((s) => s.id === 'uwaga')!.lines.filter((l) => l.startsWith('Question for Filip')).length).toBe(2)
     expect(zl(1234567.891)).toBe('1 234 567,89 zł')

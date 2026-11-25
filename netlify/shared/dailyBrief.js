@@ -58,6 +58,24 @@ function daysInMonth(date) {
   return new Date(Date.UTC(y, m, 0)).getUTCDate()
 }
 
+/** The INBOX section: numbers only. Customer access questions are the ones Stanley can answer from a template after approval. */
+export function inboxLines(inbox, alerts = [], gap = (source, err) => `NO DATA: ${source}${err ? ` (${err})` : ''}`) {
+  if (!inbox) return ['Inbox: Google is not connected yet. Open the Mail tab and press Connect Google.']
+  if (!inbox.ok) return [gap('Gmail inbox', inbox.error)]
+  const v = inbox.value
+  if (!v || v.connected === false) return ['Inbox: Google is not connected yet. Open the Mail tab and press Connect Google.']
+  const lines = []
+  if (v.access > 0) {
+    lines.push(`${v.access} customer message${v.access === 1 ? '' : 's'} about access to a product wait${v.access === 1 ? 's' : ''} for your approval of a template reply${v.unverified ? ` (${v.unverified} without a matching paid order: check those first)` : ''}.`)
+    alerts.push(`Inbox: ${v.access} access request${v.access === 1 ? '' : 's'} waiting for approval`)
+  } else lines.push('No customer access requests are waiting.')
+  const other = (v.human ?? 0) + (v.sensitive ?? 0)
+  if (other > 0) lines.push(`${other} other message${other === 1 ? '' : 's'} from people wait for you${v.sensitive ? ` (${v.sensitive} about invoices, refunds, legal or tax: Stanley never answers those)` : ''}${v.oldest ? `; the oldest is from ${String(v.oldest).slice(0, 10)}` : ''}.`)
+  else lines.push('No other messages from people are waiting.')
+  lines.push(`Ignored: ${v.automated ?? 0} automated and ${v.protected ?? 0} system, bank or authority messages (nothing is deleted).`)
+  return lines
+}
+
 // ── data ───────────────────────────────────────────────────────────────────────
 
 export async function gatherBriefData({ now, deps }) {
@@ -68,12 +86,13 @@ export async function gatherBriefData({ now, deps }) {
   const monthStart = `${today.slice(0, 8)}01`
   const mtdDays = yesterday.slice(0, 7) === today.slice(0, 7) ? Number(yesterday.slice(8)) : 0
 
-  const [salesY, salesMtd, sales7, ads, mail, tasks, ticks] = await Promise.all([
+  const [salesY, salesMtd, sales7, ads, mail, inbox, tasks, ticks] = await Promise.all([
     safe(() => deps.sales(yesterday, yesterday)),
     mtdDays > 0 ? safe(() => deps.sales(monthStart, yesterday)) : Promise.resolve({ ok: true, value: null }),
     safe(() => deps.sales(from7, yesterday)),
     safe(() => deps.adRows(from7, yesterday)),
     safe(() => mailData(deps.mail, now)),
+    deps.inbox ? safe(() => deps.inbox(now)) : Promise.resolve({ ok: true, value: null }),
     safe(() => listTasks(deps.kv)),
     safe(() => getDayTicks(deps.kv, today)),
   ])
@@ -81,7 +100,7 @@ export async function gatherBriefData({ now, deps }) {
   const plan = k ? dayPlan({ date: today, rhythm: k.rhythm, tasks: tasks.ok ? tasks.value : [], ticks: ticks.ok ? ticks.value : [] }) : null
   return {
     today, yesterday, from7, from3, monthStart, mtdDays, daysInMonth: daysInMonth(today),
-    salesY, salesMtd, sales7, ads, mail, tasksError: tasks.ok ? null : tasks.error, plan,
+    salesY, salesMtd, sales7, ads, mail, inbox, tasksError: tasks.ok ? null : tasks.error, plan,
     questions: k ? questionsForDay(allMissingQuestions(k), today, BRIEF_CONFIG.questionsPerDay) : [],
     knowledgeMissing: !k,
   }
@@ -218,8 +237,8 @@ export function renderBrief(d) {
   }
   sections.push({ id: 'maile', title: '3. WEBINAR MAILS', lines: s3 })
 
-  // 4 — mail (stage 2)
-  sections.push({ id: 'poczta', title: '4. INBOX', lines: ['Needs the Google connection (stage 2, plan in docs/brief-poczta.md).'] })
+  // 4 — inbox (Gmail triage: counts only, no addresses, no subjects)
+  sections.push({ id: 'poczta', title: '4. INBOX', lines: inboxLines(d.inbox, alerts, gap) })
 
   // 5 — plan of the day
   const s5 = []

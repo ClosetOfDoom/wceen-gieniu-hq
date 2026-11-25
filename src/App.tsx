@@ -14,6 +14,7 @@ import { StatusBadge } from './components/StatusBadge'
 import { GieniuAvatar } from './components/GieniuAvatar'
 import { WebinarFunnelPanel } from './components/WebinarFunnelPanel'
 import { WebinarMailPanel, MailAlertLines, useWebinarMailAlerts } from './components/WebinarMailPanel'
+import { MailPanel } from './components/MailPanel'
 import { RevenueTrendChart } from './components/RevenueTrendChart'
 import { InsightChart } from './components/InsightChart'
 import { CampaignsPanel } from './components/CampaignsPanel'
@@ -106,6 +107,7 @@ type NavSection =
   | 'campaigns'
   | 'webinars'
   | 'webinar-mails'
+  | 'inbox'
   | 'diagnostics'
 
 // Format helpers live in src/utils/format.ts so the clipboard export prints the
@@ -118,6 +120,7 @@ const NAV_ITEMS: { key: NavSection; icon: string; label: string }[] = [
   { key: 'campaigns',      icon: '📜', label: 'Campaigns'       },
   { key: 'webinars',       icon: '🎙', label: 'Webinars'        },
   { key: 'webinar-mails',  icon: '✉',  label: 'Maile webinarowe' },
+  { key: 'inbox',          icon: '📥', label: 'Mail'            },
   { key: 'diagnostics',    icon: '🔬', label: 'Diagnostics'     },
 ]
 
@@ -191,6 +194,7 @@ const MOBILE_NAV_ITEMS: { key: NavSection; icon: string; label: string }[] = [
   { key: 'campaigns',      icon: '📜', label: 'Campaigns'  },
   { key: 'webinars',       icon: '🎙', label: 'Webinars'   },
   { key: 'webinar-mails',  icon: '✉',  label: 'Maile'      },
+  { key: 'inbox',          icon: '📥', label: 'Inbox'      },
   { key: 'diagnostics',    icon: '🔬', label: 'Status'     },
 ]
 
@@ -2226,6 +2230,13 @@ export default function App() {
           {section === 'webinar-mails' && (
             <div className="panel-illuminate card">
               <WebinarMailPanel />
+            </div>
+          )}
+
+          {/* ── INBOX (Gmail triage, approved replies) ─────────────── */}
+          {section === 'inbox' && (
+            <div className="panel-illuminate card">
+              <MailPanel />
             </div>
           )}
 

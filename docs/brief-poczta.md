@@ -1,3 +1,22 @@
+# Poczta (Gmail): wdrożone 2026-11-25 (etap 2a), kalendarz nadal plan
+
+**Co działa (kod w repo, czeka na jednorazowe połączenie Google):**
+- Zakładka **Inbox**: "Connect Google" (OAuth, aplikacja typu **Internal** w Google Workspace fundacji, zakresy tylko `gmail.modify` + `gmail.send`).
+  Funkcje: `mail-admin` (za hasłem), `mail-oauth-callback` (chroniony podpisanym `state`, HMAC, 10 min). Tokeny w Blobs (`google/tokens`).
+- Triage skrzynki po nagłówkach i fragmencie (bez treści): automaty i promocje, nadawcy systemowi / banki / urzędy / billing (nigdy), tematy wrażliwe
+  (faktury, zwroty, reklamacje, RODO, podatki: tylko do Filipa), prośby o dostęp do produktu: sugerowany szablon z `HTMLS/PAKIETY.html`
+  (wygenerowany do `netlify/shared/replyTemplates.js` przez `scripts/import-reply-templates.mjs`).
+- Odpowiedź wychodzi **tylko po kliknięciu "Approve and send"** (podgląd, potwierdzenie), jedna na wiadomość (claim + etykieta `STANLEY/replied`),
+  serwer sam czyta wiadomość ponownie, przeglądarka wysyła tylko id wiadomości i szablonu. Kupujący sprawdzany w tabeli zamówień po adresie, do którego pójdzie odpowiedź;
+  bez zamówienia trzeba zaznaczyć "send anyway". Językozak AI wymaga kodu aktywacyjnego wpisanego przez Filipa.
+- Nic nie jest kasowane ani przenoszone do Kosza (nie ma takiego wywołania w kodzie). Brief 09:00: sekcja 4 podaje liczby (bez adresów i tematów), po angielsku.
+
+**Zmienne Netlify:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. Redirect URI: `<adres strony>/.netlify/functions/mail-oauth-callback`.
+
+**Nie zrobione:** sprzątanie do Kosza (poniżej, plan), kalendarz, automatyczny dobór kodu Językozak z arkusza JEZYKOZAK-KLUCZE, kontaktowe maile z formularza Wix (nadawca wix.com jest "systemowy").
+
+---
+
 # Brief: poczta i kalendarz Google (etap 2, PLAN, niewdrożone)
 
 Stan na 2026-11-24: **nic z tego nie jest zaimplementowane.** Sekcja 4 briefu 09:00 pisze „Poczta: wymaga połączenia Google (etap 2)”.

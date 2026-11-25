@@ -31,6 +31,15 @@ for (const f of readdirSync(fnDir).filter((n) => n.endsWith('.js')).sort()) {
     else pass(`${f}: PUBLIC read-only endpoint (v2), on the allow-list`)
     continue
   }
+  // The Google OAuth callback is a plain browser redirect (no password header possible). It is allowed only because it
+  // refuses everything without a valid signed `state` (minted by the authenticated mail-admin 'connect-url').
+  if (v2 && f === 'mail-oauth-callback.js') {
+    if (!/verifyState\(url\.searchParams\.get\('state'\), env\.STANLEY_ACCESS_TOKEN\)/.test(s)) fail(`${f}: must verify the signed state before anything else`)
+    else if (s.indexOf('verifyState(') > s.indexOf('exchangeCode(')) fail(`${f}: the state check must come before the code exchange`)
+    else if (/Access-Control-Allow-Origin['"]?\s*:\s*['"]\*/.test(s)) fail(`${f}: wildcard CORS origin`)
+    else pass(`${f}: OAuth callback, protected by the signed state (HMAC, 10 min), checked before the code exchange`)
+    continue
+  }
   if (v2 && !/export default withStanleyAuthV2\(/.test(s)) fail(`${f}: v2 function is not wrapped in withStanleyAuthV2`)
   else if (v1 && !/export const handler = withStanleyAuth\(/.test(s)) fail(`${f}: handler is not wrapped in withStanleyAuth`)
   else if (/Access-Control-Allow-Origin['"]?\s*:\s*['"]\*/.test(s)) fail(`${f}: wildcard CORS origin`)
