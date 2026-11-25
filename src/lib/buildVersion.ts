@@ -7,6 +7,8 @@
 // the server hash it already reloaded for, so a reload that still comes up old (e.g. a CDN lag) does not reload again.
 // Without working storage it never reloads (a reload it cannot remember could loop).
 
+import { isSpeaking } from './speechGate'
+
 export const RELOAD_GUARD_KEY = 'stanley.reloadedForBuild'
 
 export type ReloadDecision = 'none' | 'reload'
@@ -24,10 +26,12 @@ export interface BuildCheckDeps {
   storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null
   updateServiceWorker: () => Promise<void>
   reload: () => void
+  /** True while Stanley is speaking: a reload then would cut his voice off mid-sentence, so it waits. */
+  isBusy?: () => boolean
 }
 
-/** One check: returns what it did. */
-export async function checkBuild(local: string, deps: BuildCheckDeps): Promise<'same' | 'reloaded' | 'skipped' | 'error'> {
+/** One check: returns what it did ('busy' = an update is waiting for Stanley to finish speaking). */
+export async function checkBuild(local: string, deps: BuildCheckDeps): Promise<'same' | 'reloaded' | 'skipped' | 'error' | 'busy'> {
   let server: string | null
   try { server = await deps.fetchVersion() } catch { return 'error' }
   if (!server) return 'error'
@@ -40,6 +44,7 @@ export async function checkBuild(local: string, deps: BuildCheckDeps): Promise<'
     return server === local ? 'same' : 'skipped'
   }
   if (decideReload({ local, server, reloadedFor }) !== 'reload') return 'skipped'
+  if (deps.isBusy?.()) return 'busy'   // before the guard is written: the reload still happens, just not now
   try { deps.storage.setItem(RELOAD_GUARD_KEY, server) } catch { return 'skipped' }   // cannot remember → no reload
   try { await deps.updateServiceWorker() } catch { /* reload anyway: the network has the new index */ }
   deps.reload()
@@ -72,16 +77,22 @@ export function browserBuildCheckDeps(): BuildCheckDeps {
       }
     },
     reload: () => window.location.reload(),
+    isBusy: () => isSpeaking(),
   }
 }
 
 /** Check at start and on every return to the tab. Returns a cleanup. */
 export function installBuildWatcher(local: string, deps: BuildCheckDeps = browserBuildCheckDeps()): () => void {
   let running = false
+  let retries = 0
   const run = () => {
     if (running) return
     running = true
-    checkBuild(local, deps).catch(() => 'error').finally(() => { running = false })
+    checkBuild(local, deps).catch((): 'error' => 'error').then((result) => {
+      running = false
+      // Stanley is speaking: ask again in a few seconds (for at most 20 minutes) instead of cutting him off.
+      if (result === 'busy' && retries++ < 240) setTimeout(run, 5000)
+    })
   }
   const onVisible = () => { if (document.visibilityState === 'visible') run() }
   run()

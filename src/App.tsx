@@ -64,6 +64,8 @@ import {
   resetVoiceState,
 } from './voice/tts'
 import { fetchGieniuCommand, type GieniuCommandContext } from './lib/gieniuCommand'
+import { fetchLatestBrief, type DailyBrief } from './services/stanleyBrief'
+import { HISTORY_MAX_MESSAGES, HISTORY_WINDOW_MS, type ChatMessage } from '../netlify/shared/chatHistory.js'
 import { enforceRefusal } from './lib/refusalGuard'
 import { textToSpeak } from './lib/financeSpeech'
 import { FinanceAnswer } from './components/FinanceAnswer'
@@ -71,7 +73,7 @@ import type { FinanceBlock } from '../netlify/shared/financeBlocks.js'
 import {
   startListening, type SttResult,
 } from './voice/stt'
-import { isSpeaking as sttIsStanleySpeaking } from './lib/speechGate'
+import { isSpeaking as sttIsStanleySpeaking, onSpeechChange } from './lib/speechGate'
 
 import { RangeSwitcher } from './components/RangeSwitcher'
 import { KpiDetailChart } from './components/KpiDetailChart'
@@ -93,6 +95,9 @@ import { logout } from './lib/stanleyAuth'
 function isDayResultQuery(q: string): boolean {
   return /\b(today|dzisiaj|morning brief|brief|how are we doing|wyniki|roas dnia|jak idzie|jak posz|podsumowanie|results|how did we do|daily|dziś)\b/i.test(q)
 }
+
+/** localStorage: the date of the brief Stanley has already said (one spoken brief per day). */
+const BRIEF_SPOKEN_KEY = 'stanley.briefSpokenFor'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -729,6 +734,11 @@ export default function App() {
   const webinarMailRed = webinarMailAlerts.filter(a => a.severity === 'red')
   // Reel Publisher: the signed preview waiting for Filip's "yes" (null when nothing waits).
   const pendingPublisherRef = useRef<string | null>(null)
+  // The conversation so far (sent with every question; the gateway keeps no memory of its own).
+  const chatHistoryRef = useRef<ChatMessage[]>([])
+  // "speaking" follows the real audio (the speech gate is raised for the whole utterance), so the orb, the Stop buttons
+  // and the mic guard agree with what is actually being heard.
+  useEffect(() => onSpeechChange(setSpeaking), [])
   const [range, setRange] = useState<TimeRange>('today')   // panel-wide time range
   // Which KPI card is expanded into a time-series / breakdown chart below the grid.
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null)
@@ -1047,6 +1057,68 @@ export default function App() {
 
   // ── Stop speaking ────────────────────────────────────────────────────────────
 
+  // ── The daily brief: Stanley says it on his own, once a day ───────────────────
+  // The 09:00 brief is saved by the server. When today's is there and has not been spoken yet, Stanley plays it.
+  // A browser lets audio start only after a user gesture, so: if the page has already had one (the voice is
+  // unlocked) he starts at once; otherwise the first tap on an empty part of the page starts it, and a banner says so.
+  const [briefReady, setBriefReady] = useState<DailyBrief | null>(null)
+  const briefPlayingRef = useRef(false)
+  const briefDismissedRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const today = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date())
+    const spokenFor = () => { try { return window.localStorage.getItem(BRIEF_SPOKEN_KEY) } catch { return null } }
+    const check = async () => {
+      if (cancelled || spokenFor() === today()) return
+      try {
+        const b = await fetchLatestBrief()
+        if (!cancelled && b && b.date === today() && b.speech?.trim() && spokenFor() !== b.date && briefDismissedRef.current !== b.date) setBriefReady(b)
+      } catch { /* the brief card on HOME shows load errors */ }
+    }
+    check()
+    const id = window.setInterval(check, 5 * 60 * 1000)
+    return () => { cancelled = true; window.clearInterval(id) }
+  }, [])
+
+  async function startBrief() {
+    const b = briefReady
+    if (!b || briefPlayingRef.current || muted) return
+    briefPlayingRef.current = true
+    prewarmAudio()
+    unlockAudioPlayback()
+    voiceUnlockedRef.current = true
+    setVoiceUnlocked(true)
+    const session = ++ttsSessionRef.current
+    setTtsError('')
+    setSpeaking(true)
+    const res = await speak(b.speech)
+    briefPlayingRef.current = false
+    if (ttsSessionRef.current !== session) return
+    if (!sttIsStanleySpeaking()) setSpeaking(false)
+    if (res.ok) {
+      // spoken (playback started): not again today
+      try { window.localStorage.setItem(BRIEF_SPOKEN_KEY, b.date) } catch { /* storage blocked: it may play again after a reload */ }
+      setBriefReady(null)
+    } else if (!res.aborted) {
+      setTtsError(res.error ?? 'unknown error')   // blocked autoplay etc.: the banner stays, a tap on it plays the brief
+    }
+  }
+
+  useEffect(() => {
+    if (!briefReady || muted) return
+    // The voice is already unlocked in this page and he is not mid-sentence: start now.
+    if (voiceUnlockedRef.current && !sttIsStanleySpeaking()) { void startBrief(); return }
+    const onTap = (e: Event) => {
+      const t = e.target as HTMLElement | null
+      if (t?.closest?.('button, a, input, textarea, select, [role="button"]')) return   // that tap has its own job
+      void startBrief()
+    }
+    window.addEventListener('pointerdown', onTap)
+    return () => window.removeEventListener('pointerdown', onTap)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [briefReady, muted])
+
   function stopSpeaking() {
     stopAudio()
     setSpeaking(false)
@@ -1074,7 +1146,7 @@ export default function App() {
     setSpeaking(true)
     const result = await speak(spokenText)
     if (ttsSessionRef.current !== session) return
-    setSpeaking(false)
+    if (!sttIsStanleySpeaking()) setSpeaking(false)   // ElevenLabs: speak() returns when playback BEGINS; the speech gate says when it ends
     if (result.ok && result.provider === 'browser') {
       setTtsFallbackActive(true)
       if (result.elevenError) setTtsLastElevenError(result.elevenError)
@@ -1100,7 +1172,7 @@ export default function App() {
     setSpeaking(true)
     speak(text).then((res) => {
       if (ttsSessionRef.current !== session) return
-      setSpeaking(false)
+      if (!sttIsStanleySpeaking()) setSpeaking(false)   // ElevenLabs: speak() returns when playback BEGINS; the speech gate says when it ends
       if (!res.ok && !res.aborted) setTtsError(res.error ?? 'unknown error')
     })
   }
@@ -1118,7 +1190,7 @@ export default function App() {
     setSpeaking(true)
     speak(toSpeak).then(res => {
       if (ttsSessionRef.current !== session) return
-      setSpeaking(false)
+      if (!sttIsStanleySpeaking()) setSpeaking(false)   // ElevenLabs: speak() returns when playback BEGINS; the speech gate says when it ends
       if (res.ok && res.provider === 'browser') {
         setTtsFallbackActive(true)
         if (res.elevenError) setTtsLastElevenError(res.elevenError)
@@ -1238,9 +1310,17 @@ export default function App() {
     let delivered = false
 
     try {
-      const ctx = { ...buildCommandContext(), pendingPublisher: pendingPublisherRef.current }
+      const nowMs = Date.now()
+      // Memory of this conversation: the last few messages, none older than half an hour.
+      const history = chatHistoryRef.current.filter(m => nowMs - (m.at ?? nowMs) <= HISTORY_WINDOW_MS)
+      const ctx = { ...buildCommandContext(), pendingPublisher: pendingPublisherRef.current, history }
       const cmdResult = await fetchGieniuCommand(query, ctx)
       pendingPublisherRef.current = cmdResult.pendingPublisher ?? null
+      chatHistoryRef.current = [
+        ...history,
+        { role: 'user' as const, content: query, at: nowMs },
+        { role: 'assistant' as const, content: cmdResult.answerText, intent: cmdResult.intent, at: Date.now() },
+      ].slice(-HISTORY_MAX_MESSAGES)
       setLastIntent(cmdResult.intent)
       setLastIntentConfidence(cmdResult.confidence)
       if (cmdResult.llm !== undefined) {
@@ -1313,7 +1393,7 @@ export default function App() {
     setSpeaking(true)
     const result = await speak(toSpeak)
     if (ttsSessionRef.current !== session) return
-    setSpeaking(false)
+    if (!sttIsStanleySpeaking()) setSpeaking(false)   // ElevenLabs: speak() returns when playback BEGINS; the speech gate says when it ends
     if (result.ok && result.provider === 'browser') {
       // ElevenLabs still quota'd — browser fallback kicked in again silently
       setTtsFallbackActive(true)
@@ -2222,6 +2302,15 @@ export default function App() {
         digestExcludedRevenue={excludedRevenue}
         digestOrdersToHour={ordersToHour}
       />
+
+      {/* The daily brief is ready: a tap on an empty part of the page (or this button) plays it. */}
+      {briefReady && !muted && (
+        <div role="status" style={{ position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 60, display: 'flex', gap: 10, alignItems: 'center', padding: '8px 14px', borderRadius: 6, background: 'var(--surface, #14202b)', border: '1px solid var(--border-gold, #b8923a)', fontFamily: 'var(--font-mono)', fontSize: '0.76rem' }}>
+          <span>The daily brief is ready, sir.</span>
+          <button type="button" className="btn-sm" onClick={() => { void startBrief() }}>▶ Play it</button>
+          <button type="button" className="btn-sm" onClick={() => { briefDismissedRef.current = briefReady.date; setBriefReady(null) }}>Later</button>
+        </div>
+      )}
 
       {/* Mobile bottom nav */}
       <MobileNav active={section} onNavigate={setSection} jsuAlert={jsuAlert} />

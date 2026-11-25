@@ -16,6 +16,7 @@ import { answerFinance } from '../shared/financeStanley.js'
 import { loadKnowledge, knowledgeContext } from '../shared/stanleyKnowledge.js'
 import { callOpenAI as sharedCallOpenAI, callAnthropic as sharedCallAnthropic } from '../shared/stanleyLlm.js'
 import { answerPublisher, publisherTurn } from '../shared/publisherStanley.js'
+import { formatHistory, sanitizeHistory } from '../shared/chatHistory.js'
 
 // Attendance and registration collection stopped here. Anything about who was
 // in the room is history, not a current figure.
@@ -2021,10 +2022,13 @@ const handlerImpl = async (event) => {
 
   // Reel publication plan (questions, move / swap / pause / resume, and the "yes" / "no" that answers a preview):
   // Claude with tools over the Publisher API (/api/zewn) — the Publisher is the single source of truth, Stanley keeps no copy.
+  // The browser sends the last few messages (context.history): the gateway itself is stateless, so this is the only
+  // memory of the conversation ("To which date, sir?" → "Friday 19:00").
+  const history = sanitizeHistory(ctx.history)
   const pendingPublisher = typeof ctx.pendingPublisher === 'string' ? ctx.pendingPublisher : null
-  const publisherKind = await publisherTurn(message, { pending: pendingPublisher })
+  const publisherKind = await publisherTurn(message, { pending: pendingPublisher, history })
   if (publisherKind) {
-    return success(await answerPublisher({ turn: publisherKind, message, systemPrompt: SYSTEM_PROMPT, parse: parseLLMResponse, pendingToken: pendingPublisher }))
+    return success(await answerPublisher({ turn: publisherKind, message, systemPrompt: SYSTEM_PROMPT, parse: parseLLMResponse, pendingToken: pendingPublisher, history }))
   }
 
   // Finance questions (Stripe / P24 / PayPal / Meta aggregates from the accounting report) take
@@ -2212,7 +2216,9 @@ ${knowledgeText}`
   const grounding = det
     ? `\n\n=== VERIFIED ANSWER (these numbers are correct — rephrase FRESHLY in your persona; vary the wording every time, keep EVERY figure exactly, and introduce no number that is not here or in the context above) ===\n${det.text}`
     : ''
-  const userMessage = `${contextText}${grounding}\n\n=== USER QUESTION ===\n${message}\n\n(Detected intent: ${intent}, confidence: ${confidence.toFixed(2)}, matched: ${matchedTerms.join(', ') || 'none'})`
+  // The conversation so far (what was said a moment ago), so "yes", "that one", "and tomorrow?" mean something.
+  const conversation = history.length ? `\n\n=== CONVERSATION SO FAR (oldest first; the question below continues it) ===\n${formatHistory(history)}` : ''
+  const userMessage = `${contextText}${grounding}${conversation}\n\n=== USER QUESTION ===\n${message}\n\n(Detected intent: ${intent}, confidence: ${confidence.toFixed(2)}, matched: ${matchedTerms.join(', ') || 'none'})`
   // A touch of temperature for variety, kept low so numbers stay disciplined.
   const opts = { temperature: 0.55, max_tokens: 700 }
 

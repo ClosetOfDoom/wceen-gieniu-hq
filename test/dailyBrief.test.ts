@@ -65,47 +65,62 @@ describe('sections from data only', () => {
     const d = deps()
     const r = renderBrief(await gatherBriefData({ now: WED_0900_CET, deps: d }))
     const s1 = r.sections.find((s) => s.id === 'sprzedaz')!.lines.join('\n')
-    expect(s1).toContain('Wczoraj (2026-11-24): 4 321,00 zł, zamówień: 31.')
-    expect(s1).toContain('Od początku miesiąca (2026-11-01 – 2026-11-24, dni: 24 z 30): 61 234,00 zł = 61,2% celu 100 000,00 zł (prorata na wczoraj: 80 000,00 zł).')
-    expect(s1).toContain('Realny CPA: wczoraj 32,10 zł, 7 pełnych dób (2026-11-18 – 2026-11-24) 30,50 zł')
+    expect(s1).toContain('Yesterday (2026-11-24): 4 321,00 zł, orders: 31.')
+    expect(s1).toContain('Month to date (2026-11-01 – 2026-11-24, days: 24 of 30): 61 234,00 zł = 61,2% of the 100 000,00 zł goal (pro rata to yesterday: 80 000,00 zł).')
+    expect(s1).toContain('Real CPA: yesterday 32,10 zł, last 7 full days (2026-11-18 – 2026-11-24) 30,50 zł')
     expect(s1).toContain('blended')
-    expect(s1).toMatch(/Progi \(7 pełnych dób\): OK: CPA 30\.50 zł/)
+    expect(s1).toMatch(/Thresholds \(7 full days\): OK: CPA 30\.50 zł/)
     expect((d as { sales: { mock: { calls: string[][] } } }).sales.mock.calls).toEqual(expect.arrayContaining([['2026-11-24', '2026-11-24'], ['2026-11-01', '2026-11-24'], ['2026-11-18', '2026-11-24']]))
   })
 
   it('Meta: spend, campaigns, pixel purchases apart, ads with spend and 0 purchases for 3 days', async () => {
     const r = renderBrief(await gatherBriefData({ now: WED_0900_CET, deps: deps() }))
     const s2 = r.sections.find((s) => s.id === 'meta')!.lines.join('\n')
-    expect(s2).toContain('Wydatek wczoraj: 17,00 zł (w tym poza blended, Cogni: 2,00 zł); 7 pełnych dób: 58,00 zł.')
-    expect(s2).toContain('Kampanie z wydatkiem wczoraj: PP | zimna: 15,00 zł; Cogni: 2,00 zł.')
-    expect(s2).toContain('Zakupy piksela Meta (nieporównywalne z zamówieniami Wix): wczoraj 0, 7 dób 3; bez danych o zakupach w wierszach: 3.')
-    expect(s2).toContain('przez 3 dni (2026-11-22 – 2026-11-24): A: 30,00 zł (bez danych o zakupach: 1).')
-    expect(r.gaps).toContain('BRAK DANYCH: meta_purchases (wiersze bez wartości: 3)')
+    expect(s2).toContain('Spend yesterday: 17,00 zł (of which outside the blended figure, Cogni: 2,00 zł); last 7 full days: 58,00 zł.')
+    expect(s2).toContain('Campaigns with spend yesterday: PP | zimna: 15,00 zł; Cogni: 2,00 zł.')
+    expect(s2).toContain('Meta pixel purchases (not comparable with Wix orders): yesterday 0, 7 days 3; rows without purchase data: 3.')
+    expect(s2).toContain('for 3 days (2026-11-22 – 2026-11-24): A: 30,00 zł (without purchase data: 1).')
+    expect(r.gaps).toContain('NO DATA: meta_purchases (rows without a value: 3)')
   })
 
   it('first day of the month: no full days, no made-up month figure', async () => {
     const r = renderBrief(await gatherBriefData({ now: new Date('2026-12-01T08:00:00Z'), deps: deps() }))
-    expect(r.sections[0].lines.join('\n')).toContain('pierwszy dzień miesiąca, brak pełnych dni')
+    expect(r.sections[0].lines.join('\n')).toContain('the first day of the month, no full days yet')
   })
 
-  it('a failing source is "BRAK DANYCH: <źródło>", listed under DO UWAGI, never a number', async () => {
+  it('a failing source is "NO DATA: <source>", listed under NEEDS ATTENTION, never a number', async () => {
     const d = deps({ sales: async () => { throw new Error('Supabase 500') }, adRows: async () => { throw new Error('timeout') } })
     const r = renderBrief(await gatherBriefData({ now: WED_0900_CET, deps: d }))
-    expect(r.text).toContain('BRAK DANYCH: zamówienia Wix (profit-data) (Supabase 500)')
-    expect(r.text).toContain('BRAK DANYCH: meta_ads_daily (timeout)')
-    expect(r.sections.find((s) => s.id === 'uwaga')!.lines.join('\n')).toContain('BRAK DANYCH: meta_ads_daily')
-    expect(r.speech).toMatch(/^Brief na 2026-11-25./)
-    expect(r.speech).not.toMatch(/sprzedaż|celu/) // no sales figure without sales data
+    expect(r.text).toContain('NO DATA: Wix orders (profit-data) (Supabase 500)')
+    expect(r.text).toContain('NO DATA: meta_ads_daily (timeout)')
+    expect(r.sections.find((s) => s.id === 'uwaga')!.lines.join('\n')).toContain('NO DATA: meta_ads_daily')
+    expect(r.speech).toMatch(/^Brief for 2026-11-25./)
+    expect(r.speech).not.toMatch(/sales|of the goal/) // no sales figure without sales data
+  })
+
+  it('the brief is English: no Polish template words in the text or in the spoken fallback', async () => {
+    const r = renderBrief(await gatherBriefData({ now: WED_0900_CET, deps: deps() }))
+    const polish = /\b(Wczoraj|Od początku|zamówień|BRAK DANYCH|Brief na|Realny|Wydatek|Kampanie z|Ostatnia wysyłka|Kolejka szablonów|Do uwagi|Pytanie do|Plan dnia|DO UWAGI|SPRZEDAŻ|REKLAMY|POCZTA|Filar dnia|zaległe)\b/
+    const english = [...r.sections.map((s) => s.title), ...r.sections.flatMap((s) => s.lines.filter((l) => !/^\d{2}:\d{2}/.test(l) && !l.startsWith('Pillar of the day'))), r.speech.replace(/ Today: .*$/, '')].join('\n')   // plan titles are Filip's own (Polish) data
+    expect(english).not.toMatch(polish)
+    expect(r.speech.startsWith('Brief for ')).toBe(true)
+  })
+
+  it('the spoken fallback carries the day plan (not only sales): time first, at most 5 items, done ones skipped', async () => {
+    const d = deps()
+    await addTask((d as unknown as { kv: Parameters<typeof addTask>[0] }).kv, { tytul: 'Telefon do drukarni', godzina: '11:00', dzien: '2026-11-25' })
+    const r = renderBrief(await gatherBriefData({ now: WED_0900_CET, deps: d }))
+    expect(r.speech).toMatch(/Today: .*11:00 Telefon do drukarni/)
   })
 
   it('mail, poczta (stage 2), plan of the day with tasks, at most 2 questions', async () => {
     const d = deps()
     await addTask((d as unknown as { kv: Parameters<typeof addTask>[0] }).kv, { tytul: 'Telefon do drukarni', godzina: '11:00', dzien: '2026-11-25' })
     const r = renderBrief(await gatherBriefData({ now: WED_0900_CET, deps: d }))
-    expect(r.sections.find((s) => s.id === 'maile')!.lines.join('\n')).toContain('Ostatnia wysyłka: brak wysyłek produkcyjnych w logu.')
-    expect(r.sections.find((s) => s.id === 'poczta')!.lines[0]).toContain('Wymaga połączenia Google (etap 2')
-    expect(r.sections.find((s) => s.id === 'plan')!.lines).toEqual(['Filar dnia: Książki (101 drinków i Szanty).', '09:00 Brief dnia', '10:00–12:00 Filar dnia: Książki (101 drinków i Szanty)', '11:00 Telefon do drukarni [zadanie]'])
-    expect(r.sections.find((s) => s.id === 'uwaga')!.lines.filter((l) => l.startsWith('Pytanie do Filipa')).length).toBe(2)
+    expect(r.sections.find((s) => s.id === 'maile')!.lines.join('\n')).toContain('Last send: no production sends in the log.')
+    expect(r.sections.find((s) => s.id === 'poczta')!.lines[0]).toContain('Needs the Google connection (stage 2')
+    expect(r.sections.find((s) => s.id === 'plan')!.lines).toEqual(['Pillar of the day: Książki (101 drinków i Szanty).', '09:00 Brief dnia', '10:00–12:00 Filar dnia: Książki (101 drinków i Szanty)', '11:00 Telefon do drukarni [task]'])
+    expect(r.sections.find((s) => s.id === 'uwaga')!.lines.filter((l) => l.startsWith('Question for Filip')).length).toBe(2)
     expect(zl(1234567.891)).toBe('1 234 567,89 zł')
   })
 })
@@ -113,10 +128,17 @@ describe('sections from data only', () => {
 describe('number guard on the model introduction (as in the Q&A)', () => {
   it('a sentence with a number outside the brief is removed; brief numbers and derived ones stay', async () => {
     const r = renderBrief(await gatherBriefData({ now: WED_0900_CET, deps: deps() }))
-    const llm = async () => ({ text: 'Wczoraj sprzedaż 4 321,00 zł, sir. Od początku miesiąca 61,2% celu. Benchmark branży to 3,7%. Do końca miesiąca będzie 120 000 zł.', provider: 'test', model: 't' })
+    const llm = async () => ({ text: 'Yesterday sales were 4 321,00 zł, sir. Month to date is 61,2% of the goal. The industry benchmark is 3,7%. By month end it will be 120 000 zł.', provider: 'test', model: 't' })
     const d = await describeBrief(r.text, llm)
-    expect(d.intro).toBe('Wczoraj sprzedaż 4 321,00 zł, sir. Od początku miesiąca 61,2% celu.')
+    expect(d.intro).toBe('Yesterday sales were 4 321,00 zł, sir. Month to date is 61,2% of the goal.')
     expect(d.removed).toBe(2)
+  })
+  it('the model is asked for an ENGLISH spoken briefing that covers the plan of the day', async () => {
+    const r = renderBrief(await gatherBriefData({ now: WED_0900_CET, deps: deps() }))
+    let seen: { system: string; user: string } | null = null
+    await describeBrief(r.text, async (system: string, user: string) => { seen = { system, user }; return { text: 'Fine, sir.' } })
+    expect(seen!.system).toMatch(/in English/); expect(seen!.system).toMatch(/today's plan/); expect(seen!.system).not.toMatch(/po polsku/)
+    expect(seen!.user).toContain('Write the spoken briefing in English.')
   })
   it('no model / model error → no introduction, the brief still exists', async () => {
     expect((await describeBrief('x', null)).intro).toBeNull()

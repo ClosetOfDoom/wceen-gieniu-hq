@@ -175,11 +175,16 @@ describe('which chat turns go to the Publisher', () => {
     for (const m of ['how much did we earn today', 'what is the ROAS', 'who bought the course', 'what was revenue in October']) expect(await turn(m), m).toBeNull()
   })
   it('"yes" and "no" are ours only while a preview waits', async () => {
+    const live = signPending({ actions: [{ action: 'wstrzymaj', params: { post: 'mettere-it' } }], summary: 'x' }, SECRET, NOW.getTime())
+    const turnWith = (m: string, pending: string | null) => publisherTurn(m, { pending, now: NOW, env: { STANLEY_ACCESS_TOKEN: SECRET }, deps: { client: pub.client } })
     expect(await turn('yes')).toBeNull()
-    expect(await turn('Yes, sir.', 'tok')).toBe('confirm')
-    expect(await turn('go ahead', 'tok')).toBe('confirm')
-    expect(await turn('no', 'tok')).toBe('cancel')
-    expect(await turn('what is the roas', 'tok')).toBeNull()
+    expect(await turnWith('Yes, sir.', live)).toBe('confirm')
+    expect(await turnWith('go ahead', live)).toBe('confirm')
+    expect(await turnWith('no', live)).toBe('cancel')
+    expect(await turnWith('what is the roas, and how did the ads do over the last week', live)).toBeNull()
+    // an expired or forged token still hears "yes" / "no" (the answer says it expired), but nothing else
+    expect(await turnWith('yes', 'v1.expired.token')).toBe('confirm')
+    expect(await turnWith('what is the roas', 'v1.expired.token')).toBeNull()
   })
   it('if the Publisher cannot be read, a bare command is simply not ours', async () => {
     const broken = fakePublisher({ failWith: new PublisherError(503, 'x') })

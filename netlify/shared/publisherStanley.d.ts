@@ -1,4 +1,5 @@
 import type { PublisherClient, PlanResult, StatusResult } from './publisherClient.js'
+import type { ChatMessage } from './chatHistory.js'
 
 export const PENDING_TTL_MS: number
 export const MAX_TOOL_CALLS: number
@@ -11,12 +12,14 @@ export function isNegation(message: string): boolean
 export function resetWordsCache(): void
 export function publisherTurn(
   message: string,
-  opts?: { pending?: string | null; env?: Record<string, string | undefined>; now?: Date; deps?: { client?: PublisherClient } },
+  opts?: { pending?: string | null; history?: ChatMessage[]; env?: Record<string, string | undefined>; now?: Date; deps?: { client?: PublisherClient } },
 ): Promise<'confirm' | 'cancel' | 'question' | null>
 
 export interface PendingAction { action: string; params: Record<string, unknown>; labels?: Record<string, string> }
-export function signPending(payload: { actions: PendingAction[] }, secret: string, now?: number): string
-export function verifyPending(token: string | null | undefined, secret: string | undefined, now?: number): { actions: PendingAction[]; t: number } | null
+export interface PendingPayload { actions: PendingAction[]; summary?: string; t?: number }
+export function signPending(payload: { actions: PendingAction[]; summary?: string }, secret: string, now?: number): string
+export function verifyPending(token: string | null | undefined, secret: string | undefined, now?: number): (PendingPayload & { t: number }) | null
+export function repeatsPendingDate(message: string, payload: PendingPayload, now?: Date): boolean
 
 export function resolvePost(client: PublisherClient, ref: string, now: Date): Promise<{ post: string; label: string } | { error: string }>
 export interface TurnState {
@@ -49,6 +52,7 @@ export function answerPublisher(args: {
   systemPrompt: string
   parse: (raw: string) => { answerText: string; speechText: string }
   pendingToken?: string | null
+  history?: ChatMessage[]
   env?: Record<string, string | undefined>
   now?: Date
   deps?: { client?: PublisherClient; createMessage?: (body: any, opts?: any) => Promise<any> }

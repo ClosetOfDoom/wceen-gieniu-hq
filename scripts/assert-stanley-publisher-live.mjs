@@ -16,11 +16,11 @@ let failures = 0
 const fail = (m) => { console.error('  FAIL', m); failures++ }
 const pass = (m) => console.log('  pass', m)
 
-async function ask(message, pendingPublisher = null) {
+async function ask(message, pendingPublisher = null, history = []) {
   const res = await fetch(`${base}/.netlify/functions/gieniu-command`, {
     method: 'POST',
     headers: stanleyHeaders({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ message, context: { pendingPublisher } }),
+    body: JSON.stringify({ message, context: { pendingPublisher, history } }),
     signal: AbortSignal.timeout(60000),
   })
   if (!res.ok) throw new Error(`gieniu-command ${res.status}${explainAuth(res.status)}`)
@@ -49,6 +49,24 @@ try {
     if (/Say "yes" to make this change/.test(prev.answerText) && prev.pendingPublisher) pass('waits for "yes" (signed token returned); "yes" was NOT sent, nothing changed')
     else if (/Publisher refused:/.test(prev.answerText)) pass('the Publisher refused the preview and Stanley said why')
     else fail('no confirmation request and no refusal')
+
+    // 3. Memory of the conversation: a move command WITHOUT a date, then the date alone as the next message, with the
+    //    history the browser would send. The follow-up must stay in the reel conversation and preview the move.
+    //    No waiting preview is sent back and no "yes" either: nothing is changed.
+    console.log(`\n3. memory: "move ${word}" with no date, then "Friday 19:00" alone`)
+    const first = `move ${word}`
+    const a1 = await ask(first)
+    console.log(a1.answerText.split('\n').map((l) => '   ' + l).join('\n'))
+    const history = [
+      { role: 'user', content: first, at: Date.now() },
+      { role: 'assistant', content: a1.answerText, intent: a1.intent, at: Date.now() },
+    ]
+    const a2 = await ask('Friday 19:00', null, history)
+    console.log('   --- follow-up "Friday 19:00":')
+    console.log(a2.answerText.split('\n').map((l) => '   ' + l).join('\n'))
+    if (a2.intent === 'publisher') pass('the follow-up stayed in the reel conversation (intent publisher)'); else fail(`the follow-up was answered as ${a2.intent}: Stanley did not remember the previous message`)
+    if (/Before → After:/.test(a2.answerText) || /Publisher refused:/.test(a2.answerText)) pass('the date was applied to the reel from the earlier message')
+    else fail('the follow-up did not preview the move')
   }
 } catch (e) {
   console.error('  FAIL', e.message)

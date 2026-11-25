@@ -1,5 +1,5 @@
 import { GIENIU_VOICE_ID, GIENIU_VOICE_NAME } from '../config/gieniuVoice'
-import { cleanForTTS, cleanForEnglishTTS } from './textClean'
+import { cleanForTTS, cleanForEnglishTTS, splitForSpeech, cutAtSentence } from './textClean'
 import { suppressAmbient } from '../lib/ambient'
 import { beginSpeech, endSpeech } from '../lib/speechGate'
 import { stanleyFetch } from '../lib/stanleyAuth'
@@ -204,32 +204,44 @@ async function speakBrowser(text: string): Promise<TTSResult> {
   }
 
   const voice = selectBrowserVoice()
-  const utt = new SpeechSynthesisUtterance(text)
-  utt.lang = 'en-US'
-  if (voice) utt.voice = voice
-  currentUtterance = utt
+  // Chrome silently stops ONE long utterance after about 15 seconds (the voice "breaks off" mid-sentence), so the
+  // text is spoken piece by piece, each piece a sentence or two; the next one starts when the previous one ends.
+  const pieces = splitForSpeech(text)
 
   // eslint-disable-next-line no-console
-  console.log(`GIENIU TTS browser: ${voice?.name ?? 'system default'} (${voice?.lang ?? utt.lang})`)
+  console.log(`GIENIU TTS browser: ${voice?.name ?? 'system default'} (${voice?.lang ?? 'en-US'}), ${pieces.length} piece(s)`)
 
   return new Promise<TTSResult>(resolve => {
-    utt.onend = () => {
-      if (currentUtterance === utt) currentUtterance = null
-      duckEnd()
-      playQuack()
-      resolve({ ok: true, provider: 'browser' })
-    }
-    utt.onerror = (e) => {
-      if (currentUtterance === utt) currentUtterance = null
-      duckEnd()
-      const err = e.error ?? 'unknown'
-      if (err === 'interrupted' || err === 'canceled') {
-        resolve({ ok: false, provider: 'browser', aborted: true })
-      } else {
-        resolve({ ok: false, provider: 'browser', error: `browser tts: ${err}` })
+    let i = 0
+    const next = () => {
+      if (i >= pieces.length) {
+        currentUtterance = null
+        duckEnd()
+        playQuack()
+        resolve({ ok: true, provider: 'browser' })
+        return
       }
+      const utt = new SpeechSynthesisUtterance(pieces[i++])
+      utt.lang = 'en-US'
+      if (voice) utt.voice = voice
+      currentUtterance = utt
+      utt.onend = () => {
+        if (currentUtterance !== utt) return   // stopAudio() cleared it: the chain is over
+        next()
+      }
+      utt.onerror = (e) => {
+        if (currentUtterance === utt) currentUtterance = null
+        duckEnd()
+        const err = e.error ?? 'unknown'
+        if (err === 'interrupted' || err === 'canceled') {
+          resolve({ ok: false, provider: 'browser', aborted: true })
+        } else {
+          resolve({ ok: false, provider: 'browser', error: `browser tts: ${err}` })
+        }
+      }
+      synth.speak(utt)
     }
-    synth.speak(utt)
+    next()
   })
 }
 
@@ -257,7 +269,8 @@ export async function speak(text: string): Promise<TTSResult> {
     }
   }
 
-  const elevenText = cleanForTTS(text)
+  // The server cuts at 2500 characters; cut here first, at a sentence end, so the voice finishes a thought.
+  const elevenText = cutAtSentence(cleanForTTS(text), 2400)
   if (!elevenText.trim()) { duckEnd(); return { ok: false, provider: 'elevenlabs', error: 'empty text' } }
 
   // eslint-disable-next-line no-console

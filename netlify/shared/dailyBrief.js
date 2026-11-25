@@ -47,7 +47,7 @@ export function zl(n) {
 }
 const pct = (n, digits = 1) => `${(Math.round(n * 10 ** digits) / 10 ** digits).toFixed(digits).replace('.', ',')}%`
 const x2 = (n) => `${Number(n).toFixed(2).replace('.', ',')}x`
-const SLOT_PL = { tuesday: 'wtorek', thursday: 'czwartek' }
+const SLOT_EN = { tuesday: 'Tuesday', thursday: 'Thursday' }
 
 async function safe(fn) {
   try { return { ok: true, value: await fn() } } catch (e) { return { ok: false, error: String(e?.message ?? e).replace(/[^\s@]+@[^\s@]+/g, '[e-mail]').slice(0, 160) } }
@@ -112,40 +112,40 @@ const salesOf = (body) => ({
   spend: body.adSpend, cpa: body.realCpa, roas: body.realRoas,
 })
 
-const SEVERITY_PL = { none: 'OK', amber: 'UWAGA', red: 'ALARM' }
+const SEVERITY_EN = { none: 'OK', amber: 'WARNING', red: 'ALARM' }
 
 /** { sections: [{ id, title, lines }], text, speech, alerts, gaps } — deterministic, from data only. */
 export function renderBrief(d) {
   const gaps = []
   const alerts = []
-  const gap = (source, err) => { const g = `BRAK DANYCH: ${source}${err ? ` (${err})` : ''}`; gaps.push(g); return g }
+  const gap = (source, err) => { const g = `NO DATA: ${source}${err ? ` (${err})` : ''}`; gaps.push(g); return g }
   const sections = []
 
   // 1 — sales
   const s1 = []
   if (d.salesY.ok) {
     const y = salesOf(d.salesY.value)
-    s1.push(`Wczoraj (${d.yesterday}): ${zl(y.revenue)}, zamówień: ${y.orders}.`)
-  } else s1.push(`Wczoraj (${d.yesterday}): ${gap('zamówienia Wix (profit-data)', d.salesY.error)}.`)
-  if (d.mtdDays === 0) s1.push(`Od początku miesiąca: dziś ${d.today}, pierwszy dzień miesiąca, brak pełnych dni.`)
+    s1.push(`Yesterday (${d.yesterday}): ${zl(y.revenue)}, orders: ${y.orders}.`)
+  } else s1.push(`Yesterday (${d.yesterday}): ${gap('Wix orders (profit-data)', d.salesY.error)}.`)
+  if (d.mtdDays === 0) s1.push(`Month to date: today is ${d.today}, the first day of the month, no full days yet.`)
   else if (d.salesMtd.ok) {
     const m = salesOf(d.salesMtd.value)
     const expected = (STRATEGIC_MONTHLY_GOAL * d.mtdDays) / d.daysInMonth
-    s1.push(`Od początku miesiąca (${d.monthStart} – ${d.yesterday}, dni: ${d.mtdDays} z ${d.daysInMonth}): ${zl(m.revenue)} = ${pct((m.revenue / STRATEGIC_MONTHLY_GOAL) * 100)} celu ${zl(STRATEGIC_MONTHLY_GOAL)} (prorata na wczoraj: ${zl(expected)}).`)
-  } else s1.push(`Od początku miesiąca: ${gap('zamówienia Wix (profit-data)', d.salesMtd.error)}.`)
+    s1.push(`Month to date (${d.monthStart} – ${d.yesterday}, days: ${d.mtdDays} of ${d.daysInMonth}): ${zl(m.revenue)} = ${pct((m.revenue / STRATEGIC_MONTHLY_GOAL) * 100)} of the ${zl(STRATEGIC_MONTHLY_GOAL)} goal (pro rata to yesterday: ${zl(expected)}).`)
+  } else s1.push(`Month to date: ${gap('Wix orders (profit-data)', d.salesMtd.error)}.`)
   if (d.salesY.ok && d.sales7.ok) {
     const y = salesOf(d.salesY.value)
     const w = salesOf(d.sales7.value)
-    const cpaTxt = (v) => (v == null ? 'brak (0 zamówień)' : zl(v))
-    const roasTxt = (v) => (v == null ? 'brak (0 zł wydatku)' : x2(v))
-    s1.push(`Realny CPA: wczoraj ${cpaTxt(y.cpa)}, 7 pełnych dób (${d.from7} – ${d.yesterday}) ${cpaTxt(w.cpa)}. Realny ROAS: wczoraj ${roasTxt(y.roas)}, 7 dób ${roasTxt(w.roas)}.`)
-    s1.push('(blended: wydatek Meta bez Cogni ÷ zamówienia Wix bez WSZTP; to nie jest CPA żadnej kampanii)')
+    const cpaTxt = (v) => (v == null ? 'none (0 orders)' : zl(v))
+    const roasTxt = (v) => (v == null ? 'none (0 PLN spend)' : x2(v))
+    s1.push(`Real CPA: yesterday ${cpaTxt(y.cpa)}, last 7 full days (${d.from7} – ${d.yesterday}) ${cpaTxt(w.cpa)}. Real ROAS: yesterday ${roasTxt(y.roas)}, 7 days ${roasTxt(w.roas)}.`)
+    s1.push('(blended: Meta spend without Cogni ÷ Wix orders without WSZTP; this is not the CPA of any single campaign)')
     const cpa = cpaAlert(w.cpa, w.cpa, 7)
     const roas = roasAlert(w.roas, w.roas, 7)
-    s1.push(`Progi (7 pełnych dób): ${SEVERITY_PL[cpa.severity] ?? cpa.severity}: ${cpa.message}; ${SEVERITY_PL[roas.severity] ?? roas.severity}: ${roas.message}.`)
-    for (const a of [cpa, roas]) if (a.severity === 'red' || a.severity === 'amber') alerts.push(`${SEVERITY_PL[a.severity]}: ${a.message}`)
-  } else if (!d.sales7.ok) s1.push(`Realny CPA/ROAS 7 dób: ${gap('zamówienia i wydatki 7 dób (profit-data)', d.sales7.error)}.`)
-  sections.push({ id: 'sprzedaz', title: '1. SPRZEDAŻ (Wix) vs cel miesiąca', lines: s1 })
+    s1.push(`Thresholds (7 full days): ${SEVERITY_EN[cpa.severity] ?? cpa.severity}: ${cpa.message}; ${SEVERITY_EN[roas.severity] ?? roas.severity}: ${roas.message}.`)
+    for (const a of [cpa, roas]) if (a.severity === 'red' || a.severity === 'amber') alerts.push(`${SEVERITY_EN[a.severity]}: ${a.message}`)
+  } else if (!d.sales7.ok) s1.push(`Real CPA/ROAS, 7 days: ${gap('orders and spend, 7 days (profit-data)', d.sales7.error)}.`)
+  sections.push({ id: 'sprzedaz', title: '1. SALES (Wix) vs the monthly goal', lines: s1 })
 
   // 2 — Meta
   const s2 = []
@@ -153,26 +153,26 @@ export function renderBrief(d) {
   else {
     const rows = d.ads.value
     const yRows = rows.filter((r) => r.date === d.yesterday)
-    if (!rows.length) s2.push(gap(`meta_ads_daily (brak wierszy ${d.from7} – ${d.yesterday})`))
+    if (!rows.length) s2.push(gap(`meta_ads_daily (no rows ${d.from7} – ${d.yesterday})`))
     else {
       const sy = splitAdSpend(yRows)
       const s7 = splitAdSpend(rows)
-      s2.push(`Wydatek wczoraj: ${zl(sy.total)}${sy.excluded > 0 ? ` (w tym poza blended, Cogni: ${zl(sy.excluded)})` : ''}; 7 pełnych dób: ${zl(s7.total)}.`)
+      s2.push(`Spend yesterday: ${zl(sy.total)}${sy.excluded > 0 ? ` (of which outside the blended figure, Cogni: ${zl(sy.excluded)})` : ''}; last 7 full days: ${zl(s7.total)}.`)
       const byCampaign = new Map()
       for (const r of yRows) {
         const name = String(r.campaign_name ?? '').trim() || '—'
         byCampaign.set(name, (byCampaign.get(name) ?? 0) + Math.round(Number(r.spend ?? 0) * 100))
       }
       const camps = [...byCampaign.entries()].filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1])
-      s2.push(camps.length ? `Kampanie z wydatkiem wczoraj: ${camps.map(([n, c]) => `${n}: ${zl(c / 100)}`).join('; ')}.` : 'Kampanie z wydatkiem wczoraj: brak.')
+      s2.push(camps.length ? `Campaigns with spend yesterday: ${camps.map(([n, c]) => `${n}: ${zl(c / 100)}`).join('; ')}.` : 'Campaigns with spend yesterday: none.')
       const purch = (list) => {
         const known = list.filter((r) => r.meta_purchases !== null && r.meta_purchases !== undefined)
         return { n: known.reduce((s, r) => s + Number(r.meta_purchases), 0), missing: list.length - known.length }
       }
       const py = purch(yRows)
       const p7 = purch(rows)
-      s2.push(`Zakupy piksela Meta (nieporównywalne z zamówieniami Wix): wczoraj ${py.n}, 7 dób ${p7.n}${p7.missing ? `; bez danych o zakupach w wierszach: ${p7.missing}` : ''}.`)
-      if (p7.missing) gaps.push(`BRAK DANYCH: meta_purchases (wiersze bez wartości: ${p7.missing})`)
+      s2.push(`Meta pixel purchases (not comparable with Wix orders): yesterday ${py.n}, 7 days ${p7.n}${p7.missing ? `; rows without purchase data: ${p7.missing}` : ''}.`)
+      if (p7.missing) gaps.push(`NO DATA: meta_purchases (rows without a value: ${p7.missing})`)
       // ads with spend on each of the last 3 days and 0 pixel purchases on all of them
       const days3 = [addDays(d.today, -3), addDays(d.today, -2), d.yesterday]
       const byAd = new Map()
@@ -195,71 +195,73 @@ export function renderBrief(d) {
         if (vals.every((v) => v.purchases === 0)) zero.push({ name: e.name, spend: vals.reduce((s, v) => s + v.spend, 0) })
       }
       zero.sort((a, b) => b.spend - a.spend)
-      s2.push(`Reklamy z wydatkiem i 0 zakupów piksela przez 3 dni (${days3[0]} – ${d.yesterday}): ${zero.length ? zero.map((z) => `${z.name}: ${zl(z.spend)}`).join('; ') : 'brak'}${unknown ? ` (bez danych o zakupach: ${unknown})` : ''}.`)
+      s2.push(`Ads with spend and 0 pixel purchases for 3 days (${days3[0]} – ${d.yesterday}): ${zero.length ? zero.map((z) => `${z.name}: ${zl(z.spend)}`).join('; ') : 'none'}${unknown ? ` (without purchase data: ${unknown})` : ''}.`)
     }
   }
-  sections.push({ id: 'meta', title: '2. REKLAMY META', lines: s2 })
+  sections.push({ id: 'meta', title: '2. META ADS', lines: s2 })
 
   // 3 — webinar mails
   const s3 = []
-  if (!d.mail.ok) s3.push(gap('maile webinarowe (webinar-mail store / Wix)', d.mail.error))
+  if (!d.mail.ok) s3.push(gap('webinar mails (webinar-mail store / Wix)', d.mail.error))
   else {
     const { health, last, todaySlot } = d.mail.value
     if (last) {
       const st = last.stats
-      s3.push(`Ostatnia wysyłka: ${last.date} (${SLOT_PL[last.slot] ?? last.slot}), status: ${last.status}; Wix: ${st ? `dostarczone ${st.delivered}, otwarcia ${st.opened}, kliknięcia ${st.clicked}, odbite ${st.bounced ?? 'BRAK DANYCH: Wix statistics'}` : gap('statystyki Wix', last.statsError)}.`)
-      if (todaySlot) s3.push(last.date === d.today ? `Dzisiejsza wysyłka (${SLOT_PL[todaySlot]}): ${last.status}.` : `Dzisiejsza wysyłka (${SLOT_PL[todaySlot]}): brak wpisu w logu (AUTO ${health.auto ? 'włączone' : 'wyłączone'}, PAUZA ${health.pauza ? 'włączona' : 'wyłączona'}).`)
-      else s3.push('Dziś nie ma wysyłki (tylko wtorek i czwartek).')
-    } else s3.push('Ostatnia wysyłka: brak wysyłek produkcyjnych w logu.')
-    s3.push(`Kolejka szablonów: wtorek ${health.kolejka?.wtorek ?? 'BRAK DANYCH'}, czwartek ${health.kolejka?.czwartek ?? 'BRAK DANYCH'}. Odbiorcy: ${health.odbiorcy}, ${health.liczbaOdbiorcow ?? 'BRAK DANYCH: Wix Contacts'}.`)
+      s3.push(`Last send: ${last.date} (${SLOT_EN[last.slot] ?? last.slot}), status: ${last.status}; Wix: ${st ? `delivered ${st.delivered}, opens ${st.opened}, clicks ${st.clicked}, bounced ${st.bounced ?? 'NO DATA: Wix statistics'}` : gap('Wix statistics', last.statsError)}.`)
+      if (todaySlot) s3.push(last.date === d.today ? `Today's send (${SLOT_EN[todaySlot]}): ${last.status}.` : `Today's send (${SLOT_EN[todaySlot]}): no entry in the log (AUTO ${health.auto ? 'on' : 'off'}, PAUSE ${health.pauza ? 'on' : 'off'}).`)
+      else s3.push('No send today (only Tuesday and Thursday).')
+    } else s3.push('Last send: no production sends in the log.')
+    s3.push(`Template queue: Tuesday ${health.kolejka?.wtorek ?? 'NO DATA'}, Thursday ${health.kolejka?.czwartek ?? 'NO DATA'}. Recipients: ${health.odbiorcy}, ${health.liczbaOdbiorcow ?? 'NO DATA: Wix Contacts'}.`)
     const codes = health.alarmy ?? null
-    s3.push(`Alarmy maili: ${codes === null ? 'BRAK DANYCH: webinar-mail store' : codes.length ? codes.join(', ') : 'brak'}.`)
-    for (const c of codes ?? []) alerts.push(`Maile: ${c}`)
+    s3.push(`Mail alarms: ${codes === null ? 'NO DATA: webinar-mail store' : codes.length ? codes.join(', ') : 'none'}.`)
+    for (const c of codes ?? []) alerts.push(`Mails: ${c}`)
   }
-  sections.push({ id: 'maile', title: '3. MAILE WEBINAROWE', lines: s3 })
+  sections.push({ id: 'maile', title: '3. WEBINAR MAILS', lines: s3 })
 
   // 4 — mail (stage 2)
-  sections.push({ id: 'poczta', title: '4. POCZTA', lines: ['Wymaga połączenia Google (etap 2, plan w docs/brief-poczta.md).'] })
+  sections.push({ id: 'poczta', title: '4. INBOX', lines: ['Needs the Google connection (stage 2, plan in docs/brief-poczta.md).'] })
 
   // 5 — plan of the day
   const s5 = []
-  if (!d.plan) s5.push(gap('stanley-wiedza/ (rytm dnia)'))
+  if (!d.plan) s5.push(gap('stanley-wiedza/ (day rhythm)'))
   else {
-    if (d.plan.filarDnia) s5.push(`Filar dnia: ${d.plan.filarDnia}.`)
-    for (const i of d.plan.items) s5.push(`${i.time ? `${i.time}${i.end ? `–${i.end}` : ''}` : 'bez godziny'} ${i.title}${i.kind === 'zadanie' ? ' [zadanie]' : ''}${i.overdue ? ' (zaległe)' : ''}${i.done ? ' ✓' : ''}`)
-    if (d.tasksError) s5.push(gap('zadania (stanley store)', d.tasksError))
+    if (d.plan.filarDnia) s5.push(`Pillar of the day: ${d.plan.filarDnia}.`)
+    for (const i of d.plan.items) s5.push(`${i.time ? `${i.time}${i.end ? `–${i.end}` : ''}` : 'no time'} ${i.title}${i.kind === 'zadanie' ? ' [task]' : ''}${i.overdue ? ' (overdue)' : ''}${i.done ? ' ✓' : ''}`)
+    if (d.tasksError) s5.push(gap('tasks (stanley store)', d.tasksError))
   }
-  sections.push({ id: 'plan', title: '5. PLAN DNIA', lines: s5 })
+  sections.push({ id: 'plan', title: "5. TODAY'S PLAN", lines: s5 })
 
   // 6 — attention
   const s6 = []
   for (const a of alerts) s6.push(a)
   for (const g of new Set(gaps)) s6.push(g) // the same gap from two sections is listed once
-  if (!alerts.length && !gaps.length) s6.push('Brak aktywnych alarmów i braków danych w briefie.')
-  for (const q of d.questions) s6.push(`Pytanie do Filipa: ${q}`)
-  sections.push({ id: 'uwaga', title: '6. DO UWAGI', lines: s6 })
+  if (!alerts.length && !gaps.length) s6.push('No active alarms and no data gaps in the brief.')
+  for (const q of d.questions) s6.push(`Question for Filip: ${q}`)
+  sections.push({ id: 'uwaga', title: '6. NEEDS ATTENTION', lines: s6 })
 
   const text = sections.map((s) => [s.title, ...s.lines.map((l) => `- ${l}`)].join('\n')).join('\n\n')
-  let speech = `Brief na ${d.today}.`
-  if (d.salesY.ok) speech += ` Wczoraj sprzedaż ${zl(salesOf(d.salesY.value).revenue)}.`
-  if (d.mtdDays > 0 && d.salesMtd.ok) speech += ` Od początku miesiąca ${pct((salesOf(d.salesMtd.value).revenue / STRATEGIC_MONTHLY_GOAL) * 100)} celu.`
-  if (alerts.length) speech += ` Do uwagi: ${alerts.length === 1 ? 'jedna sprawa' : `${alerts.length} sprawy`}.`
+  // The spoken fallback (used when the model is off): English, with the day's plan, never a number the brief does not hold.
+  let speech = `Brief for ${d.today}.`
+  if (d.salesY.ok) speech += ` Yesterday's sales: ${zl(salesOf(d.salesY.value).revenue)}.`
+  if (d.mtdDays > 0 && d.salesMtd.ok) speech += ` Month to date: ${pct((salesOf(d.salesMtd.value).revenue / STRATEGIC_MONTHLY_GOAL) * 100)} of the goal.`
+  if (alerts.length) speech += ` ${alerts.length === 1 ? 'One matter needs' : `${alerts.length} matters need`} your attention.`
+  const planned = d.plan ? d.plan.items.filter((i) => !i.done).slice(0, 5) : []
+  if (planned.length) speech += ` Today: ${planned.map((i) => `${i.time ? `${i.time} ` : ''}${i.title}`).join('; ')}.`
   return { sections, text, speech, alerts, gaps }
 }
 
 // ── the model's introduction, guarded ──────────────────────────────────────────
 
-export const BRIEF_SYSTEM = `Jesteś Stanley, asystent operacyjny WCEEN (Filip). Dostajesz poranny brief, który policzył kod.
-Napisz WSTĘP: 2–4 krótkie zdania po polsku, co jest dziś najważniejsze w tym briefie (sprzedaż względem celu, reklamy, maile, plan, alarmy).
-Liczby: WYŁĄCZNIE te z briefu, przepisane dokładnie w tym samym formacie. Żadnych nowych liczb, szacunków, sum, procentów ani benchmarków:
-serwer usuwa każde zdanie z liczbą spoza briefu. Gdy brief mówi „BRAK DANYCH”, nie zgaduj. Bez nagłówków, list i Markdownu. Zwracaj się „sir”.`
+export const BRIEF_SYSTEM = `You are STANLEY, the operations assistant of WCEEN, speaking to Filip ("sir"). You get this morning's brief, computed by code.
+Write the SPOKEN BRIEFING in English: 5-9 short sentences, in this order: yesterday's sales against the monthly goal; anything that needs attention (alarms, data gaps); what is on today's plan, in time order (translate the Polish titles into English and say the time first); any question for Filip.
+Numbers: ONLY those in the brief, copied exactly in the same format. No new numbers, estimates, sums, percentages or benchmarks: the server removes every sentence with a number that is not in the brief. When the brief says "NO DATA", do not guess. No headings, lists or Markdown. The first sentence carries information; no greeting.`
 
 /** { intro, checked, removed, scrubbed } — intro null when the model is off, failed or every sentence was removed. */
 export async function describeBrief(text, llm) {
   if (!llm) return { intro: null, checked: 0, removed: 0, scrubbed: 0, error: 'LLM not configured' }
   try {
-    const raw = await llm(BRIEF_SYSTEM, `=== BRIEF (policzony przez kod) ===\n${text}\n\n=== ZADANIE ===\nNapisz wstęp.`, { temperature: 0.4, max_tokens: 300, timeoutMs: 12000 })
-    const s = scrubModelText(String(raw?.text ?? raw ?? '').replace(/^\s*(ANSWER|WSTĘP)\s*:\s*/i, '').trim())
+    const raw = await llm(BRIEF_SYSTEM, `=== BRIEF (computed by code) ===\n${text}\n\n=== TASK ===\nWrite the spoken briefing in English.`, { temperature: 0.4, max_tokens: 500, timeoutMs: 14000 })
+    const s = scrubModelText(String(raw?.text ?? raw ?? '').replace(/^\s*(ANSWER|SPEECH|INTRO|WSTĘP)\s*:\s*/i, '').trim())
     const v = verifyNumbers(s.text, buildAllowed({ reportText: text }))
     const intro = v.text.replace(/\s+/g, ' ').trim()
     return { intro: intro || null, checked: v.checked, removed: v.removed, scrubbed: s.secrets + s.tax, provider: raw?.provider ?? null, model: raw?.model ?? null }
@@ -303,7 +305,7 @@ export async function runDailyBrief({ now = new Date(), deps, llm = null, dryRun
   const brief = {
     date: today,
     createdAt: now.toISOString(),
-    title: `Brief dnia ${today}`,
+    title: `Daily brief ${today}`,
     intro: d.intro,
     sections: r.sections,
     text: d.intro ? `${d.intro}\n\n${r.text}` : r.text,

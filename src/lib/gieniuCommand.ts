@@ -2,6 +2,7 @@
 import type { LlmMeta } from '../types'
 import { isFinanceQuestion } from '../../netlify/shared/financeIntent.js'
 import { mayBePublisherTurn } from '../../netlify/shared/publisherIntent.js'
+import { inPublisherConversation, type ChatMessage } from '../../netlify/shared/chatHistory.js'
 import type { FinanceBlock } from '../../netlify/shared/financeBlocks.js'
 import { stanleyFetch } from './stanleyAuth'
 import { isTaskCommand } from '../../netlify/shared/stanleyTasks.js'
@@ -106,6 +107,8 @@ export interface GieniuCommandContext {
   currentRoute?: string
   /** Reel Publisher: the signed preview Stanley asked Filip to confirm (sent back with his "yes"). */
   pendingPublisher?: string | null
+  /** The last few messages of this conversation (the gateway is stateless; this is its only memory). */
+  history?: ChatMessage[]
 }
 
 export interface GieniuCommandResult {
@@ -140,7 +143,7 @@ export async function fetchGieniuCommand(
   // Task commands ("dodaj zadanie …", "zrobione …", "co dziś?") go to the tasks store (stanley-tasks, Blobs), not to the model.
   if (isTaskCommand(message)) return fetchTaskCommand(message)
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), isFinanceQuestion(message) || mayBePublisherTurn(message, Boolean(context.pendingPublisher)) ? FINANCE_TIMEOUT_MS : TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), isFinanceQuestion(message) || mayBePublisherTurn(message, Boolean(context.pendingPublisher) || inPublisherConversation(context.history ?? [])) ? FINANCE_TIMEOUT_MS : TIMEOUT_MS)
 
   try {
     const res = await stanleyFetch('/.netlify/functions/gieniu-command', {

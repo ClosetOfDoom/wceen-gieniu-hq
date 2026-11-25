@@ -21,7 +21,8 @@ import { PLAN_PERIODS, addDays, parseWhen, resolveRange, weekdayName } from './p
 import { warsawParts } from './webinarMail.js'
 import { DEFAULT_ANTHROPIC_MODEL, checkRateLimit } from './financeLlm.js'
 import { emptyUsage } from './llmTools.js'
-import { hasPublisherKeyword, isAffirmation, isNegation, norm, startsWithPublisherVerb } from './publisherIntent.js'
+import { hasPublisherKeyword, isAffirmation, isNegation, looksLikeDatePhrase, norm, startsWithPublisherVerb, wordCount } from './publisherIntent.js'
+import { inPublisherConversation, toMessages } from './chatHistory.js'
 
 export const PENDING_TTL_MS = 10 * 60 * 1000
 export const MAX_TOOL_CALLS = 8
@@ -49,14 +50,39 @@ async function knownWords(client, now) {
 export const resetWordsCache = () => { wordsCache = { at: 0, words: null } }
 
 /**
- * 'confirm' | 'cancel' | 'question' | null.  "yes" / "no" are ours only while a preview is waiting.
- * A command that does not say "reel" is ours only when it names a word that is in the queue.
+ * Does the new message say the same date as the move that waits for confirmation? ("piątek 19:00" after a preview of
+ * "Friday 19:00".) Typing the date again is a natural way to confirm it.
  */
-export async function publisherTurn(message, { pending = null, env = process.env, now = new Date(), deps = {} } = {}) {
-  if (pending && isAffirmation(message)) return 'confirm'
-  if (pending && isNegation(message)) return 'cancel'
+export function repeatsPendingDate(message, payload, now = new Date()) {
+  const actions = payload?.actions ?? []
+  if (actions.length !== 1 || actions[0].action !== 'przesun' || !looksLikeDatePhrase(message)) return false
+  const when = parseWhen(message, now)
+  if (!when.ok) return false
+  const target = String(actions[0].params?.nowa_data ?? '')
+  return when.time ? when.spec === target : target.startsWith(when.date)
+}
+
+/**
+ * 'confirm' | 'cancel' | 'question' | null.
+ *   · while a preview waits (a valid signed token): a plain "yes" / "tak, potwierdzam" or the SAME date typed again
+ *     confirms, a plain "no" cancels, a date / reel word / short reply is a continuation ("make it Saturday"),
+ *     anything else (an unrelated question) is not ours;
+ *   · an expired token still answers "yes" / "no" ("that confirmation has expired");
+ *   · reel words are ours; so is a short follow-up while the last answer was a reel answer (history);
+ *   · a command without "reel" is ours only when it names a word that is in the queue.
+ */
+export async function publisherTurn(message, { pending = null, history = [], env = process.env, now = new Date(), deps = {} } = {}) {
+  const payload = pending ? verifyPending(pending, env.STANLEY_ACCESS_TOKEN, now.getTime()) : null
+  if (payload) {
+    if (isNegation(message)) return 'cancel'
+    if (isAffirmation(message) || repeatsPendingDate(message, payload, now)) return 'confirm'
+    if (looksLikeDatePhrase(message) || hasPublisherKeyword(message) || startsWithPublisherVerb(message) || wordCount(message) <= 5) return 'question'
+    return null
+  }
+  if (pending && (isAffirmation(message) || isNegation(message))) return 'confirm'   // expired: Stanley says so
   const m = norm(message)
   if (hasPublisherKeyword(message)) return 'question'
+  if (inPublisherConversation(history, now.getTime()) && (looksLikeDatePhrase(message) || isAffirmation(message) || isNegation(message) || wordCount(message) <= 10)) return 'question'
   if (startsWithPublisherVerb(message)) {
     try {
       const client = deps.client ?? createPublisherClient(publisherConfigFromEnv(env))
@@ -282,11 +308,11 @@ You read and change the Językozak reel queue ONLY through the tools. The Publis
 • Persona and format unchanged: English, "sir", the first sentence carries information, ANSWER: and SPEECH: blocks. SPEECH is one or two sentences and never reads out a list of reels.`
 
 /** @returns {Promise<{ text:string, toolCalls:Array<{name:string,args:object}>, usage:object, rounds:number }>} */
-export async function runPublisherChat({ system, user, tools, execute, createMessage, model, maxToolCalls = MAX_TOOL_CALLS, deadlineMs = DEADLINE_MS, nowMs = Date.now }) {
+export async function runPublisherChat({ system, messages: initial, tools, execute, createMessage, model, maxToolCalls = MAX_TOOL_CALLS, deadlineMs = DEADLINE_MS, nowMs = Date.now }) {
   const started = nowMs()
   const usage = emptyUsage()
   const toolCalls = []
-  const messages = [{ role: 'user', content: user }]
+  const messages = initial.map((m) => ({ ...m }))
   for (let round = 0; round < maxToolCalls + 3; round++) {
     const left = deadlineMs - (nowMs() - started)
     if (left < 3000) throw new Error('model deadline exceeded')
@@ -401,11 +427,21 @@ async function confirmTurn({ message, pendingToken, env, now, deps, parse, syste
   return body(text, clip(stopped ? stopped : voice, 220), { llmUsed })
 }
 
+/** What Claude is told while a preview waits for Filip's yes. */
+function waitingNote(waiting) {
+  if (!waiting?.summary) return ''
+  return `
+
+A change is waiting for Filip's confirmation (nothing has been done yet):
+${waiting.summary}
+If his message changes it (another date, another reel), preview the new change with the tools. If it is unrelated, answer it and say the waiting change is still waiting.`
+}
+
 /**
  * One publisher turn. turn = 'confirm' | 'cancel' | 'question' (from publisherTurn).
  * deps (tests): { client, createMessage }. Never throws: every failure is an answer.
  */
-export async function answerPublisher({ turn, message, systemPrompt, parse, pendingToken = null, env = process.env, now = new Date(), deps = {} }) {
+export async function answerPublisher({ turn, message, systemPrompt, parse, pendingToken = null, history = [], env = process.env, now = new Date(), deps = {} }) {
   if (turn === 'confirm' || turn === 'cancel') return confirmTurn({ message, pendingToken, env, now, deps, parse, systemPrompt })
 
   let client
@@ -422,6 +458,7 @@ export async function answerPublisher({ turn, message, systemPrompt, parse, pend
     return body(t, t)
   }
 
+  const waiting = pendingToken ? verifyPending(pendingToken, env.STANLEY_ACCESS_TOKEN, now.getTime()) : null
   const state = { plan: null, status: null, proposals: [], refusals: [], apiFailure: null }
   const execute = makeExecutor({ client, now, state })
   const today = warsawParts(now).date
@@ -430,8 +467,10 @@ export async function answerPublisher({ turn, message, systemPrompt, parse, pend
   try {
     if (!env.ANTHROPIC_API_KEY && !deps.createMessage) throw new Error('no Claude key')
     const out = await runPublisherChat({
-      system: `${systemPrompt}${PUBLISHER_RULES}\n\nToday is ${today} (${weekdayName(today)}), Warsaw time.`,
-      user: message,
+      system: `${systemPrompt}${PUBLISHER_RULES}
+
+Today is ${today} (${weekdayName(today)}), Warsaw time.${waitingNote(waiting)}`,
+      messages: toMessages(history, message),
       tools: PUBLISHER_TOOLS,
       execute,
       createMessage: deps.createMessage ?? defaultCreateMessage(env),
@@ -472,7 +511,7 @@ export async function answerPublisher({ turn, message, systemPrompt, parse, pend
   if (state.proposals.length) {
     const secret = env.STANLEY_ACCESS_TOKEN
     if (secret) {
-      pending = signPending({ actions: state.proposals.map((p) => ({ action: p.action, params: p.params, labels: p.labels })) }, secret, now.getTime())
+      pending = signPending({ actions: state.proposals.map((p) => ({ action: p.action, params: p.params, labels: p.labels })), summary: state.proposals.map((p) => renderChange(p)).join('\n') }, secret, now.getTime())
       facts.push('Say "yes" to make this change, or "no" to leave it.')
     }
   }
