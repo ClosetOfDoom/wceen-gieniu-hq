@@ -23,16 +23,16 @@ export const MIN_EVENTS = 5
 export const SOURCE_KEYS = ['stripe', 'p24', 'paypal', 'meta']
 
 const SOURCE_LABEL = { stripe: 'STRIPE', p24: 'PRZELEWY24', paypal: 'PAYPAL', meta: 'META_ADS' }
-const SCOPE_LABEL = { PP: 'PP (pamięć)', '3T': '3T (języki)', COGNI: 'COGNI', NIEPRZYPISANE: 'nieprzypisane' }
+const SCOPE_LABEL = { PP: 'PP (memory)', '3T': '3T (languages)', COGNI: 'COGNI', NIEPRZYPISANE: 'unassigned' }
 
 export const LIMITS = [
-  'To są wpływy od operatorów płatności (Stripe, P24, PayPal), a nie sprzedaż z Wix. Wix pozostaje prawdą transakcyjną dla zamówień i przychodu.',
-  'Wydatki Meta z Insights i obciążenia Meta opłacone przez PayPal to ten sam koszt w dwóch ujęciach — nigdy ich nie sumować.',
-  'Miesiąc z closed:false jest niezamknięty i nie wolno go porównywać z pełnym miesiącem.',
-  'Koszty z banku i subskrypcje: nie mam tych danych: brak publikacji audytu.',
+  'These are inflows from payment operators (Stripe, P24, PayPal), not Wix sales. Wix remains the transactional truth for orders and revenue.',
+  'Meta spend from Insights and the Meta charges paid through PayPal are the same cost seen two ways: never add them together.',
+  'A month with closed:false is not closed and must not be compared with a full month.',
+  'Bank costs and subscriptions: I don\'t have that data: no audit published.',
 ]
 
-export const NOT_PUBLISHED_ANSWER = 'nie mam tych danych: brak publikacji audytu'
+export const NOT_PUBLISHED_ANSWER = 'I don\'t have that data: no audit published'
 
 // ── money / percent helpers (integers only) ──────────────────────────────────────────────
 
@@ -80,8 +80,8 @@ export class RequestError extends FinanceError {}
 export function readFinanceConfig(env = process.env) {
   const url = (env.SUPABASE_URL ?? '').trim().replace(/\/+$/, '')
   const key = (env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim()
-  if (!url || !key) throw new FinanceError('brak SUPABASE_URL lub SUPABASE_SERVICE_ROLE_KEY w środowisku funkcji')
-  if (!url.startsWith('https://')) throw new FinanceError('SUPABASE_URL musi zaczynać się od https://')
+  if (!url || !key) throw new FinanceError('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing in the function environment')
+  if (!url.startsWith('https://')) throw new FinanceError('SUPABASE_URL must start with https://')
   return { url, key }
 }
 
@@ -116,27 +116,27 @@ export async function loadFinance(config, months, fetchFn = fetch) {
 
 // ── pure view ──────────────────────────────────────────────────────────────────────────
 
-const STATUS_RANK = { OK: 0, NIEPEŁNY: 1, UWAGA: 2 }
+const STATUS_RANK = { OK: 0, INCOMPLETE: 1, WARNING: 2 }
 const worst = (a, b) => (STATUS_RANK[a] >= STATUS_RANK[b] ? a : b)
 
 function sourceMeta(summary, key) {
   const label = SOURCE_LABEL[key]
   const entry = (summary.sources ?? []).find((s) => s.name === label)
   const failed = (summary.checks ?? []).filter((c) => c.ok === false && String(c.name).startsWith(label))
-  if (!entry) return { status: 'NIEPEŁNY', reasons: [`źródło ${label} nie występuje w sources`], present: false }
+  if (!entry) return { status: 'INCOMPLETE', reasons: [`source ${label} is not in sources`], present: false }
   const reasons = []
   let status = 'OK'
   if (entry.status !== 'OK') {
-    status = 'NIEPEŁNY'
+    status = 'INCOMPLETE'
     reasons.push(`${label}: BRAK_DANYCH${entry.reason ? ` — ${entry.reason}` : ''}`)
   }
   if (failed.length > 0) {
-    status = 'UWAGA'
-    for (const c of failed) reasons.push(`kontrola nie przeszła: ${c.name} (różnica ${c.diff})`)
+    status = 'WARNING'
+    for (const c of failed) reasons.push(`check failed: ${c.name} (difference ${c.diff})`)
   }
   if (summary.closed === false && status === 'OK') {
-    status = 'NIEPEŁNY'
-    reasons.push('miesiąc niezamknięty (dane do dnia generacji)')
+    status = 'INCOMPLETE'
+    reasons.push('month not closed (data up to the generation day)')
   }
   return { status, reasons, present: entry.status === 'OK' }
 }
@@ -146,23 +146,23 @@ function flowsView(f) {
   const out = {
     currency: cur,
     payments: f.paymentsCount,
-    avgPayment: f.paymentsCount > 0 ? money(Math.round(f.gross / f.paymentsCount), cur) : 'brak (0 płatności)',
-    refundsCount: Number.isInteger(f.refundsCount) ? f.refundsCount : 'brak w pliku (pole refundsCount)',
-    refundsShareOfPayments: Number.isInteger(f.refundsCount) && f.paymentsCount > 0 ? pct(f.refundsCount, f.paymentsCount) : 'brak (liczba zwrotów nie jest w pliku)',
+    avgPayment: f.paymentsCount > 0 ? money(Math.round(f.gross / f.paymentsCount), cur) : 'n/a (0 payments)',
+    refundsCount: Number.isInteger(f.refundsCount) ? f.refundsCount : 'n/a: not in the file (refundsCount field)',
+    refundsShareOfPayments: Number.isInteger(f.refundsCount) && f.paymentsCount > 0 ? pct(f.refundsCount, f.paymentsCount) : 'n/a (the number of refunds is not in the file)',
     gross: money(f.gross, cur),
     refunds: money(f.refunds, cur),
     disputes: money(f.disputes, cur),
-    fees: f.fees === null ? 'brak w pliku (prowizje z faktury operatora)' : money(f.fees, cur),
+    fees: f.fees === null ? 'n/a: not in the file (fees come from the operator invoice)' : money(f.fees, cur),
     otherFees: money(f.otherFees, cur),
     ...(f.climate ? { stripeClimate: money(f.climate, cur) } : {}),
     ...(f.other ? { otherOperations: money(f.other, cur) } : {}),
     ...(f.outgoing ? { outgoingPayments: money(f.outgoing, cur) } : {}),
     ...(f.topUps ? { topUps: money(f.topUps, cur) } : {}),
     net: money(f.net, cur),
-    netNote: f.fees === null ? 'netto bez prowizji (prowizje nie są w pliku)' : undefined,
-    payouts: `${money(f.payoutsSum, cur)} (${f.payoutsCount} ${f.payoutsCount === 1 ? 'wypłata' : 'wypłat'})`,
-    refundsPctOfGross: pct(f.refunds, f.gross) ?? 'brak (brutto 0)',
-    feesPctOfGross: f.fees === null ? null : pct(f.fees, f.gross) ?? 'brak (brutto 0)',
+    netNote: f.fees === null ? 'net without fees (fees are not in the file)' : undefined,
+    payouts: `${money(f.payoutsSum, cur)} (${f.payoutsCount} ${f.payoutsCount === 1 ? 'payout' : 'payouts'})`,
+    refundsPctOfGross: pct(f.refunds, f.gross) ?? 'n/a (gross 0)',
+    feesPctOfGross: f.fees === null ? null : pct(f.fees, f.gross) ?? 'n/a (gross 0)',
   }
   if (f.opening !== null && f.closing !== null) {
     out.balance = `${money(f.opening, cur)} → ${money(f.closing, cur)}`
@@ -177,23 +177,23 @@ function rawOf(summary, key) {
 }
 
 function changeVsPrevious(month, summary, previous, key) {
-  if (!previous) return { comparable: false, reason: `brak pliku ${summaryPath(previousMonth(month))} (poprzedni miesiąc nie jest opublikowany)` }
-  if (summary.closed === false) return { comparable: false, vs: previous.month, reason: `${month} jest niezamknięty — nie porównuję z pełnym miesiącem` }
-  if (previous.closed === false) return { comparable: false, vs: previous.month, reason: `${previous.month} jest niezamknięty` }
+  if (!previous) return { comparable: false, reason: `no file ${summaryPath(previousMonth(month))} (the previous month is not published)` }
+  if (summary.closed === false) return { comparable: false, vs: previous.month, reason: `${month} is not closed — I do not compare it with a full month` }
+  if (previous.closed === false) return { comparable: false, vs: previous.month, reason: `${previous.month} is not closed` }
   const a = rawOf(summary, key)
   const b = rawOf(previous, key)
   const sa = sourceMeta(summary, key)
   const sb = sourceMeta(previous, key)
-  if (!a || !b || sa.status === 'NIEPEŁNY' || sb.status === 'NIEPEŁNY') {
-    return { comparable: false, vs: previous.month, reason: `brak pełnych danych ${SOURCE_LABEL[key]} w jednym z miesięcy (${month}: ${sa.status}, ${previous.month}: ${sb.status})` }
+  if (!a || !b || sa.status === 'INCOMPLETE' || sb.status === 'INCOMPLETE') {
+    return { comparable: false, vs: previous.month, reason: `no complete ${SOURCE_LABEL[key]} data in one of the months (${month}: ${sa.status}, ${previous.month}: ${sb.status})` }
   }
-  const line = (cur, prev, currency) => `${money(prev, currency)} → ${money(cur, currency)} (${signedMoney(cur - prev, currency)}, ${pct(cur - prev, Math.abs(prev), true) ?? 'brak bazy'})`
+  const line = (cur, prev, currency) => `${money(prev, currency)} → ${money(cur, currency)} (${signedMoney(cur - prev, currency)}, ${pct(cur - prev, Math.abs(prev), true) ?? 'n/a (no base)'})`
   const lineNoPct = (cur, prev, currency) => `${money(prev, currency)} → ${money(cur, currency)} (${signedMoney(cur - prev, currency)})`
   // Small-sample rule: fewer than MIN_EVENTS events of a kind in either period → no percentage change, no trend.
   const paySmall = a.paymentsCount < MIN_EVENTS || b.paymentsCount < MIN_EVENTS
   const refKnown = Number.isInteger(a.refundsCount) && Number.isInteger(b.refundsCount)
   const refSmall = !refKnown || a.refundsCount < MIN_EVENTS || b.refundsCount < MIN_EVENTS
-  const paySample = `zbyt mało zdarzeń (płatności ${b.paymentsCount} → ${a.paymentsCount}) — bez zmiany procentowej`
+  const paySample = `too few events (payments ${b.paymentsCount} → ${a.paymentsCount}) — no percentage change`
   const out = {
     comparable: true,
     vs: previous.month,
@@ -201,11 +201,11 @@ function changeVsPrevious(month, summary, previous, key) {
     refunds: !refSmall
       ? line(a.refunds, b.refunds, a.currency)
       : refKnown
-        ? `${lineNoPct(a.refunds, b.refunds, a.currency)}; zbyt mało zdarzeń (zwroty ${b.refundsCount} → ${a.refundsCount}) — bez zmiany procentowej i bez trendu`
-        : `${lineNoPct(a.refunds, b.refunds, a.currency)}; liczba zwrotów nieznana (brak pola refundsCount w pliku) — bez zmiany procentowej, to nie jest trend`,
+        ? `${lineNoPct(a.refunds, b.refunds, a.currency)}; too few events (refunds ${b.refundsCount} → ${a.refundsCount}) — no percentage change and no trend`
+        : `${lineNoPct(a.refunds, b.refunds, a.currency)}; number of refunds unknown (no refundsCount field in the file) — no percentage change, this is not a trend`,
     net: paySmall ? `${lineNoPct(a.net, b.net, a.currency)}; ${paySample}` : line(a.net, b.net, a.currency),
     payments: `${b.paymentsCount} → ${a.paymentsCount}`,
-    avgPayment: a.paymentsCount > 0 && b.paymentsCount > 0 ? `${money(Math.round(b.gross / b.paymentsCount), a.currency)} → ${money(Math.round(a.gross / a.paymentsCount), a.currency)}` : 'brak (0 płatności w jednym z miesięcy)',
+    avgPayment: a.paymentsCount > 0 && b.paymentsCount > 0 ? `${money(Math.round(b.gross / b.paymentsCount), a.currency)} → ${money(Math.round(a.gross / a.paymentsCount), a.currency)}` : 'n/a (0 payments in one of the months)',
     sample: { payments: paySmall ? { small: true, n: `${b.paymentsCount} → ${a.paymentsCount}` } : { small: false }, refunds: !refSmall ? { small: false } : { small: true, n: refKnown ? `${b.refundsCount} → ${a.refundsCount}` : null } },
   }
   if (a.fees !== null && b.fees !== null) {
@@ -214,7 +214,7 @@ function changeVsPrevious(month, summary, previous, key) {
     const rb = tenths(b.fees, b.gross)
     if (ra !== null && rb !== null) out.feesPctOfGross = `${pct(b.fees, b.gross)} → ${pct(a.fees, a.gross)}`
   } else {
-    out.fees = 'brak prowizji w pliku (jeden z miesięcy) — nie porównuję'
+    out.fees = 'n/a: no fees in the file (one of the months), not compared'
   }
   return out
 }
@@ -222,22 +222,22 @@ function changeVsPrevious(month, summary, previous, key) {
 function anomaliesFor(month, summary, previous, key, meta) {
   const label = SOURCE_LABEL[key]
   const out = []
-  if (meta.status === 'UWAGA') out.push(`${month} ${label}: status UWAGA — ${meta.reasons.join('; ')}`)
+  if (meta.status === 'WARNING') out.push(`${month} ${label}: status WARNING — ${meta.reasons.join('; ')}`)
   const a = rawOf(summary, key)
   if (a && meta.present) {
     const refundRate = tenths(a.refunds, a.gross)
-    if (a.refunds > 0 && refundRate !== null && refundRate >= 20) out.push(`${month} ${label}: zwroty ${money(a.refunds, a.currency)} = ${pct(a.refunds, a.gross)} brutto (próg uwagi 2,0%)`)
+    if (a.refunds > 0 && refundRate !== null && refundRate >= 20) out.push(`${month} ${label}: refunds ${money(a.refunds, a.currency)} = ${pct(a.refunds, a.gross)} of gross (attention threshold 2,0%)`)
     if (a.disputes > 0) out.push(`${month} ${label}: spory/blokady ${money(a.disputes, a.currency)}`)
     if (summary.closed !== false && previous && previous.closed !== false) {
       const b = rawOf(previous, key)
       if (b && a.fees !== null && b.fees !== null) {
         const ra = tenths(a.fees, a.gross)
         const rb = tenths(b.fees, b.gross)
-        if (ra !== null && rb !== null && ra - rb >= 3) out.push(`${month} ${label}: wzrost prowizji w brutto ${pct(b.fees, b.gross)} → ${pct(a.fees, a.gross)} (próg uwagi +0,3 pp)`)
+        if (ra !== null && rb !== null && ra - rb >= 3) out.push(`${month} ${label}: fee growth in gross ${pct(b.fees, b.gross)} → ${pct(a.fees, a.gross)} (attention threshold +0,3 pp)`)
       }
       if (b && b.gross > 0) {
         const change = tenths(a.gross - b.gross, b.gross)
-        if (change !== null && Math.abs(change) >= 300) out.push(`${month} ${label}: brutto zmieniło się o ${pct(a.gross - b.gross, b.gross, true)} względem ${previous.month}`)
+        if (change !== null && Math.abs(change) >= 300) out.push(`${month} ${label}: gross changed by ${pct(a.gross - b.gross, b.gross, true)} compared with ${previous.month}`)
       }
     }
   }
@@ -266,32 +266,34 @@ function metaView(month, summary, previous) {
         : {}),
     },
     paypalCharges: {
-      source: 'PAYPAL (obciążenia za reklamy Meta)',
+      source: 'PAYPAL (charges for Meta ads)',
       status: paypal.status,
       ...(paypal.reasons.length ? { reasons: paypal.reasons } : {}),
       ...(paypal.present
         ? {
             list: charges.map((c) => `${c.date}  ${money(c.amount, c.currency)}`),
-            sum: chargeSums.map((s) => `${money(s.amount, s.currency)} (${s.count} ${s.count === 1 ? 'płatność' : 'płatności'})`),
+            sum: chargeSums.map((s) => `${money(s.amount, s.currency)} (${s.count} ${s.count === 1 ? 'payment' : 'payments'})`),
           }
         : {}),
     },
-    rule: 'TO TEN SAM KOSZT W DWÓCH UJĘCIACH (Insights = wydatek wg panelu Meta, PayPal = faktyczne obciążenia). Pokazuj osobno, NIGDY nie sumuj i nie dodawaj. Insights nie jest kwotą obciążenia (progi rozliczeniowe, terminy); dokumentem kosztowym jest rachunek Meta.',
+    rule: 'THE SAME COST SEEN TWO WAYS (Insights = spend according to the Meta panel, PayPal = the actual charges). Show them separately, NEVER add them together. Insights is not the amount charged (billing thresholds, dates); the cost document is the Meta invoice.',
   }
   // Change vs previous month, per view (not summed together).
   if (summary.closed !== false && previous && previous.closed !== false && insights.present && sourceMeta(previous, 'meta').present) {
     const cur = (summary.meta?.insightsSpendByScope ?? []).filter((s) => s.currency === 'PLN').reduce((n, s) => n + s.spend, 0)
     const prev = (previous.meta?.insightsSpendByScope ?? []).filter((s) => s.currency === 'PLN').reduce((n, s) => n + s.spend, 0)
-    view.insights.changeVsPrevious = `${previous.month}: ${money(prev)} → ${money(cur)} (${signedMoney(cur - prev, 'PLN')}, ${pct(cur - prev, Math.abs(prev), true) ?? 'brak bazy'})`
+    view.insights.changeVsPrevious = `${previous.month}: ${money(prev)} → ${money(cur)} (${signedMoney(cur - prev, 'PLN')}, ${pct(cur - prev, Math.abs(prev), true) ?? 'n/a (no base)'})`
   } else {
-    view.insights.changeVsPrevious = summary.closed === false ? 'nie porównuję: miesiąc niezamknięty' : 'brak pełnych danych poprzedniego miesiąca'
+    view.insights.changeVsPrevious = summary.closed === false ? 'not compared: month not closed' : 'no complete data for the previous month'
   }
   return view
 }
 
 function openNote(summary) {
   const note = (summary.notes ?? []).find((n) => String(n).startsWith('MIESIĄC NIEZAMKNIĘTY'))
-  return note ?? 'MIESIĄC NIEZAMKNIĘTY'
+  // the file's own note (Polish: "MIESIĄC NIEZAMKNIĘTY — dane do <date>") is only read for the date
+  const when = /dane do\s+(\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?)/i.exec(String(note ?? ''))
+  return `MONTH NOT CLOSED${when ? ` — data up to ${when[1]}` : ''}`
 }
 
 /**
@@ -308,11 +310,11 @@ export function buildFinanceView({ index, summaries, months, source }) {
   const result = {
     publishedMonths: published,
     indexAvailable: index !== null && index !== undefined,
-    ...(index ? {} : { missing: [`${BUCKET}/index.json — nie mam tych danych: brak publikacji`] }),
+    ...(index ? {} : { missing: [`${BUCKET}/index.json — I don't have that data: not published`] }),
     months: [],
     limits: LIMITS,
-    notPublished: `koszty z banku, subskrypcje, opłaty bankowe: ${NOT_PUBLISHED_ANSWER}`,
-    statusRule: 'OK = źródło OK, kontrole ✔, miesiąc zamknięty; NIEPEŁNY = źródło BRAK_DANYCH albo miesiąc niezamknięty; UWAGA = kontrola nie przeszła.',
+    notPublished: `bank costs, subscriptions, bank fees: ${NOT_PUBLISHED_ANSWER}`,
+    statusRule: 'OK = source OK, checks ✔, month closed; INCOMPLETE = source BRAK_DANYCH (no data) or month not closed; WARNING = a check failed.',
   }
   for (const month of months) {
     const summary = summaries.get(month)
@@ -320,12 +322,12 @@ export function buildFinanceView({ index, summaries, months, source }) {
       result.months.push({
         month,
         available: false,
-        missing: `${BUCKET}/${summaryPath(month)} — nie mam tych danych: miesiąc nie jest opublikowany`,
+        missing: `${BUCKET}/${summaryPath(month)} — I don't have that data: the month is not published`,
       })
       continue
     }
     if (summary.schemaVersion !== SCHEMA_VERSION) {
-      result.months.push({ month, available: false, missing: `${summaryPath(month)}: nieobsługiwana wersja schematu (${summary.schemaVersion})` })
+      result.months.push({ month, available: false, missing: `${summaryPath(month)}: unsupported schema version (${summary.schemaVersion})` })
       continue
     }
     const previous = summaries.get(previousMonth(month)) ?? null
@@ -335,7 +337,7 @@ export function buildFinanceView({ index, summaries, months, source }) {
       closed: summary.closed,
       generatedAt: summary.generatedAt,
       ...(summary.closed === false
-        ? { warning: `${openNote(summary)}. Nie porównywać z pełnym miesiącem; to dane częściowe.` }
+        ? { warning: `${openNote(summary)}. Do not compare with a full month; this is partial data.` }
         : {}),
       sources: {},
       anomalies: [],
@@ -345,10 +347,10 @@ export function buildFinanceView({ index, summaries, months, source }) {
       if (key === 'meta') {
         const meta = metaView(month, summary, previous)
         view.sources.meta = meta
-        view.anomalies.push(...(meta.status === 'UWAGA' ? [`${month} META: status UWAGA`] : []))
+        view.anomalies.push(...(meta.status === 'WARNING' ? [`${month} META: status WARNING`] : []))
         for (const part of [meta.insights, meta.paypalCharges]) {
-          if (part.status === 'NIEPEŁNY' && part.reasons?.length && !('byScope' in part) && !('list' in part)) {
-            view.missing.push(`${summaryPath(month)} → ${part.source}: nie mam tych danych (${part.reasons.join('; ')})`)
+          if (part.status === 'INCOMPLETE' && part.reasons?.length && !('byScope' in part) && !('list' in part)) {
+            view.missing.push(`${summaryPath(month)} → ${part.source}: I don't have that data (${part.reasons.join('; ')})`)
           }
         }
         continue
@@ -358,7 +360,7 @@ export function buildFinanceView({ index, summaries, months, source }) {
       const entry = { source: SOURCE_LABEL[key], month, status: meta.status, ...(meta.reasons.length ? { statusReasons: meta.reasons } : {}) }
       if (!meta.present || !section) {
         entry.data = null
-        view.missing.push(`${summaryPath(month)} → ${key} (${SOURCE_LABEL[key]}): nie mam tych danych${meta.reasons.length ? ` — ${meta.reasons.join('; ')}` : ''}`)
+        view.missing.push(`${summaryPath(month)} → ${key} (${SOURCE_LABEL[key]}): I don't have that data${meta.reasons.length ? ` — ${meta.reasons.join('; ')}` : ''}`)
       } else if (key === 'paypal') {
         entry.byCurrency = section.byCurrency.map(flowsView)
         entry.changeVsPrevious = changeVsPrevious(month, summary, previous, key)
@@ -384,11 +386,11 @@ export function validateRequest({ months, source } = {}) {
   const list = Array.isArray(months) ? months : typeof months === 'string' ? months.split(',') : []
   const trimmed = list.map((m) => String(m).trim()).filter(Boolean)
   const invalid = trimmed.filter((m) => !MONTH_RE.test(m))
-  if (invalid.length > 0) throw new RequestError(`nieprawidłowy miesiąc: ${invalid.join(', ')} (oczekiwany format RRRR-MM)`)
+  if (invalid.length > 0) throw new RequestError(`invalid month: ${invalid.join(', ')} (expected format YYYY-MM)`)
   const unique = [...new Set(trimmed)].sort()
-  if (unique.length > MAX_MONTHS) throw new RequestError(`najwyżej ${MAX_MONTHS} miesięcy naraz`)
+  if (unique.length > MAX_MONTHS) throw new RequestError(`at most ${MAX_MONTHS} months at once`)
   const src = source ? String(source).trim().toLowerCase() : undefined
-  if (src && !SOURCE_KEYS.includes(src)) throw new RequestError(`nieznane źródło: ${src} (dozwolone: ${SOURCE_KEYS.join(', ')})`)
+  if (src && !SOURCE_KEYS.includes(src)) throw new RequestError(`unknown source: ${src} (allowed: ${SOURCE_KEYS.join(', ')})`)
   return { months: unique, source: src || undefined }
 }
 
@@ -401,7 +403,7 @@ export async function getFinance(request, { env = process.env, fetchFn = fetch }
 
 // ── report text (deterministic) ────────────────────────────────────────────────────────
 // Tables, statuses, changes, anomalies and gaps are rendered HERE, not by the model: a smaller
-// model dropped statuses and the "nie mam tych danych" file names. Stanley's text is a comment
+// model dropped statuses and the "I don't have that data" file names. Stanley's text is a comment
 // placed after this report.
 
 /** Several tool results (e.g. stripe and p24 asked separately) merged by month. */
@@ -425,7 +427,7 @@ export function mergeViews(views) {
   return merged
 }
 
-const feesCell = (d) => (String(d.fees).startsWith('brak') ? 'brak w pliku' : d.fees)
+const feesCell = (d) => (String(d.fees).startsWith('n/a') ? 'n/a (not in the file)' : d.fees)
 
 function tableRows(m) {
   const rows = []
@@ -446,7 +448,7 @@ function tableRows(m) {
   return rows
 }
 
-const noData = (v) => v === null || v === undefined || String(v).startsWith('brak')
+const noData = (v) => v === null || v === undefined || String(v).startsWith('n/a')
 
 /** Derived metrics per source and month: payments, average payment, refunds count and share, fees as % of gross. Computed in flowsView from raw numbers. */
 function metricRows(m) {
@@ -454,9 +456,9 @@ function metricRows(m) {
   const label = `${m.month}${m.closed === false ? '*' : ''}`
   const push = (name, d) => rows.push([
     label, name, String(d.payments), d.avgPayment,
-    noData(d.refundsCount) ? 'brak w pliku' : String(d.refundsCount),
-    noData(d.refundsShareOfPayments) ? 'brak' : d.refundsShareOfPayments,
-    noData(d.feesPctOfGross) ? 'brak w pliku' : d.feesPctOfGross,
+    noData(d.refundsCount) ? 'n/a (not in the file)' : String(d.refundsCount),
+    noData(d.refundsShareOfPayments) ? 'n/a' : d.refundsShareOfPayments,
+    noData(d.feesPctOfGross) ? 'n/a (not in the file)' : d.feesPctOfGross,
   ])
   for (const key of ['stripe', 'p24', 'paypal']) {
     const s = m.sources[key]
@@ -480,10 +482,10 @@ export function buildReportBlocks(view) {
   const rows = view.months.flatMap((m) => (m.available ? tableRows(m) : []))
   if (rows.length > 0) {
     const keys = ['month', 'source', 'status', 'gross', 'refunds', 'fees', 'net']
-    const labels = ['Miesiąc', 'Źródło', 'Status', 'Brutto', 'Zwroty', 'Prowizje', 'Netto']
+    const labels = ['Month', 'Source', 'Status', 'Gross', 'Refunds', 'Fees', 'Net']
     blocks.push({
       type: 'table',
-      title: 'SUMY (wpływy od operatorów płatności, nie sprzedaż z Wix)',
+      title: 'TOTALS (payment-operator inflows, not Wix sales)',
       columns: labels.map((label, i) => ({ key: keys[i], label, align: i < 3 ? 'left' : 'right' })),
       rows,
     })
@@ -494,16 +496,16 @@ export function buildReportBlocks(view) {
         if (!s) return []
         return dataOf(s).filter((d) => !d.payouts.startsWith('0,00')).map((d) => `${s.source}${d.currency === 'PLN' ? '' : ` ${d.currency}`}: ${d.payouts}`)
       })
-      if (payouts.length > 0) notes.push('', `Wypłaty na rachunek ${m.month}: ${payouts.join('; ')}`)
+      if (payouts.length > 0) notes.push('', `Payouts to the account ${m.month}: ${payouts.join('; ')}`)
       for (const key of ['stripe', 'p24']) {
         const s = m.sources[key]
-        if (s?.data && String(s.data.fees).startsWith('brak')) {
-          notes.push(`${s.source} ${m.month}: prowizje nie są w pliku (rozlicza je faktura operatora), więc netto = brutto − zwroty, bez prowizji.`)
+        if (s?.data && String(s.data.fees).startsWith('n/a')) {
+          notes.push(`${s.source} ${m.month}: fees are not in the file (the operator's invoice settles them), so net = gross − refunds, without fees.`)
         }
       }
       const pp = m.sources.paypal?.byCurrency?.find((d) => d.currency === 'PLN')
       if (pp && (pp.outgoingPayments || pp.topUps)) {
-        notes.push(`PAYPAL ${m.month}: netto uwzględnia też płatności wychodzące (${pp.outgoingPayments ?? '0,00 zł'}) i zasilenia salda (${pp.topUps ?? '0,00 zł'}).`)
+        notes.push(`PAYPAL ${m.month}: net also includes outgoing payments (${pp.outgoingPayments ?? '0,00 zł'}) and balance top-ups (${pp.topUps ?? '0,00 zł'}).`)
       }
     }
     if (notes.length > 0) blocks.push({ type: 'text', role: 'notes', lines: notes })
@@ -511,21 +513,21 @@ export function buildReportBlocks(view) {
     const metrics = view.months.flatMap((m) => (m.available ? metricRows(m) : []))
     if (metrics.length > 0) {
       const mkeys = ['month', 'source', 'payments', 'avg', 'refundsCount', 'refundsShare', 'feesPct']
-      const mlabels = ['Miesiąc', 'Źródło', 'Płatności', 'Śr. płatność', 'Zwroty (szt.)', 'Zwroty / płatności', 'Prowizje / brutto']
+      const mlabels = ['Month', 'Source', 'Payments', 'Avg. payment', 'Refunds (count)', 'Refunds / payments', 'Fees / gross']
       blocks.push({
         type: 'table',
         lead: true,
-        title: 'METRYKI POCHODNE (liczone na serwerze z danych raportu)',
+        title: 'DERIVED METRICS (computed on the server from the report data)',
         columns: mlabels.map((label, i) => ({ key: mkeys[i], label, align: i < 2 ? 'left' : 'right' })),
         rows: metrics.map((cells) => ({ cells })),
       })
       const lines = []
       const shown = view.months.filter((m) => m.available).flatMap((m) => ['stripe', 'p24', 'paypal'].map((k) => m.sources[k]).filter(Boolean))
       if (shown.some((s) => dataOf(s).some((d) => noData(d.refundsCount)))) {
-        lines.push('Liczba zwrotów nie jest w pliku summary (brak pola refundsCount) — zmian kwoty zwrotów nie traktuję jako trendu ani nie podaję ich zmiany procentowej.')
+        lines.push('The number of refunds is not in the summary file (no refundsCount field): I do not treat changes in the refund amount as a trend and give no percentage change for them.')
       }
       if (view.months.some((m) => m.available && m.sources.stripe)) {
-        lines.push('Stripe obejmuje także płatności spoza Wix (np. Cogni); w pliku nie ma rozbicia brutto na produkty ani źródła sprzedaży, więc wzrostu brutto nie przypisuję sprzedaży z Wix.')
+        lines.push('Stripe also covers payments outside Wix (e.g. Cogni); the file has no split of gross by product or sales source, so I do not attribute a rise in gross to Wix sales.')
       }
       if (lines.length > 0) blocks.push({ type: 'text', role: 'notes', lines })
     }
@@ -537,9 +539,9 @@ export function buildReportBlocks(view) {
       role: 'meta',
       lines: [
         '',
-        `META ${m.month}${m.closed === false ? '*' : ''} — status ${m.sources.meta.status} (dwa ujęcia TEGO SAMEGO kosztu — nie sumować)`,
-        `  wydatki wg Insights (panel Meta) [${insights.status}]: ${insights.total ? Object.values(insights.total).join(' / ') : `nie mam tych danych: ${(insights.reasons ?? []).join('; ') || 'brak'}`}`,
-        `  obciążenia przez PayPal [${paypalCharges.status}]: ${paypalCharges.sum ? paypalCharges.sum.join(' / ') : `nie mam tych danych: ${(paypalCharges.reasons ?? []).join('; ') || 'brak'}`}`,
+        `META ${m.month}${m.closed === false ? '*' : ''} — status ${m.sources.meta.status} (two views of the SAME cost — do not add)`,
+        `  spend per Insights (Meta panel) [${insights.status}]: ${insights.total ? Object.values(insights.total).join(' / ') : `I don't have that data: ${(insights.reasons ?? []).join('; ') || 'none'}`}`,
+        `  charges through PayPal [${paypalCharges.status}]: ${paypalCharges.sum ? paypalCharges.sum.join(' / ') : `I don't have that data: ${(paypalCharges.reasons ?? []).join('; ') || 'none'}`}`,
       ],
     })
   }
@@ -551,32 +553,32 @@ export function buildReportBlocks(view) {
       if (!c) return []
       const name = `${m.month} ${m.sources[key].source}`
       return c.comparable
-        ? [`${name} vs ${c.vs}: brutto ${c.gross}; zwroty ${c.refunds}; prowizje ${c.fees}${c.feesPctOfGross ? ` (udział w brutto ${c.feesPctOfGross})` : ''}; netto ${c.net}; płatności ${c.payments}; śr. płatność ${c.avgPayment}`]
-        : [`${name}: brak porównania — ${c.reason}`]
+        ? [`${name} vs ${c.vs}: gross ${c.gross}; refunds ${c.refunds}; fees ${c.fees}${c.feesPctOfGross ? ` (share of gross ${c.feesPctOfGross})` : ''}; net ${c.net}; payments ${c.payments}; avg. payment ${c.avgPayment}`]
+        : [`${name}: no comparison — ${c.reason}`]
     }),
   )
   const metaChanges = view.months.filter((m) => m.available && m.sources.meta).map((m) => `${m.month} META Insights: ${m.sources.meta.insights.changeVsPrevious}`)
   const all = [...changes, ...metaChanges]
   blocks.push({
     type: 'list',
-    title: 'ZMIANA WZGLĘDEM POPRZEDNIEGO MIESIĄCA',
-    items: (all.length ? all : ['brak danych do porównania']).map((text) => ({ text })),
+    title: 'CHANGE VS THE PREVIOUS MONTH',
+    items: (all.length ? all : ['no data to compare']).map((text) => ({ text })),
   })
 
   const anomalies = view.months.filter((m) => m.available).flatMap((m) => m.anomalies)
   blocks.push({
     type: 'list',
-    title: 'ANOMALIE (progi: zwroty ≥ 2,0% brutto, wzrost prowizji ≥ 0,3 pp, zmiana brutto ≥ 30%, status UWAGA)',
-    items: anomalies.length ? anomalies.map((text) => ({ text, kind: 'warn' })) : [{ text: 'nie wykryto anomalii' }],
+    title: 'ANOMALIES (thresholds: refunds ≥ 2,0% of gross, fee growth ≥ 0,3 pp, change in gross ≥ 30%, status WARNING)',
+    items: anomalies.length ? anomalies.map((text) => ({ text, kind: 'warn' })) : [{ text: 'no anomalies detected' }],
   })
 
   const missing = [...(view.missing ?? []), ...view.months.flatMap((m) => (m.available ? m.missing : [m.missing]))]
   blocks.push({
     type: 'list',
-    title: 'BRAKI DANYCH',
-    items: (missing.length ? missing : ['brak w żądanym zakresie']).map((text) => ({ text })),
+    title: 'DATA GAPS',
+    items: (missing.length ? missing : ['none in the requested range']).map((text) => ({ text })),
   })
-  blocks.push({ type: 'text', role: 'footer', lines: ['', 'Wix pozostaje prawdą transakcyjną dla zamówień i przychodu; powyższe to wpływy od operatorów płatności.'] })
+  blocks.push({ type: 'text', role: 'footer', lines: ['', 'Wix remains the transactional truth for orders and revenue; the above are inflows from payment operators.'] })
   return blocks
 }
 

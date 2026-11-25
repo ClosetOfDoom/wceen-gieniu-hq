@@ -24,12 +24,12 @@ export const DEFAULT_HOURLY_LIMIT = 30
 export function pickFinanceProvider(env) {
   const warnings = []
   const wanted = String(env.FINANCE_LLM_PROVIDER ?? '').trim().toLowerCase()
-  if (wanted !== '' && wanted !== 'anthropic' && wanted !== 'openai') warnings.push('FINANCE_LLM_PROVIDER: nieznana wartość, użyto openai')
+  if (wanted !== '' && wanted !== 'anthropic' && wanted !== 'openai') warnings.push('FINANCE_LLM_PROVIDER: unknown value, openai used')
   const name = wanted === 'anthropic' ? 'anthropic' : 'openai'
   const keyVar = name === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'
   const wantedModel = String(env.FINANCE_MODEL ?? '').trim()
   const fits = wantedModel !== '' && (name === 'anthropic' ? wantedModel.startsWith('claude-') : !wantedModel.startsWith('claude-'))
-  if (wantedModel !== '' && !fits) warnings.push(`FINANCE_MODEL nie pasuje do dostawcy ${name}, użyto modelu domyślnego`)
+  if (wantedModel !== '' && !fits) warnings.push(`FINANCE_MODEL does not match provider ${name}, the default model was used`)
   const model = fits ? wantedModel : name === 'anthropic' ? DEFAULT_ANTHROPIC_MODEL : (env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL)
   return { name, key: String(env[keyVar] ?? '').trim(), keyVar, model, warnings }
 }
@@ -73,7 +73,7 @@ export async function runAnthropicFinanceChat({
   const maxRounds = maxToolCalls + 3
   for (let round = 0; round < maxRounds; round++) {
     const left = deadlineMs - (now() - started)
-    if (left < 3000) throw new Error('przekroczony czas odpowiedzi modelu')
+    if (left < 3000) throw new Error('the model response time was exceeded')
     const noMoreTools = toolCalls.length >= maxToolCalls
     const res = await client.messages.create({
       model,
@@ -88,7 +88,7 @@ export async function runAnthropicFinanceChat({
     usage.output += res.usage?.output_tokens ?? 0
     usage.cacheRead += res.usage?.cache_read_input_tokens ?? 0
     usage.cacheWrite += res.usage?.cache_creation_input_tokens ?? 0
-    if (res.stop_reason === 'refusal') throw new Error('model odmówił odpowiedzi (refusal)')
+    if (res.stop_reason === 'refusal') throw new Error('the model refused to answer (refusal)')
 
     const uses = res.content.filter((b) => b.type === 'tool_use')
     if (uses.length > 0 && !noMoreTools) {
@@ -109,14 +109,14 @@ export async function runAnthropicFinanceChat({
       // forced tool_choice is rejected on this model: one reminder instead (a comment without data would have no numbers to quote)
       reminded = true
       if (res.content.length > 0) messages.push({ role: 'assistant', content: res.content })
-      messages.push({ role: 'user', content: 'Najpierw wywołaj narzędzie get_finance, a dopiero potem napisz komentarz.' })
+      messages.push({ role: 'user', content: 'First call the get_finance tool, and only then write the comment.' })
       continue
     }
     const raw = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
     const truncated = res.stop_reason === 'max_tokens'
     return { text: truncated ? cutToLastSentence(raw) : raw, rounds: round + 1, toolCalls, usage, truncated }
   }
-  throw new Error('pętla narzędzi nie zwróciła tekstu')
+  throw new Error('the tool loop returned no text')
 }
 
 // ── log ──────────────────────────────────────────────────────────────────────────────────────────

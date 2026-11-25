@@ -12,8 +12,8 @@ import { copyText } from '../utils/clipboard'
 
 export const STATUS_COLOR: Record<string, string> = {
   OK: 'var(--green)',
-  NIEPEŁNY: 'var(--amber)',
-  UWAGA: 'var(--red)',
+  INCOMPLETE: 'var(--amber)',
+  WARNING: 'var(--red)',
 }
 
 const serif = 'var(--font-serif)'
@@ -112,11 +112,11 @@ function List({ block }: { block: ListBlock }) {
 function Comment({ block }: { block: CommentBlock }) {
   return (
     <div data-testid="finance-comment" style={{ marginTop: 18, borderLeft: '3px solid var(--gold)', paddingLeft: 12 }}>
-      <div style={{ ...headingStyle, margin: '0 0 6px', fontSize: '0.72rem' }}>Komentarz</div>
+      <div style={{ ...headingStyle, margin: '0 0 6px', fontSize: '0.72rem' }}>Comment</div>
       {block.sections.length === 0 && <div style={{ fontFamily: mono, fontSize: '0.8rem', color: 'var(--muted2)' }}>{block.fallback}</div>}
       {block.sections.map((s) => (
         <section key={s.id} style={{ marginTop: 10 }}>
-          <h4 style={{ margin: '0 0 4px', fontFamily: serif, fontSize: '0.64rem', letterSpacing: '0.12em', color: s.id === 'DLACZEGO' || s.id === 'POMYSŁY' ? 'var(--teal)' : 'var(--gold)', textTransform: 'uppercase' }}>{s.title}</h4>
+          <h4 style={{ margin: '0 0 4px', fontFamily: serif, fontSize: '0.64rem', letterSpacing: '0.12em', color: s.id === 'WHY' || s.id === 'IDEAS' ? 'var(--teal)' : 'var(--gold)', textTransform: 'uppercase' }}>{s.title}</h4>
           <ul style={{ margin: 0, paddingLeft: 18, fontFamily: mono, fontSize: '0.86rem', lineHeight: 1.7, color: 'var(--text)' }}>
             {s.items.map((it, i) => (
               <li key={i} style={{ overflowWrap: 'break-word', marginBottom: 2 }}><InlineText text={it} /></li>
@@ -153,7 +153,7 @@ export function FinanceAnswer({ blocks }: { blocks: FinanceBlock[] }) {
           onClick={handleCopy}
           style={copyState === 'error' ? { borderColor: 'var(--orange)', color: 'var(--orange)' } : undefined}
         >
-          {copyState === 'copied' ? '✓ SKOPIOWANO' : copyState === 'error' ? '⚠ BŁĄD KOPIOWANIA' : '⧉ KOPIUJ ODPOWIEDŹ'}
+          {copyState === 'copied' ? '✓ COPIED' : copyState === 'error' ? '⚠ COPY FAILED' : '⧉ COPY ANSWER'}
         </button>
       </div>
     </div>

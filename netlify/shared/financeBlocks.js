@@ -40,7 +40,7 @@ export function blockLines(block) {
     case 'list':
       return ['', block.title, ...block.items.map((i) => `${i.kind === 'warn' ? '  ! ' : '  '}${stripMarkup(i.text)}`)]
     case 'comment': {
-      const lines = ['', 'KOMENTARZ']
+      const lines = ['', 'COMMENT']
       if (block.sections.length === 0) {
         lines.push(stripMarkup(block.fallback ?? ''))
         return lines

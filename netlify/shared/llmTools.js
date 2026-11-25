@@ -13,7 +13,7 @@ export const FINANCE_TOOL = {
   name: 'get_finance',
   description:
     'Aggregates from the monthly accounting report (Stripe, Przelewy24, PayPal, Meta) for the given months: gross, refunds, fees, net, payouts, ' +
-    'status per source (OK / NIEPEŁNY / UWAGA), change vs previous month, anomalies, and what is missing (file or field). ' +
+    'status per source (OK / INCOMPLETE / WARNING), change vs previous month, anomalies, and what is missing (file or field). ' +
     'Payment-operator inflows, NOT Wix sales. Does not contain bank costs, subscriptions, ZUS, PIT-4 or VAT.',
   parameters: {
     type: 'object',
@@ -57,7 +57,7 @@ export async function runTool(executeTool, name, args) {
   }
 }
 
-export const LIMIT_REACHED = `Przekroczono limit ${MAX_TOOL_CALLS} wywołań get_finance dla jednego pytania — napisz komentarz z danych, które już masz.`
+export const LIMIT_REACHED = `The limit of ${MAX_TOOL_CALLS} get_finance calls for one question was exceeded — write the comment from the data you already have.`
 
 export const emptyUsage = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
 
@@ -95,7 +95,7 @@ export async function runToolChat({
   const maxRounds = maxToolCalls + 1
   for (let round = 0; round < maxRounds; round++) {
     const left = deadlineMs - (now() - started)
-    if (left < 2000) throw new Error('przekroczony czas odpowiedzi modelu')
+    if (left < 2000) throw new Error('the model response time was exceeded')
     const last = round === maxRounds - 1 || toolCalls.length >= maxToolCalls
     const body = {
       model, messages, max_tokens: maxTokens, temperature,
@@ -123,5 +123,5 @@ export async function runToolChat({
     }
     return { text: msg.content ?? '', rounds: round + 1, toolCalls, usage }
   }
-  throw new Error('pętla narzędzi nie zwróciła tekstu')
+  throw new Error('the tool loop returned no text')
 }

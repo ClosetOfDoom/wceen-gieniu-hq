@@ -4,7 +4,7 @@
 //                     returned (the rendered report and the raw view) or be a simple operation on two of those numbers
 //                     (difference, percentage). A sentence with a number outside the data is removed; only the FACT
 //                     (counts) is returned for logging — never the sentence or the number.
-//  2. normalizeSections  WNIOSKI / DLACZEGO (hypotheses) / CO SPRAWDZIĆ LUB ZROBIĆ / POMYSŁY (proposals), labelled by the server.
+//  2. normalizeSections  CONCLUSIONS / WHY (hypotheses) / WHAT TO CHECK OR DO / IDEAS (proposals), labelled by the server.
 //  3. scrubModelText  sentences that touch secrets / system prompt, and tax determinations (ZUS, PIT-4, VAT), are dropped.
 //
 // Zero numbers from the model's memory: when in doubt the sentence goes.
@@ -13,9 +13,9 @@ const NBSP = '  '
 // 1 234,56 | 1234,56 | 12,5 | 12.5 | 138   (thousands separated by a space / NBSP)
 const NUMBER = new RegExp(`(?<![\\w.,])[-+−]?(?:\\d{1,3}(?:[ ${NBSP}]\\d{3})+|\\d+)(?:[.,]\\d+)?(?![\\w])`, 'g')
 const DATE_LIKE = /\b\d{4}-\d{2}(?:-\d{2})?\b|\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b/g
-const SMALL_COUNT_UNIT = /^\s*(miesi|źród|zrod|krok|dni\b|dzie[nń]|tygod|tydzie)/i
+const SMALL_COUNT_UNIT = /^\s*(miesi|źród|zrod|krok|dni\b|dzie[nń]|tygod|tydzie|months?\b|sources?\b|steps?\b|days?\b|weeks?\b)/i
 
-export const SECTIONS = ['WNIOSKI', 'DLACZEGO', 'CO SPRAWDZIĆ LUB ZROBIĆ', 'POMYSŁY']
+export const SECTIONS = ['CONCLUSIONS', 'WHY', 'WHAT TO CHECK OR DO', 'IDEAS']
 
 /** Numeric tokens of a text as [{ value, decimals, index, text }]; dates and month labels (2026-10) are not numbers here. */
 export function extractNumbers(text) {
@@ -129,19 +129,26 @@ export function verifyNumbers(text, allowed) {
 
 // ── sections ─────────────────────────────────────────────────────────────────────────────────
 
-const HEADER_RE = /^[\s#*_>-]*(WNIOSKI|DLACZEGO|CO SPRAWDZI[ĆC] LUB ZROBI[ĆC]|POMYS[ŁL]Y)[\s*_:)(a-ząćęłńóśźż-]*$/i
+const HEADER_RE = /^[\s#*_>-]*(CONCLUSIONS?|WHY|WHAT TO CHECK(?: OR DO)?|IDEAS|WNIOSKI|DLACZEGO|CO SPRAWDZI[ĆC] LUB ZROBI[ĆC]|POMYS[ŁL]Y)[\s*_:)(a-ząćęłńóśźż-]*$/i
+
+// The English names are the ones the model is asked for; the Polish ones are accepted and mapped onto them.
+const HEADER_ALIASES = {
+  CONCLUSIONS: 'CONCLUSIONS', CONCLUSION: 'CONCLUSIONS', WNIOSKI: 'CONCLUSIONS',
+  WHY: 'WHY', DLACZEGO: 'WHY',
+  'WHAT TO CHECK OR DO': 'WHAT TO CHECK OR DO', 'WHAT TO CHECK': 'WHAT TO CHECK OR DO', 'CO SPRAWDZIĆ LUB ZROBIĆ': 'WHAT TO CHECK OR DO', 'CO SPRAWDZIC LUB ZROBIC': 'WHAT TO CHECK OR DO',
+  IDEAS: 'IDEAS', POMYSŁY: 'IDEAS', POMYSLY: 'IDEAS',
+}
 
 function headerOf(line) {
   const m = line.match(HEADER_RE)
   if (!m) return null
-  const k = m[1].toUpperCase().replace('ZROBIC', 'ZROBIĆ').replace('SPRAWDZIC', 'SPRAWDZIĆ').replace('POMYSLY', 'POMYSŁY')
-  return SECTIONS.find((s) => s === k) ?? null
+  return HEADER_ALIASES[m[1].toUpperCase().replace(/\s+/g, ' ')] ?? null
 }
 const isHeader = (line) => headerOf(line.trim()) !== null
 
 /**
- * Splits the comment into the four sections and labels them: hypotheses start with "Hipoteza:", ideas with "Propozycja:",
- * actions are bullets. Text before the first header goes under WNIOSKI. Sections the model left out are omitted.
+ * Splits the comment into the four sections and labels them: hypotheses start with "Hypothesis:", ideas with "Proposal:",
+ * actions are bullets. Text before the first header goes under CONCLUSIONS. Sections the model left out are omitted.
  */
 export function normalizeSections(text) {
   return sectionsToText(sectionsFrom(text))
@@ -150,7 +157,7 @@ export function normalizeSections(text) {
 /** The comment as data: [{ id, title, items }] — items without bullets, hypotheses / ideas labelled. Sections the model left out are absent. */
 export function sectionsFrom(text) {
   const buckets = new Map(SECTIONS.map((s) => [s, []]))
-  let current = 'WNIOSKI'
+  let current = 'CONCLUSIONS'
   for (const rawLine of String(text ?? '').split('\n')) {
     const line = rawLine.trim()
     if (line === '') continue
@@ -162,8 +169,8 @@ export function sectionsFrom(text) {
     id,
     title: id,
     items: buckets.get(id).map((l) => {
-      if (id === 'DLACZEGO') return /^(\*\*)?hipotez/i.test(l) ? l : `Hipoteza: ${l}`
-      if (id === 'POMYSŁY') return /^(\*\*)?propozycj/i.test(l) ? l : `Propozycja: ${l}`
+      if (id === 'WHY') return /^(\*\*)?(hypothes|hipotez)/i.test(l) ? l : `Hypothesis: ${l}`
+      if (id === 'IDEAS') return /^(\*\*)?(proposal|propozycj)/i.test(l) ? l : `Proposal: ${l}`
       return l
     }),
   }))
@@ -176,10 +183,10 @@ export function sectionsToText(sections) {
 // ── comment rules (usefulness, small sample, length) ─────────────────────────────────────────
 
 /** Fillers that say nothing a person could act on. A sentence with one of them is removed. */
-export const GENERIC_RE = /monitor(?:ow|uj|ing)\w*|rozwa[żz]\w*\s+(?:dzia[łl]ani\w*|kampani\w*|zmian\w*)|dzia[łl]ani\w*\s+marketingow\w*|warto\s+(?:przeanalizowa\w*|rozwa[żz]\w*|zbada\w*|przyjrze\w*|obserwowa\w*)|nale[żz]y\s+(?:przeanalizowa\w*|zbada\w*|obserwowa\w*)|dalsz\w+\s+analiz\w*|zbada\w*\s+przyczyn\w*|optymalizowa\w*\s+(?:kampani\w*|dzia[łl]ani\w*)/i
+export const GENERIC_RE = /monitor(?:ow|uj|ing)\w*|rozwa[żz]\w*\s+(?:dzia[łl]ani\w*|kampani\w*|zmian\w*)|dzia[łl]ani\w*\s+marketingow\w*|warto\s+(?:przeanalizowa\w*|rozwa[żz]\w*|zbada\w*|przyjrze\w*|obserwowa\w*)|nale[żz]y\s+(?:przeanalizowa\w*|zbada\w*|obserwowa\w*)|dalsz\w+\s+analiz\w*|zbada\w*\s+przyczyn\w*|optymalizowa\w*\s+(?:kampani\w*|dzia[łl]ani\w*)|\bmonitor(?:ing)?\b|\bconsider\s+(?:marketing|campaign|changes?|actions?)\w*|marketing\s+(?:actions?|efforts?|activities)|worth\s+(?:analy[sz]ing|considering|investigating|examining|watching|looking)|(?:should|needs?\s+to)\s+(?:be\s+)?(?:analy[sz]ed|investigated|monitored|watched|examined)|further\s+analysis|investigate\s+(?:the\s+)?(?:cause|reasons?)|optimi[sz]e\s+(?:campaigns?|actions?)/i
 
 /** Words that turn a statement about a small sample into a claim about a trend / change. */
-export const TREND_RE = /trend|wzrost|wzrosł|wzros|spadek|spadł|spada|zmniejsz|zwiększ|zmian[aęyie]|dynamik|pogorszeni|poprawi|\bvs\b|względem|→|[-+−]\s?\d[\d\s]*[,.]?\d*\s*%|\bo\s+\d[\d\s]*[,.]?\d*\s*%/i
+export const TREND_RE = /trend|wzrost|wzrosł|wzros|spadek|spadł|spada|zmniejsz|zwiększ|zmian[aęyie]|dynamik|pogorszeni|poprawi|\bvs\b|względem|→|[-+−]\s?\d[\d\s]*[,.]?\d*\s*%|\bo\s+\d[\d\s]*[,.]?\d*\s*%|\bincreas\w*|\brose\b|\brise\b|\bgrowth|\bgrew\b|\bdeclin\w*|\bfell\b|\bdrop(?:ped|s)?\b|\bdecreas\w*|\bchanged?\b|\bchanges\b|\bdynamic\w*|\bcompared|\bversus|\bup\s+\d|\bdown\s+\d|\bby\s+\d[\d\s]*[,.]?\d*\s*%/i
 
 const splitSentences = (text) => String(text ?? '').split(SENTENCE_SPLIT)
 
@@ -189,7 +196,7 @@ function mapItems(sections, fn) {
     .filter((s) => s.items.length > 0)
 }
 
-/** Removes sentences made of fillers ("monitorować", "warto przeanalizować", "rozważyć działania marketingowe"…). */
+/** Removes sentences made of fillers ("monitor", "worth analysing", "consider marketing actions", and the Polish ones…). */
 export function dropGeneric(sections) {
   let dropped = 0
   const out = mapItems(sections, (item) => {
@@ -205,8 +212,8 @@ export function dropGeneric(sections) {
 
 /**
  * Small-sample rule. For every topic with fewer than 5 events in either compared period (or an unknown count) a sentence that talks
- * about a trend or a change of that topic is replaced — once — by "<Temat>: zbyt mało zdarzeń (n) — bez trendu i bez zmiany procentowej".
- * @param rules [{ id: 'zwroty' | 'płatności', pattern: RegExp, n: string | null }]
+ * about a trend or a change of that topic is replaced — once — by "<Topic>: too few events (n) — no trend and no percentage change".
+ * @param rules [{ id: 'refunds' | 'payments', pattern: RegExp, n: string | null }]
  */
 export function applySmallSample(sections, rules) {
   let replaced = 0
@@ -220,21 +227,21 @@ export function applySmallSample(sections, rules) {
       if (said.has(rule.id)) continue
       said.add(rule.id)
       const label = rule.id.charAt(0).toUpperCase() + rule.id.slice(1)
-      parts.push(`${label}: zbyt mało zdarzeń (${rule.n ?? `liczba ${rule.gen ?? rule.id} nieznana — brak w pliku`}) — bez trendu i bez zmiany procentowej.`)
+      parts.push(`${label}: too few events (${rule.n ?? `the number of ${rule.gen ?? rule.id} is unknown — not in the file`}) — no trend and no percentage change.`)
     }
     return parts.length > 0 ? parts.join(' ') : null
   })
   return { sections: out, replaced }
 }
 
-/** Every hypothesis must say what to check (Sprawdź), where, and which result confirms (Potwierdzi) and which refutes it (Obali). */
+/** Every hypothesis must say what to check (Check), where, and which result confirms it (Confirmed if) and which refutes it (Refuted if). */
 export function checkHypotheses(sections) {
   let dropped = 0
   const out = sections
-    .map((s) => (s.id !== 'DLACZEGO' ? s : {
+    .map((s) => (s.id !== 'WHY' ? s : {
       ...s,
       items: s.items.filter((i) => {
-        const ok = /sprawd[źz]/i.test(i) && /potwierdz/i.test(i) && /obal/i.test(i)
+        const ok = /\bcheck\b|sprawd[źz]/i.test(i) && /confirm|potwierdz/i.test(i) && /refut|rule[sd]?\s+out|disprov|obal/i.test(i)
         if (!ok) dropped++
         return ok
       }),
@@ -252,9 +259,9 @@ export function limitWords(sections, max = MAX_COMMENT_WORDS) {
   let trimmed = 0
   const work = sections.map((s) => ({ ...s, items: [...s.items] }))
   const count = () => work.reduce((n, s) => n + s.items.reduce((m, i) => m + words(i), 0), 0)
-  for (const id of ['POMYSŁY', 'DLACZEGO', 'CO SPRAWDZIĆ LUB ZROBIĆ', 'WNIOSKI']) {
+  for (const id of ['IDEAS', 'WHY', 'WHAT TO CHECK OR DO', 'CONCLUSIONS']) {
     const s = work.find((x) => x.id === id)
-    while (s && count() > max && s.items.length > (id === 'WNIOSKI' ? 1 : 0)) {
+    while (s && count() > max && s.items.length > (id === 'CONCLUSIONS' ? 1 : 0)) {
       s.items.pop()
       trimmed++
     }
@@ -263,11 +270,11 @@ export function limitWords(sections, max = MAX_COMMENT_WORDS) {
 }
 
 /**
- * One or two sentences of the conclusion for speech. Only the FIRST item of WNIOSKI is used (it is the conclusion); a sentence with more than
+ * One or two sentences of the conclusion for speech. Only the FIRST item of CONCLUSIONS is used (it is the conclusion); a sentence with more than
  * two figures is shortened at the first clause boundary (" (", " — ", ", ", "; ") so that no list of figures is read out; markup removed.
  */
 export function speechFrom(sections, maxChars = 260) {
-  const first = sections.find((s) => s.id === 'WNIOSKI')?.items[0]
+  const first = sections.find((s) => s.id === 'CONCLUSIONS')?.items[0]
   if (!first) return ''
   const shorten = (sentence) => {
     let t = sentence.trim()
@@ -281,7 +288,7 @@ export function speechFrom(sections, maxChars = 260) {
   const picked = splitSentences(stripWords(first)).map(shorten).filter(Boolean).slice(0, 2)
   let text = picked.join(' ')
   if (text.length > maxChars) text = picked[0] ?? ''
-  return text.length > maxChars ? text.slice(0, maxChars - 1).replace(/s+S*$/, '') + '…' : text
+  return text.length > maxChars ? text.slice(0, maxChars - 1).replace(/\s+\S*$/, '') + '…' : text
 }
 
 /** Small-sample rules from the merged view: refunds (count unknown or < 5) and payments (< 5) in any comparison. */
@@ -290,9 +297,9 @@ export function smallSampleRules(view) {
   const comps = (view?.months ?? []).filter((m) => m.available).flatMap((m) =>
     ['stripe', 'p24', 'paypal'].map((k) => m.sources?.[k]?.changeVsPrevious).filter((c) => c?.comparable && c.sample))
   const refunds = comps.find((c) => c.sample.refunds?.small)
-  if (refunds) rules.push({ id: 'zwroty', gen: 'zwrotów', pattern: /zwrot/i, n: refunds.sample.refunds.n ?? null })
+  if (refunds) rules.push({ id: 'refunds', gen: 'refunds', pattern: /refund|zwrot/i, n: refunds.sample.refunds.n ?? null })
   const payments = comps.find((c) => c.sample.payments?.small)
-  if (payments) rules.push({ id: 'płatności', gen: 'płatności', pattern: /płatno/i, n: payments.sample.payments.n })
+  if (payments) rules.push({ id: 'payments', gen: 'payments', pattern: /payment|płatno/i, n: payments.sample.payments.n })
   return rules
 }
 
@@ -324,7 +331,7 @@ export function refineSections(raw, allowed, { smallSample = [] } = {}) {
 
 // ── scrubs ───────────────────────────────────────────────────────────────────────────────────
 
-const SECRET_RE = /sk-[\w-]{8,}|eyJ[\w-]{16,}|service[\s_-]?role|api[\s_-]?key|klucz(?:a|e|y|em)?\s+(?:api|serwisow|dostępu|dostepu)|x-stanley-token|\b(?:ANTHROPIC|OPENAI|SUPABASE|STANLEY|ELEVEN|STRIPE|PAYPAL|META)_[A-Z_]+\b|system(?:owy|owe|owego)?\s+prompt|prompt\s+system|instrukcj\w*\s+system|wartość zmiennej|zmienn\w+ środowisk/i
+const SECRET_RE = /sk-[\w-]{8,}|eyJ[\w-]{16,}|service[\s_-]?role|api[\s_-]?key|klucz(?:a|e|y|em)?\s+(?:api|serwisow|dostępu|dostepu)|x-stanley-token|\b(?:ANTHROPIC|OPENAI|SUPABASE|STANLEY|ELEVEN|STRIPE|PAYPAL|META)_[A-Z_]+\b|system(?:owy|owe|owego)?\s+prompt|prompt\s+system|instrukcj\w*\s+system|wartość zmiennej|zmienn\w+ środowisk|environment\s+variables?|secret\s+keys?|access\s+(?:keys?|tokens?)|value\s+of\s+(?:the\s+)?(?:variable|env)/i
 const TAX_RE = /\b(zus|pit-?4?|vat)\b/i
 
 function dropSentences(text, re) {

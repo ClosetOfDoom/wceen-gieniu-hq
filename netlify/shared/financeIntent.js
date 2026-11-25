@@ -26,7 +26,7 @@ const MONTH_REF =
 const META_WORD = /\bmeta\b|insights|reklam|\bads?\b|obciazen|ad spend/
 
 // ZUS, PIT-4, VAT and other tax obligations: set by the accounting office, never by Stanley. The question still goes
-// to the finance path, where it gets a fixed "nie mam tych danych" (no model, no advice).
+// to the finance path, where it gets a fixed "I don't have that data" (no model, no advice).
 const TAX_WORD = /\bzus\b|\bpit(?:-?4)?\b|\bvat\b|skladk|podatk|zaliczk\w* (?:na )?(?:podat|pit)/
 
 export function isTaxObligationQuestion(message) {
@@ -50,7 +50,7 @@ export function isFinanceQuestion(message) {
 }
 
 // Costs from the bank, subscriptions, bank fees, invoices: the audit is not published,
-// so the only honest answer is "nie mam tych danych: brak publikacji audytu".
+// so the only honest answer is "I don't have that data: no audit published".
 const BANK_COST = /subskrypcj|subscription|abonament|faktur|invoice|oplat\w* bankow|koszty? (z )?bank|\bbank\b|wynagrodz|\bzus\b|\bpit\b|\bvat\b/
 
 export function isBankCostQuestion(message) {
